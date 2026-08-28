@@ -18,14 +18,19 @@ sibling source paths and its source contains no demo namespaces.
   [Plotje](https://github.com/scicloj/plotje)-compatible chart spec;
 - portable spec-to-SVG rendering without JVM plotting machinery;
 - a zero-JavaScript, high-contrast, responsive Ring UI at `/oscope`;
+- raw Arrow and Parquet downloads for spans, logs, gauges, sums, and
+  histograms through a closed export contract;
 - Glitter and Glimmer adapters consuming exactly the same screen model;
 - caller-owned collector connections and oscope-owned connections with
   explicit, idempotent retirement; and
 - deterministic headless tests plus an opt-in real-chDB lifecycle gate.
 
-The query plan contains no SQL. User input selects only signal, field, time
-window, and result limit values from closed sets. The exporter explorer owns
-the parameterized SQL and hard caps.
+The distribution query plan contains no SQL. User input selects only signal,
+field, time window, and result limit values from closed sets. Raw export is a
+separate versioned data-only command: oscope maps its closed signal and metric
+kind choices to one of five physical tables, then generates a parameterized
+`SELECT`. Export requests cannot supply SQL, table or column names, filesystem
+paths, or filenames.
 
 ## Run the web version
 
@@ -69,6 +74,48 @@ control is an ordinary GET form control, so querying, charts, tables, and
 navigation work with JavaScript disabled. The page ships a restrictive CSP and
 no script element; a host application can add progressive enhancement outside
 the adapter contract.
+
+### Raw data downloads
+
+A live page includes an ordinary no-JavaScript export form. Its download route
+is derived from the mount path: `/oscope/export` by default and, for the example
+above, `/admin/telemetry/export`. The form requires an absolute half-open
+`[start-unix-nano, end-unix-nano)` window no longer than 24 hours, explicitly
+selects gauge, sum, or histogram for metrics, and can only lower these hard
+limits:
+
+- 100,000 physical rows;
+- 64 MiB of encoded output; and
+- Arrow file or Parquet output.
+
+The row limit truncates the ordered physical-row selection; it is a bound, not
+a pagination cursor. These are **result bounds**, not execution-cost, rows-read,
+or wall-time bounds: ClickHouse may scan and sort more physical rows before it
+produces the bounded result. Hosts that expose large or untrusted datasets
+should also configure engine-side resource limits.
+
+One live source admits one export at a time by default. Its permit remains held
+until jolt-http finishes writing the response body or the write fails, so slow
+clients cannot accumulate multiple maximum-sized byte arrays after native
+queries complete. Additional requests receive `503` with `Retry-After`; an
+embedding application may choose a small capacity up to 16 with
+`:export-capacity`, accounting for the corresponding memory exposure.
+
+Oscope supplies the MIME type and a filename made only
+from closed source names, epoch integers, and the selected extension. It never
+writes a server-side export path. The returned byte array is copied by
+`jolt-chdb` before the native query result is destroyed, so the Ring response
+does not retain a libclickhouse buffer.
+
+The default adapter rejects browser requests marked `Sec-Fetch-Site:
+cross-site`. A host may supply `:authorize-export?` for stronger policy. The
+planned standalone composition will bind to loopback by default; remote
+exposure requires an authenticating reverse proxy or an equivalent host
+authorization hook.
+
+The deterministic sample page renders the same controls disabled and its
+export route returns 404. It never manufactures a data file when no live
+exporter exists.
 
 ## Run the native versions
 
@@ -122,14 +169,15 @@ database independently in multiple processes.
 The dependency direction is deliberately one-way:
 
 ```text
-selection -> versioned command -> effect -> bounded query -> screen
-                                                    |
-                              +---------------------+------------------+
-                              |                     |                  |
-                           Ring/HTML             Glitter            Glimmer
+selection -> versioned command -> effect -> bounded query -> screen -> views
+                  |
+raw selection -> export command -> closed SQL -> query-bytes -> Ring download
 ```
 
 - `oscope.query` validates selection and builds exact SQL-free plans.
+- `oscope.raw-export` validates absolute windows, source and format choices,
+  caps, generated parameterized SQL, the complete owned-byte result envelope,
+  MIME type, and suggested filename.
 - `oscope.command` is the versioned, portable intent envelope.
 - `oscope.effect` builds and validates a complete screen before one atomic
   replacement; renderers never mutate individual result fields.
@@ -137,7 +185,8 @@ selection -> versioned command -> effect -> bounded query -> screen
   provenance, a Plotje-compatible chart, and accessible table rows.
 - `oscope.plotje.spec` and `oscope.plotje.svg` are the bounded portable chart
   dependency. They are not coupled to the demo editor.
-- `oscope.live` is the only owned/shared chDB lifecycle boundary.
+- `oscope.live` is the only owned/shared chDB lifecycle boundary and owns the
+  source-wide export admission state.
 
 The first implementation is synchronous. Before moving database queries onto
 GUI workers, retain monotonically increasing request IDs and reject stale
@@ -160,9 +209,19 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
   jolt -M:test-chdb
 ```
 
+When `clickhouse-local` is installed, independently parse both encoded formats
+and prove half-open boundary and row-truncation semantics with:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/libchdb.so \
+  jolt -M:test-readers
+```
+
 ## Exact dependency baselines
 
 - `chucklehead-dev/jolt-otel-clickhouse` `c1d4aad8188811258dda7d777808649255b13cbc`
+- `chucklehead-dev/jolt-chdb` `df94be533b56c70a9a11951f45be84216d9d0b50`
+- `casselc/jolt-http` `0629087f4d7e42343164e43906fae6d707787ed0`
 - `burinc/glitter` `482642fd3c9671b05f0ffaa2ef47420b1a92553b`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
 - `jolt-lang/glimmer-gtk` `ce79d45698d36ccf496397bb85974e3cce6abfd8`
@@ -177,12 +236,12 @@ request is required to build or test this repository.
 
 ## Near-term work
 
-- package this repository under its final Git coordinate and replace the WIP
-  dependency in the integration demo;
+- replace the integration demo's previous oscope revision with this exact
+  published export revision;
 - add a small standalone OTLP receiver/server composition around the Ring
   adapter, without introducing a second schema;
-- add query-preserving Arrow and Parquet exports through a bounded,
-  copy-before-destroy chDB result API; and
+- add explicit export pagination or partition manifests for workflows that
+  need more than one bounded physical-row download; and
 - add stale-request rejection before asynchronous refresh/streaming updates.
 
 Copyright contributors. Distributed under the Eclipse Public License 2.0.

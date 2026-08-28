@@ -1,6 +1,12 @@
 {:paths ["src"]
 
- :deps {io.github.chucklehead-dev/jolt-otel-clickhouse
+ :deps {io.github.casselc/jolt-http
+        {:git/url "https://github.com/casselc/jolt-http.git"
+         :git/sha "0629087f4d7e42343164e43906fae6d707787ed0"}
+        io.github.chucklehead-dev/jolt-chdb
+        {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
+         :git/sha "df94be533b56c70a9a11951f45be84216d9d0b50"}
+        io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
          :git/sha "c1d4aad8188811258dda7d777808649255b13cbc"}}
 
@@ -19,6 +25,10 @@
   :test-chdb
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.chdb-test-runner"]}
+
+  :test-readers
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.reader-test-runner"]}
 
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
   :live-web {:main-opts ["-m" "oscope.live-main" "web"]}
@@ -59,6 +69,7 @@
 
  :tasks {test "jolt -M:test"
          test-chdb "jolt -M:test-chdb"
+         test-readers "jolt -M:test-readers"
          web-snapshot "jolt -M:web-snapshot"
          live-web "jolt -M:live-web"
          native "jolt -M:native"

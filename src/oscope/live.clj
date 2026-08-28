@@ -6,6 +6,7 @@
             [oscope.command :as command]
             [oscope.effect :as effect]
             [oscope.query :as query]
+            [oscope.raw-export :as raw-export]
             [oscope.view-model :as view-model]
             [otel.exporter.chdb.schema :as schema]))
 
@@ -17,8 +18,14 @@
   With `:connection`, oscope never closes the caller-owned connection. With
   `:db-spec`, oscope owns the new connection and closes it exactly once."
   ([] (open! {}))
-  ([{:keys [connection db-spec now-fn]
-     :or {db-spec "chdb::memory:" now-fn now-unix-nano}}]
+  ([{:keys [connection db-spec now-fn export-capacity]
+     :or {db-spec "chdb::memory:" now-fn now-unix-nano
+          export-capacity 1}}]
+   (when-not (and (integer? export-capacity) (pos? export-capacity)
+                  (<= export-capacity 16))
+     (throw (ex-info "oscope export capacity must be between 1 and 16"
+                     {:oscope.live/error true :type ::invalid-export-capacity
+                      :export-capacity export-capacity})))
    (let [owned? (nil? connection)
          conn (or connection (jdbc/connection db-spec))]
      (try
@@ -32,11 +39,22 @@
                         (view-model/query->screen conn plan)))
              load-command (fn [request-id selection]
                             (effect/run-command
-                             loader (command/query-command request-id selection)))]
+                             loader (command/query-command request-id selection)))
+             exporter (fn [selection]
+                        (when @closed?
+                          (throw (ex-info "oscope live source is closed"
+                                          {:oscope.live/error true :type ::closed})))
+                        (raw-export/execute! conn selection))
+             export-command (fn [request-id selection]
+                              (effect/run-export-command
+                               exporter
+                               (command/export-command request-id selection)))]
          {:connection conn :db-spec db-spec :owned? owned?
+          :export-admission {:capacity export-capacity :active (atom 0)}
           :loader loader
           :screen (load-command :initial query/default-selection)
           :load-command load-command
+          :export-command export-command
           :closed? closed?
           :close! (fn []
                     (when (compare-and-set! closed? false true)
