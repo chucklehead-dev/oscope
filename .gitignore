@@ -1,0 +1,8 @@
+/.jolt/
+/.cpcache/
+/.data/
+/target/
+*.html
+*.chdb
+*.parquet
+*.arrow

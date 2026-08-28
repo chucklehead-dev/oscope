@@ -1,0 +1,67 @@
+{:paths ["src"]
+
+ :deps {io.github.chucklehead-dev/jolt-otel-clickhouse
+        {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+         :git/sha "c1d4aad8188811258dda7d777808649255b13cbc"}}
+
+ :aliases
+ {:test
+  {:extra-paths ["test"]
+   :extra-deps
+   {io.github.burinc/glitter
+    {:git/url "https://github.com/burinc/glitter.git"
+     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}
+    io.github.casselc/glimmer
+    {:git/url "https://github.com/casselc/glimmer.git"
+     :git/sha "6dab5597dc0d912793fe175d0d3cbb9e75f11426"}}
+   :main-opts ["-m" "oscope.test-runner"]}
+
+  :test-chdb
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.chdb-test-runner"]}
+
+  :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
+  :live-web {:main-opts ["-m" "oscope.live-main" "web"]}
+
+  :native
+  {:extra-deps
+   {io.github.burinc/glitter
+    {:git/url "https://github.com/burinc/glitter.git"
+     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   :main-opts ["-m" "oscope.ui.native"]}
+
+  :live-native
+  {:extra-deps
+   {io.github.burinc/glitter
+    {:git/url "https://github.com/burinc/glitter.git"
+     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   :main-opts ["-m" "oscope.live-main" "native"]}
+
+  :glimmer-native
+  {:extra-deps
+   {io.github.casselc/glimmer
+    {:git/url "https://github.com/casselc/glimmer.git"
+     :git/sha "6dab5597dc0d912793fe175d0d3cbb9e75f11426"}
+    io.github.jolt-lang/glimmer-gtk
+    {:git/url "https://github.com/jolt-lang/glimmer-gtk.git"
+     :git/sha "ce79d45698d36ccf496397bb85974e3cce6abfd8"}}
+   :main-opts ["-m" "oscope.ui.glimmer-native"]}
+
+  :live-glimmer-native
+  {:extra-deps
+   {io.github.casselc/glimmer
+    {:git/url "https://github.com/casselc/glimmer.git"
+     :git/sha "6dab5597dc0d912793fe175d0d3cbb9e75f11426"}
+    io.github.jolt-lang/glimmer-gtk
+    {:git/url "https://github.com/jolt-lang/glimmer-gtk.git"
+     :git/sha "ce79d45698d36ccf496397bb85974e3cce6abfd8"}}
+   :main-opts ["-m" "oscope.live-main" "glimmer-native"]}}
+
+ :tasks {test "jolt -M:test"
+         test-chdb "jolt -M:test-chdb"
+         web-snapshot "jolt -M:web-snapshot"
+         live-web "jolt -M:live-web"
+         native "jolt -M:native"
+         live-native "jolt -M:live-native"
+         glimmer-native "jolt -M:glimmer-native"
+         live-glimmer-native "jolt -M:live-glimmer-native"}}
