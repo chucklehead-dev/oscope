@@ -14,7 +14,8 @@ sibling source paths and its source contains no demo namespaces.
 
 - spans, logs, and metrics distribution queries through a closed allowlist;
 - 15 minute, 1 hour, 6 hour, and 24 hour bounded windows;
-- a semantic accessible table and a validated Plotje-compatible chart spec;
+- a semantic accessible table and a validated
+  [Plotje](https://github.com/scicloj/plotje)-compatible chart spec;
 - portable spec-to-SVG rendering without JVM plotting machinery;
 - a zero-JavaScript, high-contrast, responsive Ring UI at `/oscope`;
 - Glitter and Glimmer adapters consuming exactly the same screen model;
@@ -92,10 +93,12 @@ cannot execute the AppKit backend. Glitter is the default GTK architecture;
 Glimmer remains useful for components that benefit from local reactive state.
 
 Current Glitter and Glimmer application runners own their mounted root and do
-not return a complete unmount handle. Each oscope adapter still owns and
-retires its callbacks/model, while window teardown remains toolkit-owned. A
-future runner API returning its mounted root can add explicit unmount without
-changing the oscope contract.
+not return a complete unmount handle. Each oscope adapter isolates its model
+and callbacks per instance; its logical `close!` rejects future selections,
+but the toolkit retains the mounted root and callbacks until window teardown.
+A future runner API returning that root can add explicit unmount and release
+without changing the oscope contract. Applications that require independently
+owned embedded native windows should treat that runner enhancement as a gate.
 
 ## Share a collector connection
 
