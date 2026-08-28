@@ -11,6 +11,7 @@
             [oscope.plotje-test]
             [oscope.query-view-test]
             [oscope.raw-export-test]
+            [oscope.sample-emitter-test]
             [oscope.server-test]
             [oscope.visualization-editor-test]
             [oscope.web-test]))
@@ -23,6 +24,7 @@
                         'oscope.plotje-test
                         'oscope.query-view-test
                         'oscope.raw-export-test
+                        'oscope.sample-emitter-test
                         'oscope.server-test
                         'oscope.visualization-editor-test
                         'oscope.web-test)]

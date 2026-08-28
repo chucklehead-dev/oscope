@@ -78,6 +78,34 @@ traffic therefore cannot feed telemetry back into the collector. Shutdown is
 retry-safe and ordered: stop ingress, retire the oscope source, close the span,
 log, and metric exporter faces, then close the shared connection.
 
+### Emit a sample workload
+
+With the receiver running, use a second terminal to run the companion Jolt
+application:
+
+```sh
+cd oscope
+jolt -M:emit-sample
+```
+
+Each invocation emits a new five-span checkout trace with correct parentage,
+three trace-correlated logs, and one counter, gauge, and histogram sample. It
+uses the public `otel.sdk`, tracing, logging, and metrics APIs rather than
+posting fixture JSON. Re-run it to exercise live updates, then open
+<http://127.0.0.1:4318/oscope>.
+
+The standard OTel endpoint variable works in fish and POSIX shells, or the base
+URL may be supplied as the only argument:
+
+```sh
+env OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318 jolt -M:emit-sample
+jolt -M:emit-sample http://127.0.0.1:14318
+```
+
+The emitter checks `/healthz` before creating telemetry and exits visibly when
+the local receiver is unavailable. Its own HTTP export calls are not woven with
+instrumentation, so running it cannot create a collector feedback loop.
+
 ## Run or embed only the web version
 
 Render a deterministic, self-contained HTML snapshot:

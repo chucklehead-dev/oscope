@@ -43,6 +43,7 @@
 
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
   :server {:main-opts ["-m" "oscope.server-main"]}
+  :emit-sample {:main-opts ["-m" "oscope.sample-emitter"]}
   :live-web {:main-opts ["-m" "oscope.live-main" "web"]}
 
   :native
@@ -93,6 +94,7 @@
          test-standalone "test/standalone_build_smoke.sh"
          web-snapshot "jolt -M:web-snapshot"
          server "jolt -M:server"
+         emit-sample "jolt -M:emit-sample"
          live-web "jolt -M:live-web"
          native "jolt -M:native"
          live-native "jolt -M:live-native"

@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [jdbc.core :as jdbc]
+            [oscope.sample-emitter :as sample-emitter]
             [oscope.server :as server]
             [teensyp.client :as client]))
 
@@ -216,6 +217,53 @@
             "viewer, editor, health, redirect, and export requests create no telemetry"))
       (finally
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))
+        (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))))))
+
+(deftest sample-companion-emits-parented-correlated-telemetry
+  (let [lifecycle (server/start! {:port 0 :db-spec "chdb::memory:"})
+        endpoint (str "http://127.0.0.1:" (:port lifecycle))]
+    (try
+      (let [trace-id (sample-emitter/run! {:endpoint endpoint})
+            spans (jdbc/fetch
+                   (:connection lifecycle)
+                   ["select TraceId, SpanId, ParentSpanId, SpanName
+                       from otel_traces
+                      where TraceId=?"
+                    trace-id])
+            by-name (into {} (map (juxt :spanname identity)) spans)
+            root (get by-name "POST /checkout")
+            validate (get by-name "validate cart")
+            inventory (get by-name "GET /inventory/{sku}")
+            query (get by-name "SELECT inventory")
+            publish (get by-name "fulfillment enqueue")
+            logs (jdbc/fetch
+                  (:connection lifecycle)
+                  ["select TraceId, SpanId, Body
+                       from otel_logs
+                      where TraceId=?"
+                   trace-id])]
+        (is (= 5 (count spans)))
+        (is (= "" (:parentspanid root)))
+        (is (= (:spanid root) (:parentspanid validate)))
+        (is (= (:spanid root) (:parentspanid inventory)))
+        (is (= (:spanid inventory) (:parentspanid query)))
+        (is (= (:spanid root) (:parentspanid publish)))
+        (is (= 3 (count logs)))
+        (is (every? #(= trace-id (:traceid %)) logs))
+        (is (every? (comp not empty? :spanid) logs))
+        (is (= #{"sample.checkout.requests"}
+               (set (map :metricname
+                         (jdbc/fetch (:connection lifecycle)
+                                     "select MetricName from otel_metrics_sum")))))
+        (is (= #{"sample.checkout.queue.depth"}
+               (set (map :metricname
+                         (jdbc/fetch (:connection lifecycle)
+                                     "select MetricName from otel_metrics_gauge")))))
+        (is (= #{"sample.checkout.duration"}
+               (set (map :metricname
+                         (jdbc/fetch (:connection lifecycle)
+                                     "select MetricName from otel_metrics_histogram"))))))
+      (finally
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))))))
 
 (deftest standalone-persistent-restart-retains-telemetry
