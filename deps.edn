@@ -2,7 +2,7 @@
 
  :deps {io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
-         :git/sha "9e75dd94b9ef3f5afe2096bf2370290d436443dd"}
+         :git/sha "1ed2fd9253e20494170803aa110ba89402d92faf"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
          :git/sha "6321a0a23a06e396c684d303f3cb4d31bebc8d9f"}
