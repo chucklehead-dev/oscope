@@ -402,10 +402,10 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 ## Exact dependency baselines
 
-- `chucklehead-dev/jolt-otel-clickhouse` `c1d4aad8188811258dda7d777808649255b13cbc`
-- `chucklehead-dev/jolt-chdb` `fffaf33208d9404ff4f8e48ecf6d8f9ca03a62c3`
-- `casselc/jolt-http` `0629087f4d7e42343164e43906fae6d707787ed0`
-- `burinc/glitter` `482642fd3c9671b05f0ffaa2ef47420b1a92553b`
+- `chucklehead-dev/jolt-otel-clickhouse` `56bf2fdc83a84cc0f01048013f4737201deccc26`
+- `chucklehead-dev/jolt-chdb` `6321a0a23a06e396c684d303f3cb4d31bebc8d9f`
+- `casselc/jolt-http` `9e75dd94b9ef3f5afe2096bf2370290d436443dd`
+- `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
 - `jolt-lang/glimmer-gtk` `ce79d45698d36ccf496397bb85974e3cce6abfd8`
 - `casselc/data.json` `8a6dc9668e5c3596a335759defeb7ec80cd3b5f8`

@@ -2,13 +2,13 @@
 
  :deps {io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
-         :git/sha "0629087f4d7e42343164e43906fae6d707787ed0"}
+         :git/sha "9e75dd94b9ef3f5afe2096bf2370290d436443dd"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "fffaf33208d9404ff4f8e48ecf6d8f9ca03a62c3"}
+         :git/sha "6321a0a23a06e396c684d303f3cb4d31bebc8d9f"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "c1d4aad8188811258dda7d777808649255b13cbc"}
+         :git/sha "56bf2fdc83a84cc0f01048013f4737201deccc26"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "923ec6b5912bb1246c87d325febce70c388bab6b"}
@@ -24,9 +24,9 @@
   :test
   {:extra-paths ["test"]
    :extra-deps
-   {io.github.burinc/glitter
-    {:git/url "https://github.com/burinc/glitter.git"
-     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}
+   {io.github.casselc/glitter
+    {:git/url "https://github.com/casselc/glitter.git"
+     :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}
     io.github.casselc/glimmer
     {:git/url "https://github.com/casselc/glimmer.git"
      :git/sha "6dab5597dc0d912793fe175d0d3cbb9e75f11426"}}
@@ -35,9 +35,9 @@
   :test-chdb
   {:extra-paths ["test"]
    :extra-deps
-   {io.github.burinc/glitter
-    {:git/url "https://github.com/burinc/glitter.git"
-     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   {io.github.casselc/glitter
+    {:git/url "https://github.com/casselc/glitter.git"
+     :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}}
    :main-opts ["-m" "oscope.chdb-test-runner"]}
 
   :test-readers
@@ -51,23 +51,23 @@
 
   :native
   {:extra-deps
-   {io.github.burinc/glitter
-    {:git/url "https://github.com/burinc/glitter.git"
-     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   {io.github.casselc/glitter
+    {:git/url "https://github.com/casselc/glitter.git"
+     :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}}
    :main-opts ["-m" "oscope.ui.native"]}
 
   :live-native
   {:extra-deps
-   {io.github.burinc/glitter
-    {:git/url "https://github.com/burinc/glitter.git"
-     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   {io.github.casselc/glitter
+    {:git/url "https://github.com/casselc/glitter.git"
+     :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}}
    :main-opts ["-m" "oscope.live-main" "native"]}
 
   :native-server
   {:extra-deps
-   {io.github.burinc/glitter
-    {:git/url "https://github.com/burinc/glitter.git"
-     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   {io.github.casselc/glitter
+    {:git/url "https://github.com/casselc/glitter.git"
+     :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}}
    :main-opts ["-m" "oscope.native-server-main"]}
 
   :glimmer-native
