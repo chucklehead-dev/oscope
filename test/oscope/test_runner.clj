@@ -9,6 +9,7 @@
             [oscope.query-view-test]
             [oscope.raw-export-test]
             [oscope.server-test]
+            [oscope.visualization-editor-test]
             [oscope.web-test]))
 (defn -main [& _]
   (let [{:keys [fail error]}
@@ -16,5 +17,6 @@
                         'oscope.native-test 'oscope.native-server-test
                         'oscope.otlp-test 'oscope.plotje-test
                         'oscope.query-view-test 'oscope.raw-export-test
-                        'oscope.server-test 'oscope.web-test)]
+                        'oscope.server-test 'oscope.visualization-editor-test
+                        'oscope.web-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

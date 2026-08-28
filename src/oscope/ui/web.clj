@@ -95,6 +95,14 @@
          (:value limit) "\"></label><label class=\"live-choice\"><input name=\"live\" type=\"checkbox\" value=\"1\""
          (when live? " checked")
          "> Live refresh</label><button type=\"submit\">Run query</button></div></form>")))
+(defn selection-query-string [{:keys [signal field window limit] :as selection}]
+  (let [{normalized-signal :signal normalized-field :field
+         normalized-window :window normalized-limit :limit}
+        (query/normalize-selection selection)]
+    (str "?signal=" (name normalized-signal)
+         "&field=" (name normalized-field)
+         "&window=" (name normalized-window)
+         "&limit=" normalized-limit)))
 (defn- render-export-controls [screen action enabled?]
   (let [{:keys [signal]} (:selection screen)
         {:keys [start-unix-nano end-unix-nano]}
@@ -225,7 +233,7 @@
 
 (defn render-page
   ([screen] (render-page screen {}))
-  ([screen {:keys [path export-enabled? live?]
+  ([screen {:keys [path export-enabled? live? visualization-editor-path]
             :or {path default-path export-enabled? false live? false}}]
    (let [path (route-path path)
          {:keys [selection controls]} screen]
@@ -234,7 +242,13 @@
          "<title>oscope · " (esc (:title screen)) "</title><style>" style "</style>"
          (when live? (str "<script defer src=\"" (esc (live-asset-path path)) "\"></script>"))
          "</head><body>"
-         "<header><h1>oscope</h1><p>Explore bounded distributions from embedded telemetry.</p></header><main"
+         "<header><h1>oscope</h1><p>Explore bounded distributions from embedded telemetry.</p>"
+         (when visualization-editor-path
+           (str "<nav aria-label=\"Visualization utilities\"><a href=\""
+                (esc visualization-editor-path)
+                (esc (selection-query-string selection))
+                "\">Edit this chart</a></nav>"))
+         "</header><main"
          (when live? (str " data-oscope-live-root data-oscope-refresh-path=\""
                           (esc (refresh-path path)) "\"")) ">"
          (render-controls controls selection path live?)
@@ -347,7 +361,7 @@
   It returns nil outside its configured path, never owns/closes the source,
   and routes every GET through the versioned command/effect seam."
   ([source] (handler source {}))
-  ([source {:keys [path authorize-export?]
+  ([source {:keys [path authorize-export? visualization-editor-path]
             :or {path default-path authorize-export? same-origin-export?}}]
    (let [path (route-path path)
          export-path (export-path path)
@@ -386,6 +400,8 @@
              {:status 200 :headers html-headers
               :body (render-page screen {:path path
                                          :live? live?
+                                         :visualization-editor-path
+                                         visualization-editor-path
                                          :export-enabled?
                                          (ifn? (:export-command source))})}))
 

@@ -177,6 +177,14 @@
             root (request! port "GET" "/" nil nil)
             page (request! port "GET" "/oscope?signal=spans&field=service-name&window=15m&limit=10"
                            nil nil)
+            editor-page
+            (request! port "GET"
+                      "/oscope/edit/plotje?signal=spans&field=service-name&window=15m&limit=10"
+                      nil nil)
+            editor-preview
+            (request! port "POST" "/oscope/edit/hiccup/preview"
+                      "spec=%5B%3Ap+%22feedback-free%22%5D"
+                      "application/x-www-form-urlencoded")
             start (- now 1000000000)
             end (+ now 1000000000)
             export (request!
@@ -193,13 +201,19 @@
         (is (= "/oscope" (get-in root [:headers "location"])))
         (is (= 200 (:status page)))
         (is (.contains (String. (:body page) "UTF-8") "oscope-loopback"))
+        (is (= 200 (:status editor-page)))
+        (is (.contains (String. (:body editor-page) "UTF-8")
+                       "oscope-loopback"))
+        (is (= 200 (:status editor-preview)))
+        (is (.contains (String. (:body editor-preview) "UTF-8")
+                       "feedback-free"))
         (is (= 200 (:status export)))
         (is (= "application/vnd.apache.parquet"
                (get-in export [:headers "content-type"])))
         (is (= [80 65 82 49]
                (mapv #(bit-and 255 %) (take 4 (:body export)))))
         (is (= before (physical-counts (:connection lifecycle)))
-            "viewer, health, redirect, and export requests create no telemetry"))
+            "viewer, editor, health, redirect, and export requests create no telemetry"))
       (finally
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))))))

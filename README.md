@@ -17,6 +17,8 @@ sibling source paths and its source contains no demo namespaces.
 - a semantic accessible table and a validated
   [Plotje](https://github.com/scicloj/plotje)-compatible chart spec;
 - portable spec-to-SVG rendering without JVM plotting machinery;
+- mountable Plotje and safe-Hiccup editors with bounded, versioned edit
+  documents, a server-rendered fallback, and progressive previews;
 - a standalone loopback OTLP/HTTP JSON receiver and viewer using one process,
   one connection, and one schema owner;
 - a zero-JavaScript, high-contrast, responsive Ring UI at `/oscope`;
@@ -51,6 +53,10 @@ Oscope listens only on `127.0.0.1:4318`, stores data in
 `/v1/metrics`, and serves the zero-JavaScript viewer at
 <http://127.0.0.1:4318/oscope>. `/` redirects to the viewer, `/healthz` reports
 process health, and `/oscope/export` serves bounded Arrow or Parquet downloads.
+The viewer's **Edit this chart** link opens `/oscope/edit/plotje` with the
+current bounded query selection; `/oscope/edit/hiccup` provides the companion
+data-only Hiccup surface. Both editors remain functional when JavaScript is
+disabled.
 
 Override the port or database without shell-specific `export` syntax:
 
@@ -98,7 +104,10 @@ stack. Mount it in an existing collector or application:
 
 (def source (oscope/open! {:db-spec "chdb:/absolute/path/to/telemetry"}))
 (def oscope-handler
-  (oscope-web/handler source {:path "/admin/telemetry"}))
+  (oscope-web/handler
+   source
+   {:path "/admin/telemetry"
+    :visualization-editor-path "/admin/telemetry/edit/plotje"}))
 
 ;; Compose normally; the adapter returns nil for routes it does not own.
 (defn app [request]
@@ -108,6 +117,31 @@ stack. Mount it in an existing collector or application:
 ;; At application shutdown:
 (oscope/close! source)
 ```
+
+The visualization editor is independently mountable. Its Plotje page queries
+the selected canonical screen once to seed a versioned edit document; preview
+and fallback POSTs only parse and render the submitted bounded document:
+
+```clojure
+(require '[oscope.ui.visualization-editor :as editor])
+
+(def editor-handler
+  (editor/handler
+   source
+   {:path "/admin/telemetry/edit"
+    :viewer-path "/admin/telemetry"
+    ;; An instrumented host supplies its generic context wrapper here.
+    :run-suppressed (fn [thunk] (thunk))}))
+```
+
+Compose `editor-handler` like any other Ring adapter; it returns `nil` for
+paths it does not own. `:run-suppressed` receives a zero-argument thunk for
+every owned editor route. The standalone collector needs no wrapper because it
+does not initialize an SDK or install telemetry middleware. An instrumented
+host should provide the same generic suppression context it uses for its
+viewer and telemetry-storage routes. Encoded editor bodies are capped at
+40,000 bytes; Plotje source is capped at 32,768 characters and safe-Hiccup at
+16,384 characters before any document can reach a renderer.
 
 The configured mount path drives both Ring routing and form navigation. Every
 control is an ordinary GET form control, so querying, charts, tables, and
@@ -225,6 +259,8 @@ The dependency direction is deliberately one-way:
 selection -> versioned command -> effect -> bounded query -> screen -> views
                   |
 raw selection -> export command -> closed SQL -> query-bytes -> Ring download
+                  |
+screen chart -> versioned visualization document -> safe preview renderer
 ```
 
 - `oscope.query` validates selection and builds exact SQL-free plans.
@@ -238,6 +274,9 @@ raw selection -> export command -> closed SQL -> query-bytes -> Ring download
   provenance, a Plotje-compatible chart, and accessible table rows.
 - `oscope.plotje.spec` and `oscope.plotje.svg` are the bounded portable chart
   dependency. They are not coupled to the demo editor.
+- `oscope.visualization.document` owns the closed Plotje/Hiccup edit envelope;
+  `oscope.hiccup.spec` rejects active tags, URLs, and event attributes; and
+  `oscope.ui.visualization-editor` is the mountable Ring surface.
 - `oscope.live` is the only owned/shared chDB lifecycle boundary and owns the
   source-wide export admission state.
 
@@ -250,7 +289,8 @@ completions before the whole-screen mutation.
 The full deterministic suite does not open a native window or a real chDB, but
 it does load the Glitter/Glimmer adapter namespaces. It exercises
 query/model/command invariants, Plotje SVG, the Ring adapter, headless Glitter
-reconciliation, Glimmer/Glitter instance isolation, OTLP body policy, route
+reconciliation, Glimmer/Glitter instance isolation, bounded visualization
+documents and editor routes, OTLP body policy, route
 composition, shared-connection ownership, and retry-safe shutdown:
 
 ```sh

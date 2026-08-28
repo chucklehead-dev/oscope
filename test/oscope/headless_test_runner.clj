@@ -12,6 +12,7 @@
             [oscope.query-view-test]
             [oscope.raw-export-test]
             [oscope.server-test]
+            [oscope.visualization-editor-test]
             [oscope.web-test]))
 
 (defn -main [& _]
@@ -23,5 +24,6 @@
                         'oscope.query-view-test
                         'oscope.raw-export-test
                         'oscope.server-test
+                        'oscope.visualization-editor-test
                         'oscope.web-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

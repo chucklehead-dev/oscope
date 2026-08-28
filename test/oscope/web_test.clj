@@ -135,6 +135,20 @@
     (is (= {:signal :spans :field :service-name :window :1h :limit 12}
            selection))))
 
+(deftest live-screen-links-to-an-exact-current-chart-editor-selection
+  (let [source {:load-command (fn [_ selection]
+                                (sample/screen-for-selection selection))}
+        handler (web/handler
+                 source {:visualization-editor-path "/oscope/edit/plotje"})
+        response (handler {:request-method :get :uri "/oscope"
+                           :query-string
+                           "signal=logs&field=severity-text&window=15m&limit=3"})]
+    (is (= 200 (:status response)))
+    (is (re-find
+         #"href=\"/oscope/edit/plotje\?signal=logs&amp;field=severity-text&amp;window=15m&amp;limit=3\""
+         (:body response)))
+    (is (re-find #"aria-label=\"Visualization utilities\"" (:body response)))))
+
 (deftest export-route-is-closed-binary-and-derived-from-the-mount
   (let [calls (atom [])
         bytes (byte-array [(byte 65) (byte 82) (byte 82) (byte 79)

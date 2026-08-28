@@ -16,7 +16,9 @@
         h (server/handler
            {:otlp-handler (fn [r] (swap! seen conj [:otlp (:uri r)]) {:status 200})
             :oscope-handler (fn [r] (swap! seen conj [:oscope (:uri r)])
-                              {:status 201})})
+                              {:status 201})
+            :visualization-editor-handler
+            (fn [r] (swap! seen conj [:editor (:uri r)]) {:status 202})})
         request (fn [method uri]
                   {:request-method method :uri uri
                    :headers {"host" "127.0.0.1:4318"}})]
@@ -25,6 +27,8 @@
     (is (= 201 (:status (h (request :get "/oscope/export")))))
     (is (= 201 (:status (h (request :get "/oscope/refresh")))))
     (is (= 201 (:status (h (request :get "/oscope/live.js")))))
+    (is (= 202 (:status (h (request :get "/oscope/edit/plotje")))))
+    (is (= 202 (:status (h (request :post "/oscope/edit/hiccup/preview")))))
     (is (= 200 (:status (h (request :get "/healthz")))))
     (is (= 303 (:status (h (request :get "/")))))
     (is (= "/oscope" (get-in (h (request :get "/"))
@@ -32,7 +36,8 @@
     (is (= 404 (:status (h (request :get "/missing")))))
     (is (= [[:otlp "/v1/logs"] [:oscope "/oscope"]
             [:oscope "/oscope/export"] [:oscope "/oscope/refresh"]
-            [:oscope "/oscope/live.js"]]
+            [:oscope "/oscope/live.js"] [:editor "/oscope/edit/plotje"]
+            [:editor "/oscope/edit/hiccup/preview"]]
            @seen))))
 
 (deftest standalone-rejects-untrusted-authorities-before-dispatch
@@ -44,6 +49,10 @@
             :oscope-handler (fn [request]
                               (swap! seen conj [:oscope (:uri request)])
                               {:status 200})
+            :visualization-editor-handler
+            (fn [request]
+              (swap! seen conj [:editor (:uri request)])
+              {:status 200})
             :authority "127.0.0.1:4318"})]
     (doseq [[method uri] [[:post "/v1/traces"]
                           [:post "/v1/logs"]
@@ -52,6 +61,10 @@
                           [:get "/oscope/export"]
                           [:get "/oscope/refresh"]
                           [:get "/oscope/live.js"]
+                          [:get "/oscope/edit/plotje"]
+                          [:post "/oscope/edit/plotje/preview"]
+                          [:get "/oscope/edit/hiccup"]
+                          [:get "/oscope/edit/editor.js"]
                           [:get "/healthz"]
                           [:get "/"]]]
       (let [response (h {:request-method method :uri uri
@@ -93,7 +106,7 @@
                                          exporter)
                   live/open! (fn [opts] (reset! seen-source-options opts) source)
                   otlp/handler (fn [_] (constantly {:status 200}))
-                  web/handler (fn [_] (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
                   http/run-server (fn [_ & _]
                                     (swap! events conj :ingress-started)
                                     {:port 9191})
@@ -119,7 +132,7 @@
                   chdb-export/exporter (constantly exporter)
                   live/open! (constantly source)
                   otlp/handler (fn [_] (constantly {:status 200}))
-                  web/handler (fn [_] (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
                   http/run-server (fn [& _] {:port 9192})
                   http/stop-server
                   (fn [_]
@@ -179,7 +192,7 @@
                     chdb-export/exporter (constantly exporter)
                     live/open! (constantly source)
                     otlp/handler (fn [_] (constantly {:status 200}))
-                    web/handler (fn [_] (constantly {:status 200}))
+                    web/handler (fn [& _] (constantly {:status 200}))
                     http/run-server (fn [& _] {:port 9193})
                     http/stop-server (fn [_] nil)]
         (let [lifecycle (server/start! {:port 0})]

@@ -6,6 +6,7 @@
             [jolt.http.server :as http]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
+            [oscope.ui.visualization-editor :as visualization-editor]
             [oscope.ui.web :as web]
             [otel.exporter.chdb :as chdb-export]
             [otel.otlp.http-receiver :as receiver]
@@ -43,7 +44,7 @@
 
   Absence of an OTel SDK, tracer, logger, or middleware in this namespace makes
   collector feedback impossible by construction."
-  [{:keys [otlp-handler oscope-handler authority]
+  [{:keys [otlp-handler oscope-handler visualization-editor-handler authority]
     :or {authority (str default-host ":" default-port)}}]
   (fn [{:keys [request-method uri] :as request}]
     (let [expected (expected-authority authority)]
@@ -58,6 +59,10 @@
       (authority-response)
 
       (contains? receiver/receiver-paths uri) (otlp-handler request)
+      (and visualization-editor-handler
+           (visualization-editor/handled-path?
+            visualization-editor/default-path uri))
+      (visualization-editor-handler request)
       (web/handled-path? web/default-path uri)
       (oscope-handler request)
       (and (= :get request-method) (= "/healthz" uri))
@@ -135,8 +140,15 @@
              _ (reset! exporter* exporter)
              source (live/open! {:connection conn :ensure-schema? false})
              _ (reset! source* source)
+             editor-handler (visualization-editor/handler source)
              app-handler (handler {:otlp-handler (otlp/handler exporter)
-                                   :oscope-handler (web/handler source)
+                                   :oscope-handler
+                                   (web/handler
+                                    source
+                                    {:visualization-editor-path
+                                     (visualization-editor/plotje-path
+                                      visualization-editor/default-path)})
+                                   :visualization-editor-handler editor-handler
                                    :authority #(deref authority*)})
              server (http/run-server app-handler :port port :server-name host
                                      :reuse-address? true :pool-size 2)
