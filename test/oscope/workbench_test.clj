@@ -41,6 +41,8 @@
         (is (str/includes? (:body page) "Logs, metrics &amp; charts"))
         (is (str/includes? (:body page) (str "/oscope/telemetry/traces/" trace-id)))
         (is (str/includes? (:body page) "<script defer"))
+        (is (not (str/includes? (:body page) "data-otel-live"))
+            "oscope polling must not activate the viewer's Datastar EventSource")
         (is (str/includes? (:body refresh) "id=\"otel-live\""))
         (is (not (str/includes? (:body live) "eval(")))
         (is (not (str/includes? (:body live) "innerHTML")))

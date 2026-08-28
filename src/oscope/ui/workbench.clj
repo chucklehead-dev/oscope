@@ -72,7 +72,6 @@
    :eyebrow "oscope · embedded OpenTelemetry"
    :base-path base
    :enhancement-path "viewer.js"
-   :live-attributes {"data-otel-live" "true"}
    :trace-filters (telemetry/query-filter-options connection selection now)
    :summary (telemetry/query-summary connection)
    :traces (telemetry/query-traces connection selection now)
