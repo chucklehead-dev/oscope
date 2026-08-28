@@ -20,3 +20,19 @@
         (live/close! source)
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source is closed"
                               ((:loader source) (:selection (:screen source)))))))))
+
+(deftest a-composition-may-delegate-the-single-schema-check
+  (let [migrations (atom [])]
+    (with-redefs [schema/ensure-schema! #(swap! migrations conj %)
+                  query/run (fn [_ plan]
+                              [{:signal (get-in plan [:selection :signal])
+                                :field (get-in plan [:selection :field])
+                                :value "api" :count 1}])]
+      (let [source (live/open! {:connection ::shared :ensure-schema? false})]
+        (is (empty? @migrations))
+        (live/close! source)))))
+
+(deftest schema-ownership-choice-is-closed
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be boolean"
+                        (live/open! {:connection ::shared
+                                     :ensure-schema? nil}))))

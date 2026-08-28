@@ -18,18 +18,22 @@
   With `:connection`, oscope never closes the caller-owned connection. With
   `:db-spec`, oscope owns the new connection and closes it exactly once."
   ([] (open! {}))
-  ([{:keys [connection db-spec now-fn export-capacity]
+  ([{:keys [connection db-spec now-fn export-capacity ensure-schema?]
      :or {db-spec "chdb::memory:" now-fn now-unix-nano
-          export-capacity 1}}]
+          export-capacity 1 ensure-schema? true}}]
    (when-not (and (integer? export-capacity) (pos? export-capacity)
                   (<= export-capacity 16))
      (throw (ex-info "oscope export capacity must be between 1 and 16"
                      {:oscope.live/error true :type ::invalid-export-capacity
                       :export-capacity export-capacity})))
+   (when-not (boolean? ensure-schema?)
+     (throw (ex-info "oscope ensure-schema? must be boolean"
+                     {:oscope.live/error true :type ::invalid-ensure-schema
+                      :ensure-schema? ensure-schema?})))
    (let [owned? (nil? connection)
          conn (or connection (jdbc/connection db-spec))]
      (try
-       (schema/ensure-schema! conn)
+       (when ensure-schema? (schema/ensure-schema! conn))
        (let [closed? (atom false)
              loader (fn [selection]
                       (when @closed?

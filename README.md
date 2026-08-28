@@ -17,6 +17,8 @@ sibling source paths and its source contains no demo namespaces.
 - a semantic accessible table and a validated
   [Plotje](https://github.com/scicloj/plotje)-compatible chart spec;
 - portable spec-to-SVG rendering without JVM plotting machinery;
+- a standalone loopback OTLP/HTTP JSON receiver and viewer using one process,
+  one connection, and one schema owner;
 - a zero-JavaScript, high-contrast, responsive Ring UI at `/oscope`;
 - raw Arrow and Parquet downloads for spans, logs, gauges, sums, and
   histograms through a closed export contract;
@@ -32,7 +34,43 @@ kind choices to one of five physical tables, then generates a parameterized
 `SELECT`. Export requests cannot supply SQL, table or column names, filesystem
 paths, or filenames.
 
-## Run the web version
+## Run the standalone receiver and viewer
+
+Install or point Jolt at `libchdb.so`, then start the persistent local
+collector. This command form works in fish as well as POSIX shells:
+
+```sh
+cd oscope
+env JOLT_CHDB_LIB=/path/to/libchdb.so jolt -M:server
+```
+
+Oscope listens only on `127.0.0.1:4318`, stores data in
+`chdb:./oscope-data`, receives OTLP/HTTP JSON at `/v1/traces`, `/v1/logs`, and
+`/v1/metrics`, and serves the zero-JavaScript viewer at
+<http://127.0.0.1:4318/oscope>. `/` redirects to the viewer, `/healthz` reports
+process health, and `/oscope/export` serves bounded Arrow or Parquet downloads.
+
+Override the port or database without shell-specific `export` syntax:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/libchdb.so \
+    OSCOPE_PORT=14318 \
+    OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/oscope-data \
+    jolt -M:server
+```
+
+`OSCOPE_HOST` is accepted only as `127.0.0.1`; jolt-http's current transport
+bind is intentionally loopback-only. The receiver accepts uncompressed
+`application/json`, caps the consumed request body at 1 MiB, and admits one
+OTLP export at a time because every signal shares the embedded connection.
+
+This process does not initialize an OTel SDK and does not wrap its HTTP routes
+with tracing or logging middleware. Viewer, health, export, and receiver
+traffic therefore cannot feed telemetry back into the collector. Shutdown is
+retry-safe and ordered: stop ingress, retire the oscope source, close the span,
+log, and metric exporter faces, then close the shared connection.
+
+## Run or embed only the web version
 
 Render a deterministic, self-contained HTML snapshot:
 
@@ -109,9 +147,8 @@ does not retain a libclickhouse buffer.
 
 The default adapter rejects browser requests marked `Sec-Fetch-Site:
 cross-site`. A host may supply `:authorize-export?` for stronger policy. The
-planned standalone composition will bind to loopback by default; remote
-exposure requires an authenticating reverse proxy or an equivalent host
-authorization hook.
+standalone composition is loopback-only; any future remote exposure must add
+an authenticating reverse proxy or an equivalent host authorization hook.
 
 The deterministic sample page renders the same controls disabled and its
 export route returns 404. It never manufactures a data file when no live
@@ -157,8 +194,10 @@ An in-process OTLP collector should share its existing connection:
 
 `oscope/close!` retires queries but never closes a caller-owned connection. If
 `:db-spec` is supplied instead, oscope opens and closes the connection itself.
-Both paths run the existing exporter schema check; oscope does not fork or own
-a competing schema.
+Both paths run the existing exporter schema check by default; oscope does not
+fork or own a competing schema. The standalone composition lets the exporter
+perform the sole schema migration and opens the shared oscope source with its
+redundant check disabled.
 
 An embedded chDB path should normally have one process-level owner. Coordinate
 ingest and query access through that owner rather than opening the same physical
@@ -196,13 +235,17 @@ completions before the whole-screen mutation.
 
 The ordinary suite is native-library-free. It exercises query/model/command
 invariants, Plotje SVG, the Ring adapter, headless Glitter reconciliation,
-Glimmer/Glitter instance isolation, and shared-connection ownership:
+Glimmer/Glitter instance isolation, OTLP body policy, route composition,
+shared-connection ownership, and retry-safe shutdown:
 
 ```sh
 jolt -M:test
 ```
 
-Run the real embedded database gate separately:
+Run the real embedded database gate separately. It starts a real loopback
+server, ingests spans, logs, and metrics through OTLP/HTTP JSON, queries the
+canonical live source, renders the viewer, downloads Parquet, proves viewer
+traffic does not change telemetry counts, and closes the lifecycle twice:
 
 ```sh
 env JOLT_CHDB_LIB=/path/to/libchdb.so \
@@ -220,11 +263,12 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `chucklehead-dev/jolt-otel-clickhouse` `c1d4aad8188811258dda7d777808649255b13cbc`
-- `chucklehead-dev/jolt-chdb` `df94be533b56c70a9a11951f45be84216d9d0b50`
+- `chucklehead-dev/jolt-chdb` `fffaf33208d9404ff4f8e48ecf6d8f9ca03a62c3`
 - `casselc/jolt-http` `0629087f4d7e42343164e43906fae6d707787ed0`
 - `burinc/glitter` `482642fd3c9671b05f0ffaa2ef47420b1a92553b`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
 - `jolt-lang/glimmer-gtk` `ce79d45698d36ccf496397bb85974e3cce6abfd8`
+- `casselc/data.json` `8a6dc9668e5c3596a335759defeb7ec80cd3b5f8`
 
 The pinned ClickHouse exporter owns the required Jolt DB bootstrap at its
 public explorer entrypoint. A clean oscope consumer therefore needs no hidden
@@ -238,8 +282,6 @@ request is required to build or test this repository.
 
 - replace the integration demo's previous oscope revision with this exact
   published export revision;
-- add a small standalone OTLP receiver/server composition around the Ring
-  adapter, without introducing a second schema;
 - add explicit export pagination or partition manifests for workflows that
   need more than one bounded physical-row download; and
 - add stale-request rejection before asynchronous refresh/streaming updates.
