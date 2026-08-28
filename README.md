@@ -16,6 +16,8 @@ sibling source paths and its source contains no demo namespaces.
 - a ClickStack-style trace workbench with bounded service, operation, status,
   duration, and time filters, complete parent/child span trees, span events,
   and trace-correlated logs;
+- a raw event explorer for bounded log-body/severity and metric-name/kind
+  searches, with trace links from correlated log records;
 - 15 minute, 1 hour, 6 hour, and 24 hour bounded windows;
 - a semantic accessible table and a validated
   [Plotje](https://github.com/scicloj/plotje)-compatible chart spec;
@@ -59,7 +61,8 @@ Oscope listens only on `127.0.0.1:4318`, stores data in
 `/v1/metrics`, and serves the trace workbench at
 <http://127.0.0.1:4318/oscope/telemetry>. `/` redirects to that workbench;
 the aggregate logs/metrics/chart explorer remains at
-<http://127.0.0.1:4318/oscope>, `/healthz` reports process health, and
+<http://127.0.0.1:4318/oscope>, and raw log/metric rows are available at
+<http://127.0.0.1:4318/oscope/events>. `/healthz` reports process health, and
 `/oscope/export` serves bounded Arrow or Parquet downloads.
 The viewer's **Edit this chart** link opens `/oscope/edit/plotje` with the
 current bounded query selection; `/oscope/edit/hiccup` provides the companion
@@ -118,6 +121,12 @@ instrumentation, so running it cannot create a collector feedback loop. New
 traces and correlated logs appear in the workbench on its bounded two-second
 poll; hidden tabs stop polling. Trace links and detail pages still work when
 JavaScript is disabled.
+
+The raw event explorer uses the same static-first pattern. Log queries can
+select service, case-insensitive body text, severity, time window, and a limit
+up to 100. Metric queries select service, case-insensitive metric name, gauge,
+sum, or histogram kind, window, and limit. These fields are parameters or
+closed choices; they cannot supply SQL, table names, or expressions.
 
 ## Run or embed only the web version
 
@@ -306,7 +315,7 @@ screen chart -> versioned visualization document -> safe preview renderer
 
 - `oscope.query` validates selection and builds exact SQL-free plans.
 - `oscope.telemetry` owns the bounded parameterized trace list, detail,
-  correlated-log, filter-option, and span-tree contracts.
+  correlated-log, filter-option, span-tree, raw-log, and metric-point contracts.
 - `oscope.raw-export` validates absolute windows, source and format choices,
   caps, generated parameterized SQL, the complete owned-byte result envelope,
   MIME type, and suggested filename.
@@ -328,6 +337,9 @@ screen chart -> versioned visualization document -> safe preview renderer
   surfaces over the same connection: detailed traces/logs and aggregate
   logs/metrics/charts respectively. A host may supply `:advise-trace` to the
   workbench so library-specific Kindly metadata is applied only at render time.
+- `oscope.ui.events` is the third sibling surface: bounded raw log and metric
+  rows with progressive two-second refresh and direct correlation links back
+  to trace detail.
 
 The first implementation is synchronous. Before moving database queries onto
 GUI workers, retain monotonically increasing request IDs and reject stale

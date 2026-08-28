@@ -6,6 +6,7 @@
             [jolt.http.server :as http]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
+            [oscope.ui.events :as events]
             [oscope.ui.workbench :as workbench]
             [oscope.ui.visualization-editor :as visualization-editor]
             [oscope.ui.web :as web]
@@ -45,7 +46,7 @@
 
   Absence of an OTel SDK, tracer, logger, or middleware in this namespace makes
   collector feedback impossible by construction."
-  [{:keys [otlp-handler oscope-handler workbench-handler
+  [{:keys [otlp-handler oscope-handler workbench-handler events-handler
            visualization-editor-handler authority]
     :or {authority (str default-host ":" default-port)}}]
   (fn [{:keys [request-method uri] :as request}]
@@ -64,6 +65,9 @@
       (and workbench-handler
            (workbench/handled-path? workbench/default-path uri))
       (workbench-handler request)
+      (and events-handler
+           (events/handled-path? events/default-path uri))
+      (events-handler request)
       (and visualization-editor-handler
            (visualization-editor/handled-path?
             visualization-editor/default-path uri))
@@ -151,6 +155,7 @@
              app-handler (handler {:otlp-handler (otlp/handler exporter)
                                    :workbench-handler
                                    (workbench/handler conn)
+                                   :events-handler (events/handler conn)
                                    :oscope-handler
                                    (web/handler
                                     source

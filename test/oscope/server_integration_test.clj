@@ -184,6 +184,14 @@
             (request! port "GET"
                       "/oscope/telemetry/traces/11111111111111111111111111111111"
                       nil nil)
+            log-events
+            (request! port "GET"
+                      "/oscope/events?signal=logs&service=oscope-loopback&severity=INFO&search=receiver&window=15m&limit=10"
+                      nil nil)
+            metric-events
+            (request! port "GET"
+                      "/oscope/events?signal=metrics&metric-kind=gauge&search=loopback.requests&window=15m&limit=10"
+                      nil nil)
             editor-page
             (request! port "GET"
                       "/oscope/edit/plotje?signal=spans&field=service-name&window=15m&limit=10"
@@ -211,10 +219,20 @@
         (is (= 200 (:status workbench)))
         (is (.contains (String. (:body workbench) "UTF-8") "loopback.work"))
         (is (.contains (String. (:body workbench) "UTF-8")
-                       "Logs, metrics &amp; charts"))
+                       "Logs &amp; metrics"))
+        (is (.contains (String. (:body workbench) "UTF-8")
+                       "Charts &amp; distributions"))
         (is (= 200 (:status trace-detail)))
         (is (.contains (String. (:body trace-detail) "UTF-8")
                        "standalone receiver log"))
+        (is (= 200 (:status log-events)))
+        (is (.contains (String. (:body log-events) "UTF-8")
+                       "standalone receiver log"))
+        (is (.contains (String. (:body log-events) "UTF-8")
+                       "/oscope/telemetry/traces/11111111111111111111111111111111"))
+        (is (= 200 (:status metric-events)))
+        (is (.contains (String. (:body metric-events) "UTF-8")
+                       "oscope.loopback.requests"))
         (is (= 200 (:status editor-page)))
         (is (.contains (String. (:body editor-page) "UTF-8")
                        "oscope-loopback"))

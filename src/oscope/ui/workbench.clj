@@ -64,8 +64,8 @@
        (when live? (str "<script defer src=\"" (mounted base "/live.js") "\"></script>"))
        "<script defer src=\"" (mounted base "/viewer.js") "\"></script></head><body>"
        "<nav class=\"oscope-nav\" aria-label=\"oscope views\"><a href=\"" base
-       "\">Traces &amp; correlated logs</a><a href=\"" aggregate/default-path
-       "\">Logs, metrics &amp; charts</a></nav>" fragment "</body></html>"))
+       "\">Traces &amp; correlated logs</a><a href=\"/oscope/events\">Logs &amp; metrics</a><a href=\""
+       aggregate/default-path "\">Charts &amp; distributions</a></nav>" fragment "</body></html>"))
 
 (defn- index-model [connection base selection now]
   {:title "Telemetry workbench"

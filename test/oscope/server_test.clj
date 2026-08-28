@@ -6,6 +6,8 @@
             [oscope.otlp :as otlp]
             [oscope.server :as server]
             [oscope.server-main :as server-main]
+            [oscope.ui.events :as events]
+            [oscope.ui.workbench :as workbench]
             [oscope.ui.web :as web]
             [otel.exporter.chdb :as chdb-export]
             [otel.sdk.export :as export]
@@ -38,6 +40,34 @@
             [:oscope "/oscope/export"] [:oscope "/oscope/refresh"]
             [:oscope "/oscope/live.js"] [:editor "/oscope/edit/plotje"]
             [:editor "/oscope/edit/hiccup/preview"]]
+           @seen))))
+
+(deftest standalone-composition-routes-detailed-telemetry-surfaces
+  (let [seen (atom [])
+        h (server/handler
+           {:otlp-handler (constantly {:status 200})
+            :oscope-handler (constantly {:status 201})
+            :workbench-handler
+            (fn [request] (swap! seen conj [:workbench (:uri request)])
+              {:status 202})
+            :events-handler
+            (fn [request] (swap! seen conj [:events (:uri request)])
+              {:status 203})})
+        request (fn [uri] {:request-method :get :uri uri
+                           :headers {"host" "127.0.0.1:4318"}})]
+    (is (= 202 (:status (h (request workbench/default-path)))))
+    (is (= 202 (:status
+                (h (request (str workbench/default-path
+                                 "/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))))))
+    (is (= 203 (:status (h (request events/default-path)))))
+    (is (= 203 (:status (h (request (str events/default-path "/refresh"))))))
+    (is (= workbench/default-path
+           (get-in (h (request "/")) [:headers "Location"])))
+    (is (= [[:workbench workbench/default-path]
+            [:workbench (str workbench/default-path
+                             "/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+            [:events events/default-path]
+            [:events (str events/default-path "/refresh")]]
            @seen))))
 
 (deftest standalone-rejects-untrusted-authorities-before-dispatch

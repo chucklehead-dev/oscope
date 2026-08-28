@@ -228,3 +228,120 @@
          connection
          "SELECT Timestamp, SeverityText, ServiceName, Body, TraceId, SpanId,
                  LogAttributes FROM otel_logs ORDER BY Timestamp DESC LIMIT 100")))
+
+(def event-windows
+  {"15m" (* 15 60 1000000000)
+   "1h" (* 60 60 1000000000)
+   "6h" (* 6 60 60 1000000000)
+   "24h" explorer/max-time-range-nanos})
+(def event-default-selection
+  {:signal :logs :service "" :search "" :severity "" :metric-kind ""
+   :window "1h" :limit 50})
+(def ^:private severities
+  #{"TRACE" "DEBUG" "INFO" "WARN" "ERROR" "FATAL"})
+(def ^:private metric-kinds #{"gauge" "sum" "histogram"})
+(def ^:private event-selection-keys
+  #{:signal :service :search :severity :metric-kind :window :limit})
+
+(defn normalize-event-selection [selection]
+  (let [selection (if (map? selection) selection {})
+        unknown (seq (remove event-selection-keys (keys selection)))
+        {:keys [signal service search severity metric-kind window limit]}
+        (merge event-default-selection selection)]
+    (when unknown
+      (throw (ex-info "oscope event selection contains unsupported keys"
+                      {:oscope.telemetry/error true :keys (vec (sort-by str unknown))})))
+    (when-not (contains? #{:logs :metrics} signal)
+      (throw (ex-info "oscope event signal must be :logs or :metrics"
+                      {:oscope.telemetry/error true :signal signal})))
+    (when-not (and (integer? limit) (<= 1 limit 100))
+      (throw (ex-info "oscope event limit must be between 1 and 100"
+                      {:oscope.telemetry/error true :limit limit})))
+    {:signal signal
+     :service (bounded service 100)
+     :search (bounded search 200)
+     :severity (if (and (= signal :logs) (contains? severities severity))
+                 severity "")
+     :metric-kind (if (and (= signal :metrics)
+                           (contains? metric-kinds metric-kind))
+                    metric-kind "")
+     :window (if (contains? event-windows window) window "1h")
+     :limit limit}))
+
+(def ^:private metric-event-source
+  "(SELECT TimeUnix, 'gauge' AS MetricKind, ServiceName, MetricName,
+           MetricUnit, Value, toUInt64(0) AS Count, Value AS Sum
+      FROM otel_metrics_gauge
+    UNION ALL
+    SELECT TimeUnix, 'sum' AS MetricKind, ServiceName, MetricName,
+           MetricUnit, Value, toUInt64(0) AS Count, Value AS Sum
+      FROM otel_metrics_sum
+    UNION ALL
+    SELECT TimeUnix, 'histogram' AS MetricKind, ServiceName, MetricName,
+           MetricUnit, Sum AS Value, Count, Sum
+      FROM otel_metrics_histogram) AS metric_events")
+
+(defn event-query [selection now-unix-nano]
+  (when-not (and (integer? now-unix-nano) (pos? now-unix-nano))
+    (throw (ex-info "oscope event query time must be epoch nanoseconds"
+                    {:oscope.telemetry/error true :now-unix-nano now-unix-nano})))
+  (let [{:keys [signal service search severity metric-kind window limit]}
+        (normalize-event-selection selection)
+        start (max 0 (- now-unix-nano (get event-windows window)))
+        base-where (if (= signal :logs)
+                     ["Timestamp >= fromUnixTimestamp64Nano(?)"]
+                     ["toInt64(toUnixTimestamp(TimeUnix)) * 1000000000 >= ?"])
+        where (cond-> base-where
+                (not (str/blank? service)) (conj "ServiceName = ?")
+                (and (= signal :logs) (not (str/blank? search)))
+                (conj "positionCaseInsensitiveUTF8(Body, ?) > 0")
+                (and (= signal :metrics) (not (str/blank? search)))
+                (conj "positionCaseInsensitiveUTF8(MetricName, ?) > 0")
+                (and (= signal :logs) (not (str/blank? severity)))
+                (conj "upper(SeverityText) = ?")
+                (and (= signal :metrics) (not (str/blank? metric-kind)))
+                (conj "MetricKind = ?"))
+        params (cond-> [start]
+                 (not (str/blank? service)) (conj service)
+                 (not (str/blank? search)) (conj search)
+                 (and (= signal :logs) (not (str/blank? severity)))
+                 (conj severity)
+                 (and (= signal :metrics) (not (str/blank? metric-kind)))
+                 (conj metric-kind)
+                 true (conj limit))
+        sql (if (= signal :logs)
+              (str "SELECT Timestamp, SeverityText, ServiceName, "
+                   "substringUTF8(Body, 1, 4096) AS Body, TraceId, SpanId "
+                   "FROM otel_logs WHERE " (str/join " AND " where)
+                   " ORDER BY Timestamp DESC LIMIT ?")
+              (str "SELECT TimeUnix AS Timestamp, MetricKind, ServiceName, "
+                   "MetricName, MetricUnit, Value, Count, Sum FROM "
+                   metric-event-source " WHERE " (str/join " AND " where)
+                   " ORDER BY TimeUnix DESC LIMIT ?"))]
+    (into [sql] params)))
+
+(defn query-events
+  ([connection selection]
+   (query-events connection selection (* (System/currentTimeMillis) 1000000)))
+  ([connection selection now-unix-nano]
+   (let [{:keys [signal] :as selection} (normalize-event-selection selection)
+         rows (jdbc/fetch connection (event-query selection now-unix-nano))]
+     (if (= signal :logs)
+       (mapv (fn [row]
+               {:timestamp (value-of row :Timestamp)
+                :severity (value-of row :SeverityText)
+                :service (value-of row :ServiceName)
+                :body (value-of row :Body)
+                :traceId (value-of row :TraceId)
+                :spanId (value-of row :SpanId)})
+             rows)
+       (mapv (fn [row]
+               {:timestamp (value-of row :Timestamp)
+                :kind (value-of row :MetricKind)
+                :service (value-of row :ServiceName)
+                :name (value-of row :MetricName)
+                :unit (value-of row :MetricUnit)
+                :value (value-of row :Value)
+                :count (value-of row :Count)
+                :sum (value-of row :Sum)})
+             rows)))))
