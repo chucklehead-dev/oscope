@@ -232,5 +232,7 @@
           (is (= 2 (get @attempts failed-boundary))
               (str "failed boundary retried exactly once: " failed-boundary))
           (doseq [boundary [:oscope :spans :logs :metrics :connection]]
-            (is (pos? (get @attempts boundary 0))
-                (str "shutdown reaches " boundary " after " failed-boundary))))))))
+            (is (= (if (= boundary failed-boundary) 2 1)
+                   (get @attempts boundary 0))
+                (str "completed boundaries are not repeated while retrying "
+                     failed-boundary ": " boundary))))))))
