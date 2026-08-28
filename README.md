@@ -20,6 +20,8 @@ sibling source paths and its source contains no demo namespaces.
 - a standalone loopback OTLP/HTTP JSON receiver and viewer using one process,
   one connection, and one schema owner;
 - a zero-JavaScript, high-contrast, responsive Ring UI at `/oscope`;
+- an opt-in live web mode with bounded refresh, stale-response rejection, and
+  an exact Freeze-for-export snapshot while preserving the static default;
 - raw Arrow and Parquet downloads for spans, logs, gauges, sums, and
   histograms through a closed export contract;
 - Glitter and Glimmer adapters consuming exactly the same screen model;
@@ -319,6 +321,7 @@ request is required to build or test this repository.
 
 - add explicit export pagination or partition manifests for workflows that
   need more than one bounded physical-row download; and
-- add stale-request rejection before asynchronous refresh/streaming updates.
+- add a preserve-to-table command after the frozen-screen contract has a
+  caller-owned destination/schema policy.
 
 Copyright contributors. Distributed under the Eclipse Public License 2.0.

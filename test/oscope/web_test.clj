@@ -38,6 +38,72 @@
     (is (nil? (handler {:request-method :get :uri "/elsewhere"})))
     (is (= 405 (:status (handler {:request-method :post :uri "/oscope"}))))))
 
+(deftest live-refresh-is-opt-in-bounded-and-freezes-the-displayed-plan
+  (let [calls (atom [])
+        source {:load-command
+                (fn [request-id selection]
+                  (swap! calls conj [request-id selection])
+                  (sample/screen-for-selection selection))
+                :export-command (fn [& _] (throw (Exception. "not called")))}
+        handler (web/handler source)
+        plain (handler {:request-method :get :uri "/oscope"})
+        live (handler {:request-method :get :uri "/oscope"
+                       :query-string
+                       "signal=logs&field=severity-text&window=15m&limit=3&live=1"})
+        refresh (handler {:request-method :get :uri "/oscope/refresh"
+                          :query-string
+                          "signal=logs&field=severity-text&window=15m&limit=3"})
+        asset (handler {:request-method :get :uri "/oscope/live.js"})
+        screen (sample/screen-for-selection
+                {:signal :logs :field :severity-text :window :15m :limit 3})
+        start (get-in screen [:query-plan :request :start-unix-nano])
+        end (get-in screen [:query-plan :request :end-unix-nano])]
+    (is (not (re-find #"<script" (:body plain)))
+        "the default page remains fully static and no-JavaScript")
+    (is (re-find #"name=\"live\" type=\"checkbox\" value=\"1\""
+                 (:body plain)))
+    (is (re-find #"<script defer src=\"/oscope/live.js\"></script>"
+                 (:body live)))
+    (is (re-find #"data-oscope-refresh-path=\"/oscope/refresh\""
+                 (:body live)))
+    (is (re-find #"data-oscope-freeze" (:body live)))
+    (is (re-find (re-pattern (str "data-oscope-query-start=\"" start "\""))
+                 (:body live)))
+    (is (re-find (re-pattern (str "data-oscope-query-end=\"" end "\""))
+                 (:body live)))
+    (is (re-find (re-pattern (str "data-oscope-export-start type=\"number\" min=\"0\" value=\""
+                                  start "\""))
+                 (:body live)))
+    (is (re-find (re-pattern (str "data-oscope-export-end type=\"number\" min=\"1\" value=\""
+                                  end "\""))
+                 (:body live)))
+    (is (= 200 (:status refresh)))
+    (is (not (re-find #"<!doctype" (:body refresh))))
+    (is (re-find #"^<section id=\"oscope-screen\" data-oscope-view-version=\"1\""
+                 (:body refresh)))
+    (is (re-find #"Severity Text in Logs" (:body refresh)))
+    (is (= "text/javascript; charset=UTF-8"
+           (get-in asset [:headers "Content-Type"])))
+    (is (re-find #"if\(inFlight\|\|!live\|\|document.hidden\)return"
+                 (:body asset))
+        "one refresh may be in flight and hidden tabs do no work")
+    (is (re-find #"AbortController" (:body asset)))
+    (is (re-find #"mine!==generation" (:body asset))
+        "a frozen or cancelled request cannot install a late screen")
+    (is (re-find #"Math.min\(backoffMs\*2,maxBackoffMs\)" (:body asset)))
+    (is (re-find #"form.querySelector\('\[data-oscope-export-start\]'\).value=screen.dataset.oscopeQueryStart"
+                 (:body asset)))
+    (is (re-find #"form.querySelector\('\[data-oscope-export-end\]'\).value=screen.dataset.oscopeQueryEnd"
+                 (:body asset)))
+    (is (not (re-find #"eval\(|innerHTML" (:body asset))))
+    (is (= 405 (:status (handler {:request-method :post
+                                  :uri "/oscope/refresh"}))))
+    (is (= 405 (:status (handler {:request-method :post
+                                  :uri "/oscope/live.js"}))))
+    (is (= [:web :web :web-refresh]
+           (mapv (comp first first) @calls))
+        "the asset is static and only page/refresh execute bounded queries")))
+
 (deftest ring-handler-can-be-mounted-below-a-host-prefix
   (let [source {:load-command (fn [_ selection]
                                 (sample/screen-for-selection selection))}
@@ -47,6 +113,14 @@
     (is (re-find #"<form method=\"get\" action=\"/admin/telemetry\""
                  (:body response)))
     (is (re-find #"action=\"/admin/telemetry/export\"" (:body response)))
+    (is (= "/admin/telemetry/refresh"
+           (web/refresh-path "/admin/telemetry")))
+    (is (= "/admin/telemetry/live.js"
+           (web/live-asset-path "/admin/telemetry")))
+    (is (web/handled-path? "/admin/telemetry"
+                           "/admin/telemetry/refresh"))
+    (is (web/handled-path? "/admin/telemetry"
+                           "/admin/telemetry/live.js"))
     (is (re-find #"Raw export is unavailable in sample mode" (:body response)))
     (is (nil? (handler {:request-method :get :uri "/oscope"})))
     (is (thrown? clojure.lang.ExceptionInfo

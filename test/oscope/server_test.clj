@@ -23,13 +23,16 @@
     (is (= 200 (:status (h (request :post "/v1/logs")))))
     (is (= 201 (:status (h (request :get "/oscope")))))
     (is (= 201 (:status (h (request :get "/oscope/export")))))
+    (is (= 201 (:status (h (request :get "/oscope/refresh")))))
+    (is (= 201 (:status (h (request :get "/oscope/live.js")))))
     (is (= 200 (:status (h (request :get "/healthz")))))
     (is (= 303 (:status (h (request :get "/")))))
     (is (= "/oscope" (get-in (h (request :get "/"))
                                 [:headers "Location"])))
     (is (= 404 (:status (h (request :get "/missing")))))
     (is (= [[:otlp "/v1/logs"] [:oscope "/oscope"]
-            [:oscope "/oscope/export"]]
+            [:oscope "/oscope/export"] [:oscope "/oscope/refresh"]
+            [:oscope "/oscope/live.js"]]
            @seen))))
 
 (deftest standalone-rejects-untrusted-authorities-before-dispatch
@@ -47,6 +50,8 @@
                           [:post "/v1/metrics"]
                           [:get "/oscope"]
                           [:get "/oscope/export"]
+                          [:get "/oscope/refresh"]
+                          [:get "/oscope/live.js"]
                           [:get "/healthz"]
                           [:get "/"]]]
       (let [response (h {:request-method method :uri uri

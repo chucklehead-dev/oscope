@@ -15,7 +15,8 @@
   {"Content-Type" "text/html; charset=UTF-8"
    "Cache-Control" "no-store"
    "Content-Security-Policy"
-   "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'"
+   (str "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; "
+        "connect-src 'self'; form-action 'self'; base-uri 'none'")
    "Referrer-Policy" "no-referrer"
    "X-Content-Type-Options" "nosniff"})
 (defn- esc [value]
@@ -67,7 +68,18 @@
 (defn export-path [path]
   (let [path (route-path path)]
     (if (= path "/") "/export" (str path "/export"))))
-(defn- render-controls [{:keys [signals windows limit]} {:keys [field]} action]
+(defn refresh-path [path]
+  (let [path (route-path path)]
+    (if (= path "/") "/refresh" (str path "/refresh"))))
+(defn live-asset-path [path]
+  (let [path (route-path path)]
+    (if (= path "/") "/live.js" (str path "/live.js"))))
+(defn handled-path? [path candidate]
+  (contains? #{(route-path path) (export-path path) (refresh-path path)
+               (live-asset-path path)}
+             candidate))
+(defn- render-controls
+  [{:keys [signals windows limit]} {:keys [field]} action live?]
   (let [selected-signal (some #(when (:selected? %) %) signals)]
     (str "<form method=\"get\" action=\"" (esc action)
          "\" aria-label=\"Telemetry query\">"
@@ -80,7 +92,9 @@
          (apply str (map #(option (:value %) (:label %) (:selected? %)) windows))
          "</select></label><label>Maximum rows<input name=\"limit\" type=\"number\" min=\""
          (:minimum limit) "\" max=\"" (:maximum limit) "\" value=\""
-         (:value limit) "\"></label><button type=\"submit\">Run query</button></div></form>")))
+         (:value limit) "\"></label><label class=\"live-choice\"><input name=\"live\" type=\"checkbox\" value=\"1\""
+         (when live? " checked")
+         "> Live refresh</label><button type=\"submit\">Run query</button></div></form>")))
 (defn- render-export-controls [screen action enabled?]
   (let [{:keys [signal]} (:selection screen)
         {:keys [start-unix-nano end-unix-nano]}
@@ -91,7 +105,7 @@
          (when-not enabled?
            "<p role=\"status\">Raw export is unavailable in sample mode.</p>")
          "<form method=\"get\" action=\"" (esc action)
-         "\" aria-label=\"Raw telemetry export\"><fieldset"
+         "\" aria-label=\"Raw telemetry export\" data-oscope-export-form><fieldset"
          (when-not enabled? " disabled") "><legend>Bounded data export</legend>"
          "<div class=\"export-controls\"><label>Signal<select name=\"signal\">"
          (option :spans "Spans" (= signal :spans))
@@ -103,9 +117,9 @@
          "<label>Format<select name=\"format\">"
          (option :parquet "Parquet" true) (option :arrow "Arrow" false)
          "</select></label>"
-         "<label>Start (Unix ns)<input required name=\"start-unix-nano\" type=\"number\" min=\"0\" value=\""
+         "<label>Start (Unix ns)<input required name=\"start-unix-nano\" data-oscope-export-start type=\"number\" min=\"0\" value=\""
          start-unix-nano "\"></label>"
-         "<label>End, exclusive (Unix ns)<input required name=\"end-unix-nano\" type=\"number\" min=\"1\" value=\""
+         "<label>End, exclusive (Unix ns)<input required name=\"end-unix-nano\" data-oscope-export-end type=\"number\" min=\"1\" value=\""
          end-unix-nano "\"></label>"
          "<label>Maximum rows<input required name=\"max-rows\" type=\"number\" min=\"1\" max=\""
          raw-export/max-result-rows "\" value=\"" raw-export/default-max-rows "\"></label>"
@@ -129,6 +143,8 @@
        "label{font-weight:700}select,input{display:block;width:100%;margin-top:.25rem;background:#090e15;color:var(--text);border:1px solid #7589a3;border-radius:.4rem;padding:.55rem}"
        "button{background:#d8f1ff;color:#071018;border:0;border-radius:.4rem;padding:.65rem 1rem;font-weight:800}"
        "button:disabled,fieldset:disabled{opacity:.65}fieldset{border:0;padding:0;margin:0}legend{font-weight:800;margin-bottom:.5rem}"
+       ".live-choice{display:flex;gap:.45rem;align-items:center;min-height:2.7rem}.live-choice input{width:auto;margin:0}"
+       ".screen-head{display:flex;align-items:start;justify-content:space-between;gap:1rem}.live-state{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap}.provenance{font-variant-numeric:tabular-nums}"
        ".export-controls{display:grid;grid-template-columns:repeat(3,minmax(9rem,1fr));gap:.7rem;align-items:end}"
        ".grid{display:grid;grid-template-columns:minmax(20rem,1.4fr) minmax(18rem,.6fr);gap:1rem}"
        "svg{display:block;width:100%;height:auto;background:white;border-radius:.35rem}.table-wrap{overflow:auto}"
@@ -136,23 +152,93 @@
        "th,td{text-align:left;border-bottom:1px solid var(--line);padding:.55rem;overflow-wrap:anywhere}td{text-align:right}"
        "@media(max-width:850px){.controls,.export-controls,.grid{grid-template-columns:1fr}}"))
 
+(defn render-screen-fragment
+  "Render one complete, atomically replaceable versioned query screen."
+  ([screen] (render-screen-fragment screen {}))
+  ([screen {:keys [live?]}]
+   (let [{:keys [title chart table empty-message]} screen
+         version (:oscope.view/version screen)
+         {:keys [start-unix-nano end-unix-nano]}
+         (get-in screen [:query-plan :request])]
+     (str "<section id=\"oscope-screen\" data-oscope-view-version=\"" version
+          "\" data-oscope-query-start=\"" start-unix-nano
+          "\" data-oscope-query-end=\"" end-unix-nano "\">"
+          "<div class=\"screen-head\"><div><h2>" (esc title) "</h2>"
+          "<p class=\"provenance\">Exact half-open query window: <code>"
+          start-unix-nano "</code> to <code>" end-unix-nano
+          "</code>.</p></div>"
+          (when live?
+            (str "<div class=\"live-state\"><button type=\"button\" data-oscope-freeze>Freeze for export</button>"
+                 "<span role=\"status\" aria-live=\"polite\" data-oscope-live-status>Live refresh is on.</span></div>"))
+          "</div>"
+          (if chart
+            (str "<div class=\"grid\"><section class=\"panel\">"
+                 (plotje/spec->svg chart) "</section><section class=\"panel\">"
+                 (render-table table) "</section></div>")
+            (str "<section class=\"panel\" role=\"status\"><p>" (esc empty-message)
+                 "</p>" (render-table table) "</section>"))
+          "</section>"))))
+
+(def ^:private live-script
+  (str
+   "(() => {'use strict';"
+   "const root=document.querySelector('[data-oscope-live-root]');if(!root)return;"
+   "const baseIntervalMs=2000,maxBackoffMs=30000;"
+   "let live=true,inFlight=false,timer=null,controller=null,generation=0,backoffMs=baseIntervalMs;"
+   "const status=()=>document.querySelector('[data-oscope-live-status]');"
+   "const announce=(message)=>{const node=status();if(node)node.textContent=message;};"
+   "const clearTimer=()=>{if(timer!==null){clearTimeout(timer);timer=null;}};"
+   "const cancelPending=()=>{generation+=1;clearTimer();if(controller)controller.abort();controller=null;inFlight=false;};"
+   "const schedule=(delay)=>{clearTimer();if(live&&!document.hidden)timer=setTimeout(refresh,delay);};"
+   "const refreshUrl=()=>{const url=new URL(root.dataset.oscopeRefreshPath,location.origin);url.search=location.search;url.searchParams.delete('live');return url;};"
+   "async function refresh(){"
+   "if(inFlight||!live||document.hidden)return;inFlight=true;const mine=++generation;"
+   "const requestController=new AbortController();controller=requestController;"
+   "try{const response=await fetch(refreshUrl(),{headers:{Accept:'text/html'},cache:'no-store',signal:requestController.signal});"
+   "if(!response.ok)throw new Error('refresh failed');const text=await response.text();"
+   "const parsed=new DOMParser().parseFromString(text,'text/html');"
+   "const next=parsed.querySelector('#oscope-screen[data-oscope-view-version=\"1\"]');"
+   "const current=document.querySelector('#oscope-screen[data-oscope-view-version=\"1\"]');"
+   "if(!next||!current)throw new Error('invalid refresh fragment');"
+   "if(!live||mine!==generation)return;current.replaceWith(document.importNode(next,true));"
+   "backoffMs=baseIntervalMs;announce('Live refresh is on.');"
+   "}catch(error){if(error.name!=='AbortError'&&live){backoffMs=Math.min(backoffMs*2,maxBackoffMs);announce('Refresh delayed; retrying.');}}"
+   "finally{if(controller===requestController){controller=null;inFlight=false;}if(live)schedule(backoffMs);}}"
+   "const freeze=()=>{const screen=document.querySelector('#oscope-screen[data-oscope-view-version=\"1\"]');"
+   "const form=document.querySelector('[data-oscope-export-form]');if(!screen||!form)return;"
+   "live=false;cancelPending();form.querySelector('[data-oscope-export-start]').value=screen.dataset.oscopeQueryStart;"
+   "form.querySelector('[data-oscope-export-end]').value=screen.dataset.oscopeQueryEnd;"
+   "const choice=document.querySelector('input[name=\"live\"]');if(choice)choice.checked=false;"
+   "const button=screen.querySelector('[data-oscope-freeze]');if(button){button.disabled=true;button.textContent='Frozen';}"
+   "announce('Frozen exact window for export.');const url=new URL(location.href);url.searchParams.delete('live');history.replaceState(null,'',url);};"
+   "document.addEventListener('click',(event)=>{if(event.target.closest('[data-oscope-freeze]')){event.preventDefault();freeze();}});"
+   "document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPending();else if(live)schedule(0);});"
+   "schedule(baseIntervalMs);})();"))
+
+(defn- live-asset-response []
+  {:status 200
+   :headers {"Content-Type" "text/javascript; charset=UTF-8"
+             "Cache-Control" "no-store"
+             "Referrer-Policy" "no-referrer"
+             "X-Content-Type-Options" "nosniff"}
+   :body live-script})
+
 (defn render-page
   ([screen] (render-page screen {}))
-  ([screen {:keys [path export-enabled?]
-            :or {path default-path export-enabled? false}}]
+  ([screen {:keys [path export-enabled? live?]
+            :or {path default-path export-enabled? false live? false}}]
    (let [path (route-path path)
-         {:keys [title selection controls chart table empty-message]} screen]
+         {:keys [selection controls]} screen]
     (str "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
          "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-         "<title>oscope · " (esc title) "</title><style>" style "</style></head><body>"
-         "<header><h1>oscope</h1><p>Explore bounded distributions from embedded telemetry.</p></header><main>"
-         (render-controls controls selection path) "<h2>" (esc title) "</h2>"
-         (if chart
-           (str "<div class=\"grid\"><section class=\"panel\">"
-                (plotje/spec->svg chart) "</section><section class=\"panel\">"
-                (render-table table) "</section></div>")
-           (str "<section class=\"panel\" role=\"status\"><p>" (esc empty-message)
-                "</p>" (render-table table) "</section>"))
+         "<title>oscope · " (esc (:title screen)) "</title><style>" style "</style>"
+         (when live? (str "<script defer src=\"" (esc (live-asset-path path)) "\"></script>"))
+         "</head><body>"
+         "<header><h1>oscope</h1><p>Explore bounded distributions from embedded telemetry.</p></header><main"
+         (when live? (str " data-oscope-live-root data-oscope-refresh-path=\""
+                          (esc (refresh-path path)) "\"")) ">"
+         (render-controls controls selection path live?)
+         (render-screen-fragment screen {:live? live?})
          (render-export-controls screen (export-path path) export-enabled?)
          "</main></body></html>"))))
 (def render-snapshot render-page)
@@ -265,20 +351,41 @@
             :or {path default-path authorize-export? same-origin-export?}}]
    (let [path (route-path path)
          export-path (export-path path)
+         refresh-path (refresh-path path)
+         live-asset-path (live-asset-path path)
          admission (or (:export-admission source)
                        {:capacity 1 :active (atom 0)})]
      (fn [{:keys [request-method uri query-string query-params] :as request}]
        (cond
+        (= live-asset-path uri)
+        (if (= :get request-method)
+          (live-asset-response)
+          {:status 405 :headers (assoc text-headers "Allow" "GET")
+           :body "method not allowed"})
+
+        (= refresh-path uri)
+        (if (not= :get request-method)
+          {:status 405 :headers (assoc html-headers "Allow" "GET")
+           :body "method not allowed"}
+          (let [params (or query-params (parse-query-params query-string))
+                selection (selection-from-params params)
+                screen ((:load-command source)
+                        [:web-refresh (System/nanoTime)] selection)]
+            {:status 200 :headers html-headers
+             :body (render-screen-fragment screen {:live? true})}))
+
         (= path uri)
         (if (not= :get request-method)
            {:status 405 :headers (assoc html-headers "Allow" "GET")
             :body "method not allowed"}
            (let [params (or query-params (parse-query-params query-string))
                  selection (selection-from-params params)
+                 live? (= "1" (get params "live"))
                  screen ((:load-command source)
                          [:web (System/nanoTime)] selection)]
              {:status 200 :headers html-headers
               :body (render-page screen {:path path
+                                         :live? live?
                                          :export-enabled?
                                          (ifn? (:export-command source))})}))
 

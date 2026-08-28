@@ -58,7 +58,7 @@
       (authority-response)
 
       (contains? receiver/receiver-paths uri) (otlp-handler request)
-      (or (= uri web/default-path) (= uri (web/export-path web/default-path)))
+      (web/handled-path? web/default-path uri)
       (oscope-handler request)
       (and (= :get request-method) (= "/healthz" uri))
       {:status 200 :headers text-headers :body "ok\n"}
