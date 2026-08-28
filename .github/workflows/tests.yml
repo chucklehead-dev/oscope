@@ -30,4 +30,4 @@ jobs:
         shell: bash
         run: test "$(jolt --version)" = "jolt v0.7.27"
       - name: Headless tests
-        run: jolt -Srepro -M:test
+        run: jolt -Srepro -M:test-headless

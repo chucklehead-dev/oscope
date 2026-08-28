@@ -245,14 +245,26 @@ completions before the whole-screen mutation.
 
 ## Tests
 
-The ordinary suite is native-library-free. It exercises query/model/command
-invariants, Plotje SVG, the Ring adapter, headless Glitter reconciliation,
-Glimmer/Glitter instance isolation, OTLP body policy, route composition,
-shared-connection ownership, and retry-safe shutdown:
+The full deterministic suite does not open a native window or a real chDB, but
+it does load the Glitter/Glimmer adapter namespaces. It exercises
+query/model/command invariants, Plotje SVG, the Ring adapter, headless Glitter
+reconciliation, Glimmer/Glitter instance isolation, OTLP body policy, route
+composition, shared-connection ownership, and retry-safe shutdown:
 
 ```sh
 jolt -M:test
 ```
+
+Hosted CI intentionally runs the portable collector, query, export, and web
+layers without loading the GTK-facing Glitter/Glimmer namespaces:
+
+```sh
+jolt -M:test-headless
+```
+
+That narrower gate supplements rather than replaces `-M:test`; native adapter,
+real chDB, independent-reader, and standalone receiver coverage remain explicit
+local/release gates below.
 
 Run the real embedded database gate separately. It starts a real loopback
 server, ingests spans, logs, and metrics through OTLP/HTTP JSON, queries the
