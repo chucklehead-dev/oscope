@@ -13,15 +13,21 @@ sibling source paths and its source contains no demo namespaces.
 ## What works
 
 - spans, logs, and metrics distribution queries through a closed allowlist;
+- a ClickStack-style trace workbench with bounded service, operation, status,
+  duration, and time filters, complete parent/child span trees, span events,
+  and trace-correlated logs;
 - 15 minute, 1 hour, 6 hour, and 24 hour bounded windows;
 - a semantic accessible table and a validated
   [Plotje](https://github.com/scicloj/plotje)-compatible chart spec;
-- portable spec-to-SVG rendering without JVM plotting machinery;
+- portable spec-to-SVG rendering for line, point, bar, area, rule, and tick
+  marks, with bounded palettes, colors, opacity, sizing, and grid options;
 - mountable Plotje and safe-Hiccup editors with bounded, versioned edit
-  documents, a server-rendered fallback, and progressive previews;
+  documents, an in-page grammar reference and loadable examples, a
+  server-rendered fallback, and progressive previews;
 - a standalone loopback OTLP/HTTP JSON receiver and viewer using one process,
   one connection, and one schema owner;
-- a zero-JavaScript, high-contrast, responsive Ring UI at `/oscope`;
+- static-first, high-contrast, responsive Ring UIs: the trace workbench at
+  `/oscope/telemetry` and aggregate/chart explorer at `/oscope`;
 - an opt-in live web mode with bounded refresh, stale-response rejection, and
   an exact Freeze-for-export snapshot while preserving the static default;
 - raw Arrow and Parquet downloads for spans, logs, gauges, sums, and
@@ -50,13 +56,17 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so jolt -M:server
 
 Oscope listens only on `127.0.0.1:4318`, stores data in
 `chdb:./oscope-data`, receives OTLP/HTTP JSON at `/v1/traces`, `/v1/logs`, and
-`/v1/metrics`, and serves the zero-JavaScript viewer at
-<http://127.0.0.1:4318/oscope>. `/` redirects to the viewer, `/healthz` reports
-process health, and `/oscope/export` serves bounded Arrow or Parquet downloads.
+`/v1/metrics`, and serves the trace workbench at
+<http://127.0.0.1:4318/oscope/telemetry>. `/` redirects to that workbench;
+the aggregate logs/metrics/chart explorer remains at
+<http://127.0.0.1:4318/oscope>, `/healthz` reports process health, and
+`/oscope/export` serves bounded Arrow or Parquet downloads.
 The viewer's **Edit this chart** link opens `/oscope/edit/plotje` with the
 current bounded query selection; `/oscope/edit/hiccup` provides the companion
 data-only Hiccup surface. Both editors remain functional when JavaScript is
-disabled.
+disabled. The Plotje editor documents the supported grammar and includes
+loadable bar and layered area/point/rule examples; its JavaScript only adds
+debounced preview and one-click example loading.
 
 Override the port or database without shell-specific `export` syntax:
 
@@ -104,7 +114,10 @@ jolt -M:emit-sample http://127.0.0.1:14318
 
 The emitter checks `/healthz` before creating telemetry and exits visibly when
 the local receiver is unavailable. Its own HTTP export calls are not woven with
-instrumentation, so running it cannot create a collector feedback loop.
+instrumentation, so running it cannot create a collector feedback loop. New
+traces and correlated logs appear in the workbench on its bounded two-second
+poll; hidden tabs stop polling. Trace links and detail pages still work when
+JavaScript is disabled.
 
 ## Run or embed only the web version
 
@@ -292,6 +305,8 @@ screen chart -> versioned visualization document -> safe preview renderer
 ```
 
 - `oscope.query` validates selection and builds exact SQL-free plans.
+- `oscope.telemetry` owns the bounded parameterized trace list, detail,
+  correlated-log, filter-option, and span-tree contracts.
 - `oscope.raw-export` validates absolute windows, source and format choices,
   caps, generated parameterized SQL, the complete owned-byte result envelope,
   MIME type, and suggested filename.
@@ -301,12 +316,18 @@ screen chart -> versioned visualization document -> safe preview renderer
 - `oscope.view-model` is serializable EDN with semantic controls, exact plan
   provenance, a Plotje-compatible chart, and accessible table rows.
 - `oscope.plotje.spec` and `oscope.plotje.svg` are the bounded portable chart
-  dependency. They are not coupled to the demo editor.
+  dependency. The supported subset currently includes line, point, bar, area,
+  rule, and tick marks plus explicit safe style options; it is not the full
+  Plotje API.
 - `oscope.visualization.document` owns the closed Plotje/Hiccup edit envelope;
   `oscope.hiccup.spec` rejects active tags, URLs, and event attributes; and
   `oscope.ui.visualization-editor` is the mountable Ring surface.
 - `oscope.live` is the only owned/shared chDB lifecycle boundary and owns the
   source-wide export admission state.
+- `oscope.ui.workbench` and `oscope.ui.web` are sibling mountable Ring
+  surfaces over the same connection: detailed traces/logs and aggregate
+  logs/metrics/charts respectively. A host may supply `:advise-trace` to the
+  workbench so library-specific Kindly metadata is applied only at render time.
 
 The first implementation is synchronous. Before moving database queries onto
 GUI workers, retain monotonically increasing request IDs and reject stale

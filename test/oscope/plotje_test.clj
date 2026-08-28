@@ -22,8 +22,27 @@
     (is (str/starts-with? rendered "<svg"))
     (is (= 2 (count (re-seq #"<polyline" rendered))))
     (is (= 4 (count (re-seq #"<circle" rendered))))
-    (is (str/includes? rendered "rgb(228,26,28)"))
-    (is (str/includes? rendered "rgb(55,126,184)"))))
+    (is (str/includes? rendered "#e41a1c"))
+    (is (str/includes? rendered "#377eb8"))))
+
+(deftest layered-area-rule-tick-and-bounded-style-options-render
+  (let [rendered
+        (svg/spec->svg
+         {:title "Latency budget"
+          :palette ["#2563eb" "#dc2626"]
+          :grid? true
+          :data [{:x 1 :latency 18 :budget 25}
+                 {:x 2 :latency 29 :budget 25}]
+          :layers [{:mark :area :x :x :y :latency :fill "#93c5fd"
+                    :stroke "#2563eb" :opacity 0.4}
+                   {:mark :rule :x :x :y :budget :stroke "#dc2626"
+                    :stroke-width 2}
+                   {:mark :tick :x :x :y :latency :stroke "#1d4ed8"}]})]
+    (is (str/includes? rendered "<polygon"))
+    (is (= 2 (count (re-seq #"class=\"plotje-rule\"" rendered))))
+    (is (= 2 (count (re-seq #"class=\"plotje-tick\"" rendered))))
+    (is (str/includes? rendered "class=\"plotje-grid\""))
+    (is (str/includes? rendered "fill=\"#93c5fd\""))))
 
 (deftest negative-bars-have-valid-nonnegative-svg-heights
   (let [rendered
@@ -55,4 +74,10 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (spec/validate-spec
                   (assoc latency :data
-                         [{:minute 0 :latency-ms ##Inf :series "p50"}]))))))
+                         [{:minute 0 :latency-ms ##Inf :series "p50"}]))))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (spec/validate-spec
+                  (assoc-in latency [:layers 0 :stroke] "url(javascript:evil)"))))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (spec/validate-spec
+                  (assoc-in latency [:layers 0 :opacity] 2.0))))))

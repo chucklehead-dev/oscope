@@ -178,6 +178,12 @@
             root (request! port "GET" "/" nil nil)
             page (request! port "GET" "/oscope?signal=spans&field=service-name&window=15m&limit=10"
                            nil nil)
+            workbench (request! port "GET" "/oscope/telemetry?window=15m"
+                                nil nil)
+            trace-detail
+            (request! port "GET"
+                      "/oscope/telemetry/traces/11111111111111111111111111111111"
+                      nil nil)
             editor-page
             (request! port "GET"
                       "/oscope/edit/plotje?signal=spans&field=service-name&window=15m&limit=10"
@@ -199,9 +205,16 @@
         (is (= 200 (:status health)))
         (is (= "ok\n" (String. (:body health) "UTF-8")))
         (is (= 303 (:status root)))
-        (is (= "/oscope" (get-in root [:headers "location"])))
+        (is (= "/oscope/telemetry" (get-in root [:headers "location"])))
         (is (= 200 (:status page)))
         (is (.contains (String. (:body page) "UTF-8") "oscope-loopback"))
+        (is (= 200 (:status workbench)))
+        (is (.contains (String. (:body workbench) "UTF-8") "loopback.work"))
+        (is (.contains (String. (:body workbench) "UTF-8")
+                       "Logs, metrics &amp; charts"))
+        (is (= 200 (:status trace-detail)))
+        (is (.contains (String. (:body trace-detail) "UTF-8")
+                       "standalone receiver log"))
         (is (= 200 (:status editor-page)))
         (is (.contains (String. (:body editor-page) "UTF-8")
                        "oscope-loopback"))

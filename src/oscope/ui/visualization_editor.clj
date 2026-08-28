@@ -122,10 +122,43 @@
        "nav{display:flex;gap:1rem;flex-wrap:wrap}a{color:var(--accent)}p{color:var(--muted)}"
        "main{display:grid;grid-template-columns:minmax(18rem,.9fr) minmax(20rem,1.1fr);gap:1rem;padding:1rem 0 2rem}"
        "form,.preview{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:.7rem;padding:1rem}"
+       ".grammar-reference{margin-top:1rem;border-top:1px solid var(--line);padding-top:.75rem}.grammar-reference summary{cursor:pointer;font-weight:800}"
+       ".grammar-reference code,.grammar-reference pre{background:#090e15;color:var(--text);border-radius:.35rem}.grammar-reference code{padding:.1rem .3rem}.grammar-reference pre{padding:.65rem;overflow:auto;white-space:pre-wrap}.example{border-left:3px solid var(--accent);padding-left:.75rem;margin:1rem 0}"
        "textarea{display:block;width:100%;min-height:32rem;resize:vertical;background:#090e15;color:var(--text);border:1px solid #7589a3;border-radius:.45rem;padding:.75rem;font:14px/1.45 ui-monospace,monospace}"
        "button{margin-top:.75rem;background:#d8f1ff;color:#071018;border:0;border-radius:.4rem;padding:.6rem 1rem;font-weight:800}"
        "svg{display:block;max-width:100%;height:auto;background:white;border-radius:.35rem}"
        "@media(max-width:760px){main{grid-template-columns:1fr}textarea{min-height:20rem}}"))
+
+(def ^:private area-example
+  (str "{:title \"Latency band\"\n :x-label \"Minute\"\n :y-label \"Milliseconds\"\n"
+       " :palette [\"#2563eb\" \"#dc2626\"]\n :grid? true\n"
+       " :data [{:minute 1 :p95 18 :budget 25}\n"
+       "        {:minute 2 :p95 21 :budget 25}\n"
+       "        {:minute 3 :p95 29 :budget 25}]\n"
+       " :layers [{:mark :area :x :minute :y :p95 :fill \"#93c5fd\" :stroke \"#2563eb\" :opacity 0.45}\n"
+       "          {:mark :point :x :minute :y :p95 :fill \"#1d4ed8\" :point-radius 4}\n"
+       "          {:mark :rule :x :minute :y :budget :stroke \"#dc2626\" :stroke-width 2}]}"))
+
+(def ^:private bar-example
+  (str "{:title \"Requests by service\"\n :width 760 :height 420\n"
+       " :data [{:service \"api\" :count 42 :team :edge}\n"
+       "        {:service \"worker\" :count 27 :team :core}]\n"
+       " :layers [{:mark :bar :x :service :y :count :color :team :bar-width 0.6 :opacity 0.85}]}"))
+
+(defn- render-grammar-reference []
+  (str "<details class=\"grammar-reference\" open><summary>Chart grammar reference &amp; examples</summary>"
+       "<p>A chart is a bounded EDN map with <code>:data</code> rows and one to four <code>:layers</code>. "
+       "Every layer maps columns with <code>:x</code> and <code>:y</code>.</p>"
+       "<dl><dt>Marks</dt><dd><code>:line</code>, <code>:point</code>, <code>:bar</code>, <code>:area</code>, <code>:rule</code>, and <code>:tick</code>.</dd>"
+       "<dt>Chart options</dt><dd><code>:title</code>, <code>:x-label</code>, <code>:y-label</code>, <code>:width</code>, <code>:height</code>, <code>:grid?</code>, and a 1–8 color <code>:palette</code>.</dd>"
+       "<dt>Layer options</dt><dd><code>:color</code> maps a data column; <code>:stroke</code> and <code>:fill</code> accept six-digit hex colors. "
+       "Use <code>:opacity</code>, <code>:stroke-width</code>, <code>:point-radius</code>, and <code>:bar-width</code> for bounded styling.</dd></dl>"
+       "<section class=\"example\"><h3>Area + points + threshold</h3><pre><code>" (esc area-example)
+       "</code></pre><button type=\"button\" data-oscope-load-example>Load example</button></section>"
+       "<section class=\"example\"><h3>Colored bars</h3><pre><code>" (esc bar-example)
+       "</code></pre><button type=\"button\" data-oscope-load-example>Load example</button></section>"
+       "<p>The renderer rejects unknown keys, active content, unbounded data, invalid colors, and non-finite numbers. "
+       "This portable subset is intentionally smaller than the full Plotje API.</p></details>"))
 
 (defn render-page
   [raw-document {:keys [path viewer-path]
@@ -153,7 +186,9 @@
          "</label><textarea id=\"oscope-" kind-name
          "-spec\" name=\"spec\" maxlength=\""
          (document/max-text-chars kind) "\">" (esc text)
-         "</textarea><button type=\"submit\">Render</button></form>"
+         "</textarea><button type=\"submit\">Render</button>"
+         (when (= :plotje kind) (render-grammar-reference))
+         "</form>"
          (render-preview edit-document) "</main><script defer src=\""
          (esc (asset-path path)) "\"></script></body></html>")))
 
@@ -164,7 +199,9 @@
        "headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({spec:i.value}),signal:c.signal});"
        "if(!r.ok)throw new Error('preview failed');const d=new DOMParser().parseFromString(await r.text(),'text/html'),"
        "n=d.querySelector('.preview');if(n)document.querySelector('.preview')?.replaceWith(n)}catch(e){"
-       "if(e.name!=='AbortError')console.error(e)}},300)})})()"))
+       "if(e.name!=='AbortError')console.error(e)}},300)});"
+       "f.addEventListener('click',e=>{const b=e.target.closest('[data-oscope-load-example]');if(!b)return;"
+       "const code=b.parentElement?.querySelector('code');if(code){i.value=code.textContent;i.dispatchEvent(new Event('input'))}})})()"))
 
 (defn- seed-plotje [source request]
   (let [screen

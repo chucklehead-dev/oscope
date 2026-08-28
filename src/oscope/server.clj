@@ -6,6 +6,7 @@
             [jolt.http.server :as http]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
+            [oscope.ui.workbench :as workbench]
             [oscope.ui.visualization-editor :as visualization-editor]
             [oscope.ui.web :as web]
             [otel.exporter.chdb :as chdb-export]
@@ -44,7 +45,8 @@
 
   Absence of an OTel SDK, tracer, logger, or middleware in this namespace makes
   collector feedback impossible by construction."
-  [{:keys [otlp-handler oscope-handler visualization-editor-handler authority]
+  [{:keys [otlp-handler oscope-handler workbench-handler
+           visualization-editor-handler authority]
     :or {authority (str default-host ":" default-port)}}]
   (fn [{:keys [request-method uri] :as request}]
     (let [expected (expected-authority authority)]
@@ -59,6 +61,9 @@
       (authority-response)
 
       (contains? receiver/receiver-paths uri) (otlp-handler request)
+      (and workbench-handler
+           (workbench/handled-path? workbench/default-path uri))
+      (workbench-handler request)
       (and visualization-editor-handler
            (visualization-editor/handled-path?
             visualization-editor/default-path uri))
@@ -68,7 +73,9 @@
       (and (= :get request-method) (= "/healthz" uri))
       {:status 200 :headers text-headers :body "ok\n"}
       (and (= :get request-method) (= "/" uri))
-      {:status 303 :headers {"Location" web/default-path
+      {:status 303 :headers {"Location" (if workbench-handler
+                                           workbench/default-path
+                                           web/default-path)
                              "Cache-Control" "no-store"}
        :body ""}
       :else {:status 404 :headers text-headers :body "not found"}))))
@@ -142,6 +149,8 @@
              _ (reset! source* source)
              editor-handler (visualization-editor/handler source)
              app-handler (handler {:otlp-handler (otlp/handler exporter)
+                                   :workbench-handler
+                                   (workbench/handler conn)
                                    :oscope-handler
                                    (web/handler
                                     source

@@ -9,6 +9,9 @@
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
          :git/sha "c1d4aad8188811258dda7d777808649255b13cbc"}
+        io.github.chucklehead-dev/jolt-otel-viewer
+        {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
+         :git/sha "923ec6b5912bb1246c87d325febce70c388bab6b"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
          :git/sha "8a6dc9668e5c3596a335759defeb7ec80cd3b5f8"}}
