@@ -74,6 +74,7 @@
  :tasks {test "jolt -M:test"
          test-chdb "jolt -M:test-chdb"
          test-readers "jolt -M:test-readers"
+         test-standalone "test/standalone_build_smoke.sh"
          web-snapshot "jolt -M:web-snapshot"
          server "jolt -M:server"
          live-web "jolt -M:live-web"

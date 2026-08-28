@@ -260,6 +260,19 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
   jolt -M:test-readers
 ```
 
+Self-contained receiver builds require Jolt v0.7.28 or newer. Jolt v0.7.27 can
+run `jolt -M:server` from source, but its app builder may incorrectly inherit
+`jolt.ffi` from the compiler image and produce a binary with an unbound
+`jolt.ffi/errno`. The standalone smoke builds and starts the real receiver long
+enough to reject that artifact class:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/libchdb.so \
+    JOLT_BIN=/path/to/jolt-v0.7.28-or-newer \
+    JOLT_TOOLCHAIN=/path/to/jolt-with-chez-10.4.1 \
+    test/standalone_build_smoke.sh
+```
+
 ## Exact dependency baselines
 
 - `chucklehead-dev/jolt-otel-clickhouse` `c1d4aad8188811258dda7d777808649255b13cbc`
@@ -280,8 +293,6 @@ request is required to build or test this repository.
 
 ## Near-term work
 
-- replace the integration demo's previous oscope revision with this exact
-  published export revision;
 - add explicit export pagination or partition manifests for workflows that
   need more than one bounded physical-row download; and
 - add stale-request rejection before asynchronous refresh/streaming updates.
