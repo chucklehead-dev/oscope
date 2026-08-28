@@ -404,7 +404,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 - `chucklehead-dev/jolt-otel-clickhouse` `c1d4aad8188811258dda7d777808649255b13cbc`
 - `chucklehead-dev/jolt-chdb` `fffaf33208d9404ff4f8e48ecf6d8f9ca03a62c3`
-- `casselc/jolt-http` `0629087f4d7e42343164e43906fae6d707787ed0`
+- `casselc/jolt-http` `1cdfcc06a86900ccae5c0b449956d826a05cebb6`
 - `burinc/glitter` `482642fd3c9671b05f0ffaa2ef47420b1a92553b`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
 - `jolt-lang/glimmer-gtk` `ce79d45698d36ccf496397bb85974e3cce6abfd8`

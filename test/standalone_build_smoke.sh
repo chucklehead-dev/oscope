@@ -54,7 +54,7 @@ until grep -q '^oscope receiving OTLP/HTTP' "$tmp/server.log" 2>/dev/null; do
 done
 
 # Startup continues after the readiness line while the server and embedded DB
-# fibers settle. The v0.7.27 missing-CLI-closure failure appears in this window.
+# fibers settle. The pre-v0.7.28 missing-CLI-closure failure appears here.
 sleep 1
 if ! kill -0 "$pid" 2>/dev/null; then
   cat "$tmp/server.log" >&2
