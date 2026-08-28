@@ -167,6 +167,11 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
     OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/telemetry \
     jolt -M:live-native
 
+# Standalone OTLP/HTTP receiver plus the native viewer, sharing one connection
+env JOLT_CHDB_LIB=/path/to/libchdb.so \
+    OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/telemetry \
+    jolt -M:native-server
+
 # Alternative Glimmer/GTK adapter
 jolt -M:glimmer-native
 ```
@@ -175,6 +180,13 @@ jolt -M:glimmer-native
 compatible with Glimmer plus `glimmer-uikit` on macOS, but this Linux checkout
 cannot execute the AppKit backend. Glitter is the default GTK architecture;
 Glimmer remains useful for components that benefit from local reactive state.
+
+The native server receives OTLP/HTTP on `127.0.0.1:4318` and also retains the
+web viewer at `http://127.0.0.1:4318/oscope`. Its Glitter window renders the
+canonical `screen[:chart]` through oscope's bounded Plotje-to-SVG renderer and
+GtkPicture; the accessible distribution remains below the chart. Each window
+owns and removes its temporary SVG files. For an opt-in WSLg smoke that closes
+itself, set `OSCOPE_NATIVE_AUTO_QUIT_MS` to a positive millisecond count.
 
 Current Glitter and Glimmer application runners own their mounted root and do
 not return a complete unmount handle. Each oscope adapter isolates its model

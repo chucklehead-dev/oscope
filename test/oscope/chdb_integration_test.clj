@@ -4,6 +4,7 @@
             [jdbc.core :as jdbc]
             [oscope.live :as live]
             [oscope.raw-export :as raw-export]
+            [oscope.ui.native :as native]
             [oscope.ui.web :as web]))
 
 (def test-now 1700000001000000000)
@@ -37,6 +38,35 @@
                               :now-fn (constantly test-now)})]
       (live/close! source)
       (is (= [{:answer 1}] (jdbc/fetch connection "select 1 as answer"))))))
+
+(deftest native-adapter-renders-a-real-chdb-query-as-canonical-svg
+  (let [source (live/open! {:db-spec "chdb::memory:"
+                            :now-fn (constantly test-now)})
+        instance* (atom nil)]
+    (try
+      (jdbc/execute!
+       (:connection source)
+       ["INSERT INTO otel_traces (Timestamp, ServiceName, SpanName)
+           VALUES (fromUnixTimestamp64Nano(?), 'native-visible', 'native.work')"
+        (- test-now 1000000)])
+      (let [selection {:signal :spans :field :service-name
+                       :window :15m :limit 10}
+            screen ((:load-command source) :native-visible selection)
+            instance (native/create-instance {:screen screen
+                                              :loader (:loader source)})
+            _ (reset! instance* instance)
+            hiccup ((:view instance) screen)
+            chart-path (first @(get-in instance [:chart-store :paths]))
+            svg (String. (java.nio.file.Files/readAllBytes chart-path)
+                         java.nio.charset.StandardCharsets/UTF_8)]
+        (is (= [{:value "native-visible" :count 1}]
+               (get-in screen [:table :rows])))
+        (is (some? chart-path))
+        (is (.contains svg "native-visible"))
+        (is (.contains (pr-str hiccup) ":picture")))
+      (finally
+        (when-let [instance @instance*] ((:close! instance)))
+        (live/close! source)))))
 
 (defn- prefix [bytes length]
   (mapv #(bit-and % 255) (take length bytes)))

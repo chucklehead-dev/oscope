@@ -27,6 +27,10 @@
 
   :test-chdb
   {:extra-paths ["test"]
+   :extra-deps
+   {io.github.burinc/glitter
+    {:git/url "https://github.com/burinc/glitter.git"
+     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
    :main-opts ["-m" "oscope.chdb-test-runner"]}
 
   :test-readers
@@ -50,6 +54,13 @@
     {:git/url "https://github.com/burinc/glitter.git"
      :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
    :main-opts ["-m" "oscope.live-main" "native"]}
+
+  :native-server
+  {:extra-deps
+   {io.github.burinc/glitter
+    {:git/url "https://github.com/burinc/glitter.git"
+     :git/sha "482642fd3c9671b05f0ffaa2ef47420b1a92553b"}}
+   :main-opts ["-m" "oscope.native-server-main"]}
 
   :glimmer-native
   {:extra-deps
@@ -80,5 +91,6 @@
          live-web "jolt -M:live-web"
          native "jolt -M:native"
          live-native "jolt -M:live-native"
+         native-server "jolt -M:native-server"
          glimmer-native "jolt -M:glimmer-native"
          live-glimmer-native "jolt -M:live-glimmer-native"}}
