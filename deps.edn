@@ -7,16 +7,16 @@
          :git/sha "d9fa89309fb9faa3dd3e8319a79d57fc03925341"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "405b137497567663dc5a3f599ea583d1d69d03e8"}
+         :git/sha "4ed991597fe2b02b4c7e050dbed6434acaebe88e"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "6bce1d03e0aeab7c95af23f1a26ebebca2b6e4d0"}
+         :git/sha "cf3cc31f3ff32fbf58d7eb69b950c34f37702f4c"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
-         :git/sha "e36c8646538ad335b7d9fc2eb1a1eeb247d6c28c"}
+         :git/sha "9ae943fcaf7725b1b36e00bc216aef17405f295a"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "fce6fbd5a7dc233319b2e3e4193050b9ea1d568b"}}
+         :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}
 
  :aliases
  {:test-headless
