@@ -1,20 +1,22 @@
 {:paths ["src"]
 
+ :jolt/min-version "0.8.0"
+
  :deps {io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
-         :git/sha "c6effc3a04be1467e66da433b879a8a73a352228"}
+         :git/sha "d9fa89309fb9faa3dd3e8319a79d57fc03925341"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "6321a0a23a06e396c684d303f3cb4d31bebc8d9f"}
+         :git/sha "405b137497567663dc5a3f599ea583d1d69d03e8"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "8971ce58241ed236653fe7c84209579ae70027ac"}
+         :git/sha "6bce1d03e0aeab7c95af23f1a26ebebca2b6e4d0"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
-         :git/sha "923ec6b5912bb1246c87d325febce70c388bab6b"}
+         :git/sha "e36c8646538ad335b7d9fc2eb1a1eeb247d6c28c"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "8a6dc9668e5c3596a335759defeb7ec80cd3b5f8"}}
+         :git/sha "fce6fbd5a7dc233319b2e3e4193050b9ea1d568b"}}
 
  :aliases
  {:test-headless
