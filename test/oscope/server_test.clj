@@ -1,5 +1,6 @@
 (ns oscope.server-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
             [oscope.live :as live]
@@ -12,6 +13,23 @@
             [otel.exporter.chdb :as chdb-export]
             [otel.sdk.export :as export]
             [otel.sdk.logs :as logs]))
+
+(deftest storage-documentation-pins-the-current-recovery-boundary
+  (let [readme (str/replace (slurp "README.md") #"\s+" " ")]
+    (is (= "chdb:./oscope-data" server/default-db-spec))
+    (is (str/includes? readme "**local path persistence**"))
+    (is (str/includes? readme
+                       "It is not object-backed Durable recovery."))
+    (is (= 2 (count (re-seq #"Proposed, not implemented" readme))))
+    (is (str/includes?
+         readme
+         "docs/durable/protocol-v1.mdx"))
+    (is (str/includes?
+         readme
+         "OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/oscope-data"))
+    (is (str/includes?
+         readme
+         "Arrow and Parquet remain bounded data exports, not"))))
 
 (deftest route-composition-is-small-and-explicit
   (let [seen (atom [])
