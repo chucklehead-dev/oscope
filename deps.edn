@@ -90,7 +90,16 @@
     io.github.jolt-lang/glimmer-gtk
     {:git/url "https://github.com/jolt-lang/glimmer-gtk.git"
      :git/sha "ce79d45698d36ccf496397bb85974e3cce6abfd8"}}
-   :main-opts ["-m" "oscope.live-main" "glimmer-native"]}}
+   :main-opts ["-m" "oscope.live-main" "glimmer-native"]}
+
+  ;; JVM-only, dev-only Typed Clojure pilot. Ordinary Jolt/runtime aliases do
+  ;; not resolve the checker or add these paths.
+  :typed-check
+  {:replace-paths ["src" "script" "typed"]
+   :replace-deps
+   {org.clojure/clojure {:mvn/version "1.12.5"}
+    org.typedclojure/typed.clj.checker {:mvn/version "1.3.0"}}
+   :main-opts ["-m" "oscope.typed-check"]}}
 
  :tasks {test "jolt -M:test"
          test-headless "jolt -M:test-headless"

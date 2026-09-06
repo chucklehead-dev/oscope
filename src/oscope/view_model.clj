@@ -10,7 +10,9 @@
 (defn- humanize [x] (-> x name (str/replace "-" " ")))
 (defn- title-case [x]
   (str/join " " (map str/capitalize (str/split (humanize x) #" "))))
-(defn- validate-rows [selection rows]
+(defn normalize-rows
+  "Validate query result rows and project their renderer-independent shape."
+  [selection rows]
   (when-not (vector? rows)
     (fail! ::invalid-rows "oscope distribution rows must be a vector" {:rows rows}))
   (when (> (count rows) (:limit selection))
@@ -32,7 +34,7 @@
 (defn screen [plan rows]
   (let [plan (query/validate-plan plan)
         {:keys [signal field window limit] :as selection} (:selection plan)
-        data (validate-rows selection rows)
+        data (normalize-rows selection rows)
         chart (when (seq data)
                 (plotje/validate-spec
                  {:title (str (title-case field) " in " (title-case signal))
@@ -68,6 +70,3 @@
              :rows data}
      :empty-message (when (empty? data)
                       "No telemetry matched this bounded query window.")}))
-
-(defn query->screen [connection plan]
-  (screen plan (query/run connection plan)))

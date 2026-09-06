@@ -6,7 +6,9 @@
             [oscope.command :as command]
             [oscope.effect :as effect]
             [oscope.query :as query]
+            [oscope.query.chdb :as query-chdb]
             [oscope.raw-export :as raw-export]
+            [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.view-model :as view-model]
             [otel.exporter.chdb.schema :as schema]))
 
@@ -40,7 +42,7 @@
                         (throw (ex-info "oscope live source is closed"
                                         {:oscope.live/error true :type ::closed})))
                       (let [plan (query/compile-query selection (now-fn))]
-                        (view-model/query->screen conn plan)))
+                        (view-model/screen plan (query-chdb/run conn plan))))
              load-command (fn [request-id selection]
                             (effect/run-command
                              loader (command/query-command request-id selection)))
@@ -48,7 +50,7 @@
                         (when @closed?
                           (throw (ex-info "oscope live source is closed"
                                           {:oscope.live/error true :type ::closed})))
-                        (raw-export/execute! conn selection))
+                        (raw-export-chdb/execute! conn selection))
              export-command (fn [request-id selection]
                               (effect/run-export-command
                                exporter

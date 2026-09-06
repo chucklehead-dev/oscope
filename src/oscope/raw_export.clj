@@ -1,6 +1,5 @@
 (ns oscope.raw-export
-  "Closed, bounded Arrow and Parquet exports of physical telemetry rows."
-  (:require [jdbc.chdb :as chdb]))
+  "Pure contracts for closed, bounded Arrow and Parquet telemetry exports.")
 
 (def max-time-range-nanos (* 24 60 60 1000000000))
 (def max-result-rows 100000)
@@ -154,22 +153,3 @@
       (fail! ::invalid-result "oscope export result is invalid"
              {:selection selection :byte-count byte-count}))
     result))
-
-(defn execute! [connection selection]
-  (let [{:keys [selection query]} (compile-query selection)
-        {:keys [format max-rows max-bytes]} selection
-        result (chdb/query-bytes connection query
-                                 {:format format :max-rows max-rows
-                                  :max-bytes max-bytes})]
-    (when-not (and (= format (:format result))
-                   (integer? (:byte-count result))
-                   (<= 0 (:byte-count result) max-bytes)
-                   (bytes? (:bytes result))
-                   (= (:byte-count result) (count (:bytes result))))
-      (fail! ::invalid-driver-result
-             "jolt-chdb returned an invalid encoded export"
-             {:format (:format result) :byte-count (:byte-count result)}))
-    (validate-result
-     (merge {:oscope.export/version 1 :selection selection
-             :byte-count (:byte-count result) :bytes (:bytes result)}
-            (response-metadata selection)))))

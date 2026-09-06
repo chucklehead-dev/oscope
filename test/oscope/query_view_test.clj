@@ -1,8 +1,9 @@
 (ns oscope.query-view-test
   (:require [clojure.edn :as edn]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :refer [deftest is testing thrown-with-msg?]]
             [oscope.plotje.svg :as plotje]
             [oscope.query :as query]
+            [oscope.query.chdb :as query-chdb]
             [oscope.view-model :as view-model]
             [otel.exporter.chdb.explorer :as explorer]))
 
@@ -22,7 +23,17 @@
                     (is (= ::connection connection))
                     (is (= (:request plan) request))
                     [])]
-      (is (= [] (query/run ::connection plan))))))
+      (is (= [] (query-chdb/run ::connection plan))))))
+
+(deftest chdb-adapter-refuses-field-contract-drift
+  (let [plan (query/compile-query query/default-selection now)]
+    (with-redefs [explorer/supported-fields
+                  (fn [] (assoc (query/supported-fields)
+                                :spans [:service-name]))]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo
+           #"query fields do not match"
+           (query-chdb/run ::connection plan))))))
 
 (deftest unsupported-or-tampered-plans-fail-closed
   (testing "unknown controls and signal-specific fields cannot imply SQL"
@@ -33,7 +44,7 @@
                   {:signal :logs :field :span-name} now)))
     (is (thrown? clojure.lang.ExceptionInfo
                  (query/compile-query
-                  {:limit (inc explorer/max-result-limit)} now))))
+                  {:limit (inc query/max-result-limit)} now))))
   (testing "portable request data cannot drift from its selection"
     (let [plan (query/compile-query {} now)]
       (is (= plan (query/validate-plan plan)))

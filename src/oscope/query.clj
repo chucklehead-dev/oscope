@@ -1,24 +1,42 @@
 (ns oscope.query
-  "Bounded, SQL-free query plans for the embedded telemetry explorer."
-  (:require [otel.exporter.chdb.explorer :as explorer]))
+  "Pure, bounded, SQL-free query plans for the telemetry explorer."
+  (:require [oscope.error :as error]))
+
+(def max-time-range-nanos (* 24 60 60 1000000000))
+(def max-result-limit 100)
+(def max-value-length 256)
+
+(def ^:private fields
+  {:spans [:service-name :span-name :span-kind :status-code :scope-name
+           :http-request-method :http-response-status-code
+           :deployment-environment]
+   :logs [:service-name :severity-text :event-name :scope-name
+          :deployment-environment]
+   :metrics [:service-name :metric-name :metric-unit :scope-name
+             :deployment-environment]})
 
 (def windows
   {:15m (* 15 60 1000000000)
    :1h  (* 60 60 1000000000)
    :6h  (* 6 60 60 1000000000)
-   :24h explorer/max-time-range-nanos})
+   :24h max-time-range-nanos})
 
 (def default-selection
   {:signal :spans :field :service-name :window :1h :limit 12})
 
-(def max-result-limit explorer/max-result-limit)
-(def max-value-length explorer/max-text-length)
 (def ^:private selection-keys #{:signal :field :window :limit})
 
 (defn- fail! [type message data]
   (throw (ex-info message (assoc data :oscope.query/error true :type type))))
 
-(defn supported-fields [] (explorer/supported-fields))
+(defn- window-nanos [window]
+  (let [nanos (get windows window)]
+    (if (integer? nanos)
+      nanos
+      (fail! ::unsupported-window "oscope query window is not supported"
+             {:window window}))))
+
+(defn supported-fields [] fields)
 
 (defn normalize-selection [selection]
   (when-not (map? selection)
@@ -27,7 +45,7 @@
   (when-let [unknown (seq (remove selection-keys (keys selection)))]
     (fail! ::unsupported-selection-key
            "oscope selection contains unsupported keys"
-           {:keys (vec (sort-by str unknown))}))
+           {:keys (error/sorted-keys unknown)}))
   (let [{:keys [signal field window limit]}
         (merge default-selection selection)
         fields (get (supported-fields) signal)]
@@ -52,7 +70,7 @@
            {:end-unix-nano end-unix-nano}))
   (let [{:keys [signal field window limit] :as selected}
         (normalize-selection selection)
-        start (max 0 (- end-unix-nano (get windows window)))]
+        start (max 0 (- end-unix-nano (window-nanos window)))]
     {:oscope.query/version 1
      :selection selected
      :request {:signal signal :fields [field]
@@ -64,11 +82,8 @@
     (fail! ::invalid-plan "oscope query plan version is not supported"
            {:version (when (map? plan) (:oscope.query/version plan))}))
   (let [expected (compile-query (:selection plan)
-                                (get-in plan [:request :end-unix-nano]))]
+                                (:end-unix-nano (:request plan)))]
     (when-not (= expected plan)
       (fail! ::invalid-plan "oscope query plan does not match its selection"
              {:plan plan}))
     plan))
-
-(defn run [connection plan]
-  (explorer/top-values connection (:request (validate-plan plan))))

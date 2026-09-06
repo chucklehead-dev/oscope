@@ -6,6 +6,7 @@
   rendering boundary with library-supplied Kindly metadata."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
+            [db.jdbc]
             [jdbc.core :as jdbc]
             [otel.exporter.chdb.explorer :as explorer]))
 

@@ -1,6 +1,7 @@
 (ns oscope.server-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
+            [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
             [oscope.live :as live]

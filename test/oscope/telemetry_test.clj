@@ -1,6 +1,7 @@
 (ns oscope.telemetry-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [db.jdbc]
             [jdbc.core :as jdbc]
             [oscope.telemetry :as telemetry]))
 

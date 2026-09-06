@@ -1,9 +1,11 @@
 (ns oscope.raw-export-test
   (:require [clojure.test :refer [deftest is testing]]
+            [db.jdbc]
             [jdbc.chdb :as chdb]
             [oscope.command :as command]
             [oscope.effect :as effect]
-            [oscope.raw-export :as raw-export]))
+            [oscope.raw-export :as raw-export]
+            [oscope.raw-export.chdb :as raw-export-chdb]))
 
 (def start 1700000000000000000)
 (def end (+ start 1000000000))
@@ -54,7 +56,7 @@
                     {:format :parquet :content-type "ignored/by/oscope"
                      :extension "ignored" :byte-count 4 :bytes bytes})]
       (let [result (effect/run-export-command
-                    #(raw-export/execute! ::connection %)
+                    #(raw-export-chdb/execute! ::connection %)
                     (command/export-command :request selected))]
         (is (= "application/vnd.apache.parquet" (:content-type result)))
         (is (= (str "oscope-metrics-histogram-" start "-" end ".parquet")
