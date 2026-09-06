@@ -85,6 +85,51 @@ bind is intentionally loopback-only. The receiver accepts uncompressed
 `application/json`, caps the consumed request body at 1 MiB, and admits one
 OTLP export at a time because every signal shares the embedded connection.
 
+### Storage modes and recovery guarantees
+
+The standalone server's default `chdb:./oscope-data` setting provides
+**local path persistence**. Oscope closes its embedded connection during orderly
+shutdown, and the real-chDB integration test
+[`standalone-persistent-restart-retains-telemetry`](test/oscope/server_integration_test.clj)
+proves that telemetry remains queryable after the server reopens the same local
+directory. This is a useful local restart guarantee, but it depends on that
+directory remaining available on the same filesystem.
+
+Local path persistence does not provide object-storage recovery, cross-machine
+restore, a portable checkpoint plus write-ahead log (WAL), single-writer
+leases or fencing, checkpoint/WAL integrity verification, or an acknowledged
+remote durability boundary. The current exporter shutdown and connection
+close are not chDB Durable `close()` operations.
+
+| Mode | Oscope configuration | Status and recovery boundary |
+| --- | --- | --- |
+| Ephemeral/in-memory | `OSCOPE_CHDB_SPEC=chdb::memory:` | Available now. Process-local state is not expected to survive close or restart. |
+| Local path persistence | `OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/oscope-data`; the standalone default is `chdb:./oscope-data` | Available now. Reopening the same local directory retains the database, as covered by the restart integration test. It is not object-backed Durable recovery. |
+| Local Durable development mode | No oscope configuration yet | Proposed, not implemented. It is discussed in [oscope #1](https://github.com/chucklehead-dev/oscope/issues/1) and tracked in [jolt-chdb #2](https://github.com/chucklehead-dev/jolt-chdb/issues/2). The intended local backend must implement the same Durable V1 state machine before oscope can offer this mode. |
+| Object-backed Durable mode | No oscope configuration yet | Proposed, not implemented. The jolt-chdb work is split across the [core ABI](https://github.com/chucklehead-dev/jolt-chdb/issues/1), [control plane](https://github.com/chucklehead-dev/jolt-chdb/issues/2), and [S3-compatible backend](https://github.com/chucklehead-dev/jolt-chdb/issues/3). Recovery would be through the last successfully published Durable WAL or checkpoint, subject to the V1 single-writer protocol. |
+
+The proposed modes reserve “Durable” for the official
+[chDB Durable overview](https://github.com/chdb-io/chdb/blob/db10b548a3e1e21e51c213baf863cb1050963d9c/docs/durable/index.mdx)
+and
+[Durable V1 protocol](https://github.com/chdb-io/chdb/blob/db10b548a3e1e21e51c213baf863cb1050963d9c/docs/durable/protocol-v1.mdx):
+
+- `execute()` runs one mutation locally and appends it to the in-memory WAL
+  buffer; its success is not yet a durability acknowledgement.
+- `flush()` uploads a WAL segment and commits its reference to `head.json`;
+  an application promising successful-request recovery on another machine
+  must wait for this operation to complete before returning success.
+- `checkpoint()` publishes a full database backup as the new recovery base and
+  clears its covered WAL references only after the manifest update succeeds.
+- `open()` restores the published base and replays its WAL segments in order.
+- `close()` stops new operations, drains queued work, flushes, releases the
+  writer lease, and cleans up local resources.
+
+Until those APIs are integrated, accepting a batch, closing the current local
+connection, or completing an Arrow/Parquet download does not establish that
+remote durability promise; the most recent accepted requests may be absent
+from a future recovery. Arrow and Parquet remain bounded data exports, not
+database checkpoints, WAL segments, or a database recovery mechanism.
+
 This process does not initialize an OTel SDK and does not wrap its HTTP routes
 with tracing or logging middleware. Viewer, health, export, and receiver
 traffic therefore cannot feed telemetry back into the collector. Shutdown is
