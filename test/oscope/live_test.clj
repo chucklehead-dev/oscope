@@ -1,14 +1,14 @@
 (ns oscope.live-test
   (:require [clojure.test :refer [deftest is]]
             [oscope.live :as live]
-            [oscope.query :as query]
+            [oscope.query.chdb :as query-chdb]
             [otel.exporter.chdb.schema :as schema]))
 
 (def test-now 1700000001000000000)
 (deftest shared-connection-is-never-owned-or-closed
   (let [migrations (atom []) connection {:shared :collector}]
     (with-redefs [schema/ensure-schema! #(swap! migrations conj %)
-                  query/run (fn [_ plan]
+                  query-chdb/run (fn [_ plan]
                               [{:signal :spans :field :service-name
                                 :value "api" :count 2}])]
       (let [source (live/open! {:connection connection
@@ -24,7 +24,7 @@
 (deftest a-composition-may-delegate-the-single-schema-check
   (let [migrations (atom [])]
     (with-redefs [schema/ensure-schema! #(swap! migrations conj %)
-                  query/run (fn [_ plan]
+                  query-chdb/run (fn [_ plan]
                               [{:signal (get-in plan [:selection :signal])
                                 :field (get-in plan [:selection :field])
                                 :value "api" :count 1}])]

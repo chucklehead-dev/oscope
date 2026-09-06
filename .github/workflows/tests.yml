@@ -10,6 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  typed-check:
+    name: Typed Clojure pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: DeLaGuardo/setup-clojure@13.5
+        with:
+          cli: latest
+      - name: Check pure contracts, valid consumer, and mutation controls
+        run: clojure -M:typed-check
+
   headless:
     runs-on: ubuntu-latest
     timeout-minutes: 15

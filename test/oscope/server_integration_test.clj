@@ -3,6 +3,7 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
+            [db.jdbc]
             [jdbc.core :as jdbc]
             [oscope.sample-emitter :as sample-emitter]
             [oscope.server :as server]

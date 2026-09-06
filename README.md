@@ -410,6 +410,17 @@ layers without loading the GTK-facing Glitter/Glimmer namespaces:
 jolt -M:test-headless
 ```
 
+The optional JVM-only Typed Clojure pilot checks a deliberately small subset
+of the pure command/query/view-model contracts and six named mutation controls:
+
+```sh
+clojure -M:typed-check
+```
+
+The checker and its Clojure/JVM dependencies are dev-only and are absent from
+all ordinary Jolt aliases. See the [exact checked boundary, limitations, and
+mutation evidence](docs/TYPED_CLOJURE.md).
+
 That narrower gate supplements rather than replaces `-M:test`; native adapter,
 real chDB, independent-reader, and standalone receiver coverage remain explicit
 local/release gates below.
