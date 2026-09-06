@@ -402,13 +402,13 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 ## Exact dependency baselines
 
-- `chucklehead-dev/jolt-otel-clickhouse` `56bf2fdc83a84cc0f01048013f4737201deccc26`
-- `chucklehead-dev/jolt-chdb` `6321a0a23a06e396c684d303f3cb4d31bebc8d9f`
-- `casselc/jolt-http` `9e75dd94b9ef3f5afe2096bf2370290d436443dd`
+- `chucklehead-dev/jolt-otel-clickhouse` `a247f418a462357d0a114d5f51024d00bd38189f`
+- `chucklehead-dev/jolt-chdb` `39c04ed04933fdeaa5e2f481aa8c9b294afb5e7e`
+- `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
 - `jolt-lang/glimmer-gtk` `ce79d45698d36ccf496397bb85974e3cce6abfd8`
-- `casselc/data.json` `8a6dc9668e5c3596a335759defeb7ec80cd3b5f8`
+- `casselc/data.json` `932444043c0c06f9e295ba4963419b2481e9dd07`
 
 The pinned ClickHouse exporter owns the required Jolt DB bootstrap at its
 public explorer entrypoint. A clean oscope consumer therefore needs no hidden
