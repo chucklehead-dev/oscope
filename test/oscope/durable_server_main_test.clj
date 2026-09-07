@@ -1,6 +1,15 @@
 (ns oscope.durable-server-main-test
   (:require [clojure.test :refer [deftest is testing]]
-            [oscope.durable-server-main :as durable-main]))
+            [jdbc.chdb.durable :as durable]
+            [jdbc.chdb.durable.control :as control]
+            [jdbc.chdb.durable.head :as head]
+            [oscope.durable-server-main :as durable-main]
+            [oscope.server-main :as server-main]))
+
+(defn- wrapped-error [type]
+  (ex-info "outer path=/private/store owner=secret instance=secret"
+           {:private "must-not-escape"}
+           (ex-info "inner secret" {:type type :path ["secret"]})))
 
 (defn- options [environment calls]
   (durable-main/durable-options
@@ -71,3 +80,41 @@
       (let [calls (atom [])]
         (is (thrown? Exception (options environment calls)))
         (is (empty? @calls))))))
+
+(deftest startup-failures-have-bounded-operator-diagnostics
+  (doseq [[type category]
+          [[::control/lease-held :lease-held]
+           [::control/lease-fenced :lease-fenced]
+           [::head/corrupt :corrupt-head]
+           [::durable/engine-incompatible :engine-incompatible]]]
+    (let [diagnostic (durable-main/failure-diagnostic (wrapped-error type))]
+      (is (= category (:category diagnostic)))
+      (is (= #{:category :message :action} (set (keys diagnostic))))
+      (is (not (re-find #"secret|private" (pr-str diagnostic))))))
+  (let [diagnostic
+        (durable-main/failure-diagnostic
+         (ex-info "password=secret path=/private/store" {:owner "secret"}))]
+    (is (= :server-failed (:category diagnostic)))
+    (is (not (re-find #"secret|private|password" (pr-str diagnostic))))))
+
+(deftest main-prints-and-throws-only-bounded-diagnostics
+  (let [failure (wrapped-error ::control/lease-held)
+        caught (atom nil)
+        output
+        (with-out-str
+          (binding [*err* *out*]
+            (with-redefs [durable-main/env-options (constantly {})
+                          server-main/run! (fn [_] (throw failure))]
+              (try
+                (durable-main/-main)
+                (catch Throwable error
+                  (reset! caught error))))))]
+    (is (not (identical? failure @caught)))
+    (is (nil? (ex-cause @caught)))
+    (is (= {:oscope.durable-server/error true :category :lease-held}
+           (ex-data @caught)))
+    (is (re-find #"failed \[lease-held\]" output))
+    (is (re-find #"operator action:" output))
+    (is (not (re-find #"secret|private|password"
+                      (str output " " (ex-message @caught) " "
+                           (pr-str (ex-data @caught))))))))

@@ -198,6 +198,12 @@ instance waits for the 30-second lease to expire. `OSCOPE_DURABLE_FORCE=true`
 is an explicit operator takeover and should only be used after proving the old
 process is gone.
 
+Startup and terminal failures print a bounded operator category before exiting
+nonzero. Recognized categories are `lease-held`, `lease-fenced`,
+`corrupt-head`, and `engine-incompatible`; each includes a fixed recovery
+action. Exception messages, backend paths, owner names, and instance IDs are
+not copied into this diagnostic.
+
 The qualified process-crash gate builds the standalone Durable server, crosses
 two HTTP 200/flush boundaries separated by `SIGKILL` and normal lease expiry,
 then verifies both traces through a separate read-only executable:

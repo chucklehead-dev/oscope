@@ -2,9 +2,55 @@
   "Standalone oscope collector backed by chDB Durable V1 local storage."
   (:require [clojure.string :as str]
             [jdbc.chdb.durable :as durable]
+            [jdbc.chdb.durable.control :as control]
+            [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [oscope.server :as server]
             [oscope.server-main :as server-main]))
+
+(def ^:private failure-details
+  {::control/lease-held
+   {:category :lease-held
+    :message "another writer still holds the Durable lease"
+    :action "wait for lease expiry, or force takeover only after proving the old process is gone"}
+   ::control/lease-fenced
+   {:category :lease-fenced
+    :message "this process no longer owns the Durable lease"
+    :action "stop this instance and investigate the active writer before retrying"}
+   ::head/corrupt
+   {:category :corrupt-head
+    :message "the Durable head is corrupt"
+    :action "preserve the store and restore or repair head.json before retrying"}
+   ::durable/engine-incompatible
+   {:category :engine-incompatible
+    :message "the installed chDB engine cannot recover this Durable object"
+    :action "install a compatible qualified chDB build before retrying"}})
+
+(defn- causal-type [error]
+  (loop [current error remaining 8]
+    (when (and current (pos? remaining))
+      (or (:type (ex-data current))
+          (recur (ex-cause current) (dec remaining))))))
+
+(defn failure-diagnostic
+  "Return a bounded operator diagnostic without echoing exception data.
+
+  Driver adapters may wrap the control failure in a SQLException, so the
+  classifier follows a bounded cause chain. Paths, owner IDs, instance IDs,
+  backend responses, and arbitrary exception messages are never returned."
+  [error]
+  (or (get failure-details (causal-type error))
+      {:category :server-failed
+       :message "the Durable server could not start or remain running"
+       :action "inspect the structured exception type and retained local logs"}))
+
+(defn- report-failure! [error]
+  (let [{:keys [category message action]} (failure-diagnostic error)]
+    (binding [*out* *err*]
+      (println (str "oscope Durable server failed [" (name category) "]: "
+                    message))
+      (println (str "operator action: " action)))
+    {:category category :message message}))
 
 (defn- positive-long [raw name default]
   (if (str/blank? raw)
@@ -127,4 +173,12 @@
           "OSCOPE_DURABLE_CLOCK_SKEW_MS" "OSCOPE_DURABLE_FORCE"])))
 
 (defn -main [& _]
-  (server-main/run! (env-options)))
+  (try
+    (server-main/run! (env-options))
+    (catch Throwable error
+      (let [{:keys [category message]} (report-failure! error)]
+        ;; Do not attach the original cause: an uncaught-exception printer may
+        ;; render its message or ex-data after the bounded diagnostic.
+        (throw (ex-info message
+                        {:oscope.durable-server/error true
+                         :category category}))))))

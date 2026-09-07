@@ -5,6 +5,7 @@
             [jdbc.chdb.durable]
             [jdbc.chdb.durable.backend :as backend]
             [jdbc.chdb.durable.control :as control]
+            [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
             [oscope.raw-export :as raw-export]
@@ -121,6 +122,84 @@
       (doseq [child (or (.listFiles file) (make-array File 0))]
         (delete-tree! (.toPath child)))
       (Files/deleteIfExists ^Path path))))
+
+(defn- error-type [f]
+  (try
+    (f)
+    nil
+    (catch Throwable error
+      (loop [current error remaining 8]
+        (if (and current (pos? remaining))
+          (or (:type (ex-data current))
+              (recur (ex-cause current) (dec remaining)))
+          nil)))))
+
+(defn- durable-server-options [store instance force?]
+  {:port 0
+   :durability {:checkpoint! jdbc.chdb.durable/checkpoint!
+                :flush! jdbc.chdb.durable/flush!}
+   :db-spec {:vendor "chdb-durable"
+             :backend store
+             :owner "oscope-test"
+             :instance instance
+             :database "default"
+             :lease-ttl-ms 30000
+             :force? force?}})
+
+(defn- startup-error-type [options]
+  (error-type
+   #(let [lifecycle (server/start! options)]
+      ;; An unexpectedly successful startup must not leak a native handle into
+      ;; later tests, even though returning nil will still fail the assertion.
+      (server/stop! lifecycle))))
+
+(deftest startup-rejects-live-owner-and-forced-takeover-fences-it
+  (let [root (Files/createTempDirectory
+              "oscope-durable-takeover-" (make-array FileAttribute 0))]
+    (try
+      (let [store (local-posix/local-backend root)
+            now (System/currentTimeMillis)
+            old-token
+            (:token
+             (control/acquire!
+              store {:owner "old-owner" :instance "old-instance"
+                     :database "default"
+                     :engine-version "26.7.2-rc.2"
+                     :backup-format 1
+                     :min-reader "26.7.2-rc.2"
+                     :now now :expires-at (+ now 60000)}))]
+        (is (= ::control/lease-held
+               (startup-error-type
+                (durable-server-options store "competing" false))))
+        (let [lifecycle
+              (server/start! (durable-server-options store "takeover" true))]
+          (try
+            (is (pos? (:port lifecycle)))
+            (is (= ::control/lease-fenced
+                   (error-type
+                    #(control/renew! store old-token
+                                     (+ (System/currentTimeMillis) 60000)))))
+            (finally
+              (is (= :closed (:status (server/stop! lifecycle))))))))
+      (finally
+        (delete-tree! root)))))
+
+(deftest corrupt-head-fails-before-ingress
+  (let [root (Files/createTempDirectory
+              "oscope-durable-corrupt-" (make-array FileAttribute 0))]
+    (try
+      (let [store (local-posix/local-backend root)
+            corrupt-bytes (.getBytes (str "{") "UTF-8")
+            create-result
+            (backend/put-bytes-if-absent!
+             store control/head-key corrupt-bytes)]
+        (is (= :created
+               (:status create-result)))
+        (is (= ::head/corrupt
+               (startup-error-type
+                (durable-server-options store "corrupt" false)))))
+      (finally
+        (delete-tree! root)))))
 
 (deftest standalone-server-flushes-through-durable-jdbc-adapter
   (let [root (Files/createTempDirectory
