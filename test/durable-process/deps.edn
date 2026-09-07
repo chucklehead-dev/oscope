@@ -1,0 +1,8 @@
+{:paths [".."]
+ :deps
+ {io.github.chucklehead-dev/oscope {:local/root "../.."}
+  io.github.chucklehead-dev/jolt-chdb {:local/root "../../../jolt-chdb"}
+  io.github.chucklehead-dev/jolt-otel-clickhouse
+  {:local/root "../../../jolt-otel-clickhouse"}}
+ :jolt/build
+ {:embed ["../../../jolt-chdb/resources"]}}

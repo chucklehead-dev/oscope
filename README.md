@@ -198,6 +198,15 @@ instance waits for the 30-second lease to expire. `OSCOPE_DURABLE_FORCE=true`
 is an explicit operator takeover and should only be used after proving the old
 process is gone.
 
+The qualified process-crash gate builds the standalone Durable server, crosses
+two HTTP 200/flush boundaries separated by `SIGKILL` and normal lease expiry,
+then verifies both traces through a separate read-only executable:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+    test/durable_crash_reopen.sh
+```
+
 Optional settings are `OSCOPE_DURABLE_OWNER`, `OSCOPE_DURABLE_INSTANCE`,
 `OSCOPE_DURABLE_DATABASE`, `OSCOPE_DURABLE_SCRATCH_PARENT`,
 `OSCOPE_DURABLE_LEASE_TTL_MS`, `OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS`, and

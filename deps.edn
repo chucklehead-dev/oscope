@@ -63,6 +63,15 @@
     {:local/root "../jolt-otel-clickhouse"}}
    :main-opts ["-m" "oscope.durable-server-main"]}
 
+  :durable-crash-verify-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-crash-verify"]}
+
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
   :server {:main-opts ["-m" "oscope.server-main"]}
   :emit-sample {:main-opts ["-m" "oscope.sample-emitter"]}
@@ -124,6 +133,7 @@
          test-readers "jolt -M:test-readers"
          test-durable-dev "jolt -M:test-durable-dev"
          test-durable-aspect "test/durable_aspect_smoke.sh"
+         test-durable-crash "test/durable_crash_reopen.sh"
          durable-server-dev "jolt -M:durable-server-dev"
          test-standalone "test/standalone_build_smoke.sh"
          web-snapshot "jolt -M:web-snapshot"
