@@ -46,6 +46,23 @@
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.reader-test-runner"]}
 
+  :test-durable-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-test-runner"]}
+
+  :durable-server-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :main-opts ["-m" "oscope.durable-server-main"]}
+
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
   :server {:main-opts ["-m" "oscope.server-main"]}
   :emit-sample {:main-opts ["-m" "oscope.sample-emitter"]}
@@ -105,6 +122,9 @@
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"
          test-readers "jolt -M:test-readers"
+         test-durable-dev "jolt -M:test-durable-dev"
+         test-durable-aspect "test/durable_aspect_smoke.sh"
+         durable-server-dev "jolt -M:durable-server-dev"
          test-standalone "test/standalone_build_smoke.sh"
          web-snapshot "jolt -M:web-snapshot"
          server "jolt -M:server"

@@ -56,9 +56,46 @@
         response
         (assoc-in response [:headers "Connection"] "close")))))
 
-(defn handler [exporter]
-  (wrap-close-rejected-bodies
-   (receiver/handler {:parse-body parse-json-body
-                      :exporter exporter
-                      :max-body-bytes max-body-bytes
-                      :max-concurrency max-concurrency})))
+(defn- wrap-after-success [receive after-success!]
+  (if-not after-success!
+    receive
+    ;; The receiver's own admission slot ends when export returns. Keep a
+    ;; second, nonblocking slot around export plus its durability barrier so a
+    ;; later request cannot enter the shared connection before the earlier
+    ;; request has either crossed the barrier or failed closed.
+    (let [active? (atom false)]
+      (fn [request]
+        (if-not (compare-and-set! active? false true)
+          {:status 429
+           :headers {"Content-Type" "text/plain; charset=UTF-8"
+                     "Cache-Control" "no-store"}
+           :body "durability boundary busy\n"}
+          (try
+            (let [{:keys [status] :as response} (receive request)]
+              (if-not (<= 200 status 299)
+                response
+                (try
+                  (if (true? (after-success!))
+                    response
+                    (throw
+                     (ex-info "durability callback did not confirm success"
+                              {:oscope.otlp/error true
+                               :type ::durability-unconfirmed})))
+                  (catch Throwable _
+                    {:status 503
+                     :headers {"Content-Type" "text/plain; charset=UTF-8"
+                               "Cache-Control" "no-store"}
+                     :body "durability boundary failed\n"}))))
+            (finally
+              (reset! active? false))))))))
+
+(defn handler
+  ([exporter] (handler exporter {}))
+  ([exporter {:keys [after-success!]}]
+   (wrap-close-rejected-bodies
+    (wrap-after-success
+     (receiver/handler {:parse-body parse-json-body
+                        :exporter exporter
+                        :max-body-bytes max-body-bytes
+                        :max-concurrency max-concurrency})
+     after-success!))))
