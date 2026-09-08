@@ -38,12 +38,46 @@ validates the resulting rows, and only then renders SVG. Returned service names,
 metric names, counts, and other samples never become part of the editable chart
 text, so the same text keeps working as telemetry changes.
 
+The legacy `:current-query` source remains available for the bounded query
+recipe selected in the editor URL. It is also used when editing metric-series
+screens whose fixed time bucket and metric-kind semantics are not yet part of
+the reusable `:telemetry-query` grammar. In both forms, the chart selects named
+result fields and never copies returned data points into editable text.
+
 The current query produces one row per selected field value:
 
 | Field | Meaning |
 | --- | --- |
 | Group field | The selected dimension, such as `:service-name` or `:metric-name`. |
 | Series alias | The result of its aggregate, such as `:count` or `:p95-ns`. |
+
+A metric recipe adds an exact metric name and physical kind, an optional fixed
+time bucket, zero or one allowlisted chart dimension, and one to four named
+aggregates. For example:
+
+```clojure
+{:title "Queue depth by service"
+ :data {:source :current-query
+        :select [:bucket-start-unix-nano :service-name :avg :p95]}
+ :layers [{:mark :line
+           :x :bucket-start-unix-nano :y :p95 :color :service-name}]}
+```
+
+Gauge and sum point values provide `:count`, `:sum`, `:min`, `:max`, `:avg`,
+`:p50`, `:p95`, and `:p99`. Delta explicit histograms provide observation
+`:count`, `:sum`, and `:avg`. Cumulative histogram snapshots are excluded until
+reset-aware differencing is implemented. Scalar sum values are stored-point
+aggregates, not counter increases or rates. The available buckets are none,
+1 minute, 5 minutes, 15 minutes, and 1 hour; dimensions are service, unit,
+scope, and deployment environment.
+
+The generated chart draws the first aggregate in canonical order so its visual
+meaning remains clear without a legend. Its data reference includes every
+returned table field, so the editor can switch `:y` from `:avg` to `:p95` (or
+another selected aggregate), or add explicitly styled layers without embedding
+the returned values. The shared query library supports more dimensions, but
+oscope waits for a composite-series and legend contract before exposing them;
+otherwise distinct SQL groups could be drawn as one line.
 
 Data references are deliberately small. A reference names one source and
 selects 1–16 distinct fields. The source is capped at 512 rows, projected values

@@ -95,22 +95,37 @@
 (defn plotje-from-screen [screen]
   (if-let [chart (:chart screen)]
     (let [rows (:data chart)
-          expression (query-expression/from-selection (:selection screen))
-          group-field (first (:group-by expression))
-          bound-rows (mapv #(-> % (assoc group-field (:value %))
-                                (dissoc :value)) rows)
-          template (-> chart
-                       (assoc :data {:source telemetry-query-source
-                                     :query expression
-                                     :select (query-expression/output-fields expression)})
-                       (update :layers
-                               (fn [layers]
-                                 (mapv #(cond-> %
-                                          (= :value (:x %)) (assoc :x group-field)
-                                          (= :value (:y %)) (assoc :y group-field)
-                                          (= :value (:color %)) (assoc :color group-field))
-                                       layers))))]
-      (prepare :plotje (pr-str template) {telemetry-query-source bound-rows}))
+          selection (:selection screen)]
+      (if (= :metric-series (:mode selection))
+        ;; The URL-owned metric recipe already supports fixed time buckets and
+        ;; kind-specific histogram semantics that the reusable expression does
+        ;; not yet claim. Preserve that bounded source contract during editing.
+        (let [fields (mapv :key (get-in screen [:table :columns]))
+              template (assoc chart :data {:source current-query-source
+                                           :select fields})]
+          (prepare :plotje (pr-str template) {current-query-source rows}))
+        (let [expression (query-expression/from-selection selection)
+              group-field (first (:group-by expression))
+              bound-rows (mapv #(-> % (assoc group-field (:value %))
+                                    (dissoc :value)) rows)
+              template (-> chart
+                           (assoc :data
+                                  {:source telemetry-query-source
+                                   :query expression
+                                   :select
+                                   (query-expression/output-fields expression)})
+                           (update :layers
+                                   (fn [layers]
+                                     (mapv #(cond-> %
+                                              (= :value (:x %))
+                                              (assoc :x group-field)
+                                              (= :value (:y %))
+                                              (assoc :y group-field)
+                                              (= :value (:color %))
+                                              (assoc :color group-field))
+                                           layers))))]
+          (prepare :plotje (pr-str template)
+                   {telemetry-query-source bound-rows}))))
     (prepare :plotje (pr-str empty-plotje-spec))))
 
 (defn default-hiccup []

@@ -3,6 +3,7 @@
             [clojure.test :refer [deftest is testing thrown-with-msg?]]
             [jolt.http.body :as http-body]
             [oscope.hiccup.spec :as hiccup]
+            [oscope.query :as query]
             [oscope.sample :as sample]
             [oscope.ui.visualization-editor :as editor]
             [oscope.visualization.document :as document]))
@@ -49,6 +50,17 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"must contain from 1 to 512 rows"
                           (document/prepare :plotje literal {:unused rows})))))
+
+(deftest metric-series-editor-names-fields-without-copying-result-points
+  (let [screen (sample/screen-for-selection
+                query/default-metric-series-selection)
+        document (document/plotje-from-screen screen)
+        text (:text document)]
+    (is (str/includes? text
+                       ":select [:bucket-start-unix-nano :service-name :avg :p95]"))
+    (is (not (str/includes? text ":p95 5.8")))
+    (is (not (str/includes? text "checkout")))
+    (is (= (:chart screen) (:value document)))))
 
 (deftest safe-hiccup-is-data-only-bounded-and-escaped
   (is (= "<section class=\"card\"><h2>Safe</h2><p>&lt;not markup&gt;</p></section>"

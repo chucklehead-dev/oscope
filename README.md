@@ -13,6 +13,8 @@ sibling source paths and its source contains no demo namespaces.
 ## What works
 
 - spans, logs, and metrics distribution queries through a closed allowlist;
+- reusable metric-series recipes with fixed time buckets, service/unit/scope/
+  environment dimensions, and named count/sum/min/max/avg/p50/p95/p99 fields;
 - a ClickStack-style trace workbench with bounded service, operation, status,
   duration, and time filters, complete parent/child span trees, span events,
   and trace-correlated logs;
@@ -39,12 +41,14 @@ sibling source paths and its source contains no demo namespaces.
   explicit, idempotent retirement; and
 - deterministic headless tests plus an opt-in real-chDB lifecycle gate.
 
-The distribution query plan contains no SQL. User input selects only signal,
-field, time window, and result limit values from closed sets. Raw export is a
-separate versioned data-only command: oscope maps its closed signal and metric
-kind choices to one of five physical tables, then generates a parameterized
-`SELECT`. Export requests cannot supply SQL, table or column names, filesystem
-paths, or filenames.
+The distribution and metric-series query plans contain no SQL. User input
+selects only values from closed sets plus an exact bounded metric name. The
+shared exporter library maps those recipes to parameterized queries; callers
+cannot supply identifiers, aggregate functions, or expressions. Raw export is
+a separate versioned data-only command: oscope maps its closed signal and
+metric-kind choices to one of five physical tables, then generates a
+parameterized `SELECT`. Export requests cannot supply SQL, table or column
+names, filesystem paths, or filenames.
 
 ## Run the standalone receiver and viewer
 
@@ -74,7 +78,7 @@ bounded `:telemetry-query` with grouping, equality filters, and named
 count/sum/average/min/max/percentile series instead of copying returned
 telemetry rows into the spec, so it can be reused as values change.
 See [Reusable Plotje charts](docs/PLOTJE.md) for the current contract and the
-bounded aggregate/query grammar planned next.
+bounded aggregate/query grammar.
 
 Override the port or database without shell-specific `export` syntax:
 
@@ -649,7 +653,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 ## Exact dependency baselines
 
-- `chucklehead-dev/jolt-otel-clickhouse` `ba86e190c906ee223be6c837fd6b135185620afc`
+- `chucklehead-dev/jolt-otel-clickhouse` `d5c38ab51e2002cc3795b247638a4fa212982a42`
 - `chucklehead-dev/jolt-chdb` `3ef8d97b62b467f1ad68f92b854498c124cb8811`
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`

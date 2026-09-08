@@ -7,7 +7,7 @@
             [oscope.query :as query]
             [oscope.raw-export :as raw-export]
             [oscope.sample :as sample])
-  (:import [java.net URLDecoder]))
+  (:import [java.net URLDecoder URLEncoder]))
 
 (def default-path "/oscope")
 (def path default-path)
@@ -34,27 +34,59 @@
                raw-value (if index (subs pair (inc index)) "")
                key (URLDecoder/decode raw-key "UTF-8")
                value (URLDecoder/decode raw-value "UTF-8")]
-           (if (or (contains? params key) (> (count value) 200))
+           (if (or (contains? params key) (> (count value) 256))
              params (assoc params key value))))
        {} (remove str/blank? (str/split (or query-string "") #"&")))
       (catch Throwable _ {}))))
 (defn- keyword-param [params key allowed fallback]
   (or (some #(when (= (get params key) (name %)) %) allowed) fallback))
 (defn selection-from-params [params]
-  (let [supported (query/supported-fields)
-        defaults query/default-selection
-        signal (keyword-param params "signal" (keys supported) (:signal defaults))
-        fields (get supported signal)
-        field (keyword-param params "field" fields
-                             (or (some #{(:field defaults)} fields) (first fields)))
+  (let [series? (= "metric-series" (get params "mode"))
+        defaults (if series? query/default-metric-series-selection
+                     query/default-selection)
         window (keyword-param params "window" (keys query/windows) (:window defaults))
         raw-limit (get params "limit")
         parsed (when (and (string? raw-limit) (re-matches #"[0-9]{1,3}" raw-limit))
                  (parse-long raw-limit))
         limit (if (and parsed (<= 1 parsed query/max-result-limit))
                 parsed (:limit defaults))]
-    (query/normalize-selection
-     {:signal signal :field field :window window :limit limit})))
+    (if series?
+      (let [options query/metric-series-options
+            kind (keyword-param params "metric-kind" (:metric-kinds options)
+                                (:metric-kind defaults))
+            allowed-aggregates (get-in options [:aggregates kind])
+            selected-group
+            (keyword-param params "group-by"
+                           (into [:none] (:group-by options))
+                           (or (first (:group-by defaults)) :none))
+            selected-aggregates
+            (vec (filter #(= "1" (get params (str "aggregate-" (name %))))
+                         allowed-aggregates))
+            fallback-aggregates (vec (filter (set allowed-aggregates)
+                                             (:aggregates defaults)))]
+        (query/normalize-selection
+         {:mode :metric-series
+          :metric-kind kind
+          :metric-name (or (not-empty (get params "metric-name"))
+                           (:metric-name defaults))
+          :group-by (if (= :none selected-group) [] [selected-group])
+          :bucket (keyword-param params "bucket" (:buckets options)
+                                 (:bucket defaults))
+          :aggregates (if (= "1" (get params "aggregates-present"))
+                        (if (seq selected-aggregates)
+                          selected-aggregates [(first allowed-aggregates)])
+                        (if (seq fallback-aggregates)
+                          fallback-aggregates [(first allowed-aggregates)]))
+          :window window :limit limit}))
+      (let [supported (query/supported-fields)
+            signal (keyword-param params "signal" (keys supported)
+                                  (:signal defaults))
+            fields (get supported signal)
+            field (keyword-param params "field" fields
+                                 (or (some #{(:field defaults)} fields)
+                                     (first fields)))]
+        (query/normalize-selection
+         {:signal signal :field field :window window :limit limit})))))
 (defn- option [value label selected?]
   (str "<option value=\"" (esc (name value)) "\""
        (when selected? " selected") ">" (esc label) "</option>"))
@@ -78,12 +110,19 @@
   (contains? #{(route-path path) (export-path path) (refresh-path path)
                (live-asset-path path)}
              candidate))
-(defn- render-controls
+(defn- checkbox [name label checked?]
+  (str "<label class=\"live-choice\"><input name=\"" (esc name)
+       "\" type=\"checkbox\" value=\"1\"" (when checked? " checked")
+       "> " (esc label) "</label>"))
+(defn- render-distribution-controls
   [{:keys [signals windows limit]} {:keys [field]} action live?]
   (let [selected-signal (some #(when (:selected? %) %) signals)]
     (str "<form method=\"get\" action=\"" (esc action)
          "\" aria-label=\"Telemetry query\">"
-         "<div class=\"controls\"><label>Signal<select name=\"signal\">"
+         "<div class=\"controls\"><label>Query<select name=\"mode\">"
+         (option :distribution "Distribution" true)
+         (option :metric-series "Metric series" false)
+         "</select></label><label>Signal<select name=\"signal\">"
          (apply str (map #(option (:value %) (:label %) (:selected? %)) signals))
          "</select></label><label>Group by<select name=\"field\">"
          (apply str (map #(option (:value %) (:label %) (= field (:value %)))
@@ -95,16 +134,69 @@
          (:value limit) "\"></label><label class=\"live-choice\"><input name=\"live\" type=\"checkbox\" value=\"1\""
          (when live? " checked")
          "> Live refresh</label><button type=\"submit\">Run query</button></div></form>")))
-(defn selection-query-string [{:keys [signal field window limit] :as selection}]
-  (let [{normalized-signal :signal normalized-field :field
-         normalized-window :window normalized-limit :limit}
-        (query/normalize-selection selection)]
-    (str "?signal=" (name normalized-signal)
-         "&field=" (name normalized-field)
-         "&window=" (name normalized-window)
-         "&limit=" normalized-limit)))
+(defn- render-series-controls
+  [controls selection action live?]
+  (let [{:keys [metric-kind metric-name group-by bucket aggregates window]}
+        selection
+        metric-kinds (:metric-kinds controls)
+        available-groups (:group-by controls)
+        buckets (:buckets controls)
+        available-aggregates (:aggregates controls)
+        windows (:windows controls)
+        limit (:limit controls)]
+    (str "<form method=\"get\" action=\"" (esc action)
+         "\" aria-label=\"Metric series query\">"
+         "<div class=\"controls series-controls\"><label>Query<select name=\"mode\">"
+         (option :distribution "Distribution" false)
+         (option :metric-series "Metric series" true)
+         "</select></label><label>Metric kind<select name=\"metric-kind\">"
+         (apply str (map #(option % (str/capitalize (name %)) (= % metric-kind))
+                         metric-kinds))
+         "</select></label><label>Exact metric name<input required name=\"metric-name\" maxlength=\"256\" value=\""
+         (esc metric-name) "\"></label><label>Time bucket<select name=\"bucket\">"
+         (apply str (map #(option % (name %) (= % bucket)) buckets))
+         "</select></label><label>Window<select name=\"window\">"
+         (apply str (map #(option % (name %) (= % window)) windows))
+         "</select></label><label>Maximum rows<input name=\"limit\" type=\"number\" min=\""
+         (:minimum limit) "\" max=\"" (:maximum limit) "\" value=\""
+         (:value limit) "\"></label><label>Group dimension<select name=\"group-by\">"
+         (option :none "None" (empty? group-by))
+         (apply str (map #(option %
+                                 (-> % name (str/replace "-" " ") str/capitalize)
+                                 (= % (first group-by)))
+                         available-groups))
+         "</select></label></div><fieldset><legend>Aggregate fields</legend><input type=\"hidden\" name=\"aggregates-present\" value=\"1\"><div class=\"choices\">"
+         (apply str (map #(checkbox (str "aggregate-" (name %))
+                                    (str/upper-case (name %))
+                                    (some #{%} aggregates))
+                         available-aggregates))
+         "</div></fieldset><div class=\"form-actions\">"
+         (checkbox "live" "Live refresh" live?)
+         "<button type=\"submit\">Run query</button></div></form>")))
+(defn- render-controls [controls selection action live?]
+  (if (= :metric-series (:mode selection))
+    (render-series-controls controls selection action live?)
+    (render-distribution-controls controls selection action live?)))
+(defn selection-query-string [selection]
+  (let [selection (query/normalize-selection selection)]
+    (if (= :metric-series (:mode selection))
+      (str "?mode=metric-series&metric-kind=" (name (:metric-kind selection))
+           "&metric-name=" (URLEncoder/encode (:metric-name selection) "UTF-8")
+           "&bucket=" (name (:bucket selection))
+           "&group-by=" (name (or (first (:group-by selection)) :none))
+           "&aggregates-present=1"
+           (apply str (map #(str "&aggregate-" (name %) "=1")
+                           (:aggregates selection)))
+           "&window=" (name (:window selection))
+           "&limit=" (:limit selection))
+      (str "?signal=" (name (:signal selection))
+           "&field=" (name (:field selection))
+           "&window=" (name (:window selection))
+           "&limit=" (:limit selection)))))
 (defn- render-export-controls [screen action enabled?]
-  (let [{:keys [signal]} (:selection screen)
+  (let [{:keys [signal mode metric-kind]} (:selection screen)
+        signal (if (= :metric-series mode) :metrics signal)
+        metric-kind (if (= :metric-series mode) metric-kind :gauge)
         {:keys [start-unix-nano end-unix-nano]}
         (get-in screen [:query-plan :request])]
     (str "<section aria-labelledby=\"export-title\"><h2 id=\"export-title\">Export raw telemetry</h2>"
@@ -120,8 +212,10 @@
          (option :logs "Logs" (= signal :logs))
          (option :metrics "Metrics" (= signal :metrics))
          "</select></label><label>Metric kind<select name=\"metric-kind\">"
-         (option :gauge "Gauge" true) (option :sum "Sum" false)
-         (option :histogram "Histogram" false) "</select></label>"
+         (option :gauge "Gauge" (= :gauge metric-kind))
+         (option :sum "Sum" (= :sum metric-kind))
+         (option :histogram "Histogram" (= :histogram metric-kind))
+         "</select></label>"
          "<label>Format<select name=\"format\">"
          (option :parquet "Parquet" true) (option :arrow "Arrow" false)
          "</select></label>"
@@ -138,8 +232,19 @@
   (str "<div class=\"table-wrap\"><table><caption>Bounded query results</caption>"
        "<thead><tr>" (apply str (map #(str "<th scope=\"col\">" (esc (:label %)) "</th>") columns))
        "</tr></thead><tbody>"
-       (apply str (map #(str "<tr><th scope=\"row\">" (esc (:value %))
-                             "</th><td>" (:count %) "</td></tr>") rows))
+       (apply str
+              (map (fn [row]
+                     (str "<tr>"
+                          (apply str
+                                 (map-indexed
+                                  (fn [index {:keys [key]}]
+                                    (let [tag (if (zero? index) "th" "td")]
+                                      (str "<" tag
+                                           (when (zero? index) " scope=\"row\"")
+                                           ">" (esc (get row key)) "</" tag ">")))
+                                  columns))
+                          "</tr>"))
+                   rows))
        "</tbody></table></div>"))
 (def ^:private style
   (str ":root{color-scheme:dark;--bg:#0d1219;--panel:#182231;--text:#f7f9fc;"
@@ -152,19 +257,21 @@
        "button{background:#d8f1ff;color:#071018;border:0;border-radius:.4rem;padding:.65rem 1rem;font-weight:800}"
        "button:disabled,fieldset:disabled{opacity:.65}fieldset{border:0;padding:0;margin:0}legend{font-weight:800;margin-bottom:.5rem}"
        ".live-choice{display:flex;gap:.45rem;align-items:center;min-height:2.7rem}.live-choice input{width:auto;margin:0}"
+       ".choices,.form-actions{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap}.choices .live-choice{font-weight:600}.form-actions{justify-content:flex-end;margin-top:.8rem}"
        ".screen-head{display:flex;align-items:start;justify-content:space-between;gap:1rem}.live-state{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap}.provenance{font-variant-numeric:tabular-nums}"
        ".export-controls{display:grid;grid-template-columns:repeat(3,minmax(9rem,1fr));gap:.7rem;align-items:end}"
-       ".grid{display:grid;grid-template-columns:minmax(20rem,1.4fr) minmax(18rem,.6fr);gap:1rem}"
+       ".grid{display:grid;grid-template-columns:minmax(20rem,1.2fr) minmax(24rem,.8fr);gap:1rem}"
+       ".metric-series-grid{grid-template-columns:1fr}"
        "svg{display:block;width:100%;height:auto;background:white;border-radius:.35rem}.table-wrap{overflow:auto}"
        "table{width:100%;border-collapse:collapse}caption{text-align:left;font-weight:800;padding:0 0 .6rem}"
-       "th,td{text-align:left;border-bottom:1px solid var(--line);padding:.55rem;overflow-wrap:anywhere}td{text-align:right}"
+       "th,td{text-align:left;border-bottom:1px solid var(--line);padding:.55rem}th{white-space:nowrap}td{text-align:right;overflow-wrap:anywhere}"
        "@media(max-width:850px){.controls,.export-controls,.grid{grid-template-columns:1fr}}"))
 
 (defn render-screen-fragment
   "Render one complete, atomically replaceable versioned query screen."
   ([screen] (render-screen-fragment screen {}))
   ([screen {:keys [live?]}]
-   (let [{:keys [title chart table empty-message]} screen
+   (let [{:keys [title chart table empty-message view]} screen
          version (:oscope.view/version screen)
          {:keys [start-unix-nano end-unix-nano]}
          (get-in screen [:query-plan :request])]
@@ -180,7 +287,10 @@
                  "<span role=\"status\" aria-live=\"polite\" data-oscope-live-status>Live refresh is on.</span></div>"))
           "</div>"
           (if chart
-            (str "<div class=\"grid\"><section class=\"panel\">"
+            (str "<div class=\"grid"
+                 (when (= :telemetry-metric-series view)
+                   " metric-series-grid")
+                 "\"><section class=\"panel\">"
                  (plotje/spec->svg chart) "</section><section class=\"panel\">"
                  (render-table table) "</section></div>")
             (str "<section class=\"panel\" role=\"status\"><p>" (esc empty-message)
@@ -242,7 +352,7 @@
          "<title>oscope · " (esc (:title screen)) "</title><style>" style "</style>"
          (when live? (str "<script defer src=\"" (esc (live-asset-path path)) "\"></script>"))
          "</head><body>"
-         "<header><h1>oscope</h1><p>Explore bounded distributions from embedded telemetry.</p>"
+         "<header><h1>oscope</h1><p>Explore bounded distributions and metric series from embedded telemetry.</p>"
          (when visualization-editor-path
            (str "<nav aria-label=\"Visualization utilities\"><a href=\""
                 (esc visualization-editor-path)

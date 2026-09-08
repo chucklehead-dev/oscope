@@ -20,7 +20,7 @@ test("investigates checkout telemetry and changes its visual grammar", async ({p
   await page.getByLabel("Metric name contains").fill("demo.checkout.queue.depth");
   await page.getByRole("button", {name: "Run query"}).click();
   await expect(page.locator("#oscope-events")).toContainText("demo.checkout.queue.depth");
-  await expect(page.locator("#oscope-events tbody tr")).toHaveCount(1);
+  await expect(page.locator("#oscope-events tbody tr")).toHaveCount(4);
 
   await page.getByRole("link", {name: "Charts & distributions"}).click();
   const query = page.getByRole("form", {name: "Telemetry query"});
@@ -31,13 +31,22 @@ test("investigates checkout telemetry and changes its visual grammar", async ({p
   await expect(page.locator("#oscope-screen svg")).toBeVisible();
   await expect(page.locator("#oscope-screen")).toContainText("demo.checkout.queue.depth");
 
+  await query.locator('select[name="mode"]').selectOption("metric-series");
+  await query.getByRole("button", {name: "Run query"}).click();
+  const series = page.getByRole("form", {name: "Metric series query"});
+  await series.getByLabel("Exact metric name").fill("demo.checkout.queue.depth");
+  await series.getByLabel("Time bucket").selectOption("5m");
+  await series.getByRole("button", {name: "Run query"}).click();
+  await expect(page.locator("#oscope-screen")).toContainText("demo.checkout.queue.depth · avg, p95");
+  await expect(page.locator("#oscope-screen")).toContainText("Bucket Start Unix Nano");
+  await expect(page.locator("#oscope-screen svg polyline")).toHaveCount(1);
+
   await page.getByRole("link", {name: "Edit this chart"}).click();
   const editor = page.getByLabel("Chart specification");
-  await expect(editor).toHaveValue(/:mark :bar/);
-  await expect(editor).toHaveValue(/:source :telemetry-query/);
-  await expect(editor).toHaveValue(/:group-by \[:metric-name\]/);
-  await expect(editor).toHaveValue(/:series \[\{:as :count, :op :count\}\]/);
-  await expect(editor).not.toHaveValue(/demo\.checkout\.queue\.depth/);
+  await expect(editor).toHaveValue(/:mark :line/);
+  await expect(editor).toHaveValue(/:data \{:source :current-query, :select \[:bucket-start-unix-nano :service-name :avg :p95\]\}/);
+  await expect(editor).toHaveValue(/demo\.checkout\.queue\.depth/);
+  await expect(editor).not.toHaveValue(/:p95 7\.0/);
   await page.getByRole("button", {name: "Load example"}).first().click();
   await expect(editor).toHaveValue(/:mark :area/);
   await expect(page.locator("#plotje-preview svg polygon")).toBeVisible();

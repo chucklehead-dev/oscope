@@ -22,6 +22,11 @@ test("capture the checkout investigation and visualization workflow", async ({pa
   await expect(page.locator("#oscope-screen svg")).toBeVisible();
   await capture(page, "03-metric-distribution.png");
 
+  await page.goto("/oscope?mode=metric-series&metric-kind=gauge&metric-name=demo.checkout.queue.depth&bucket=5m&group-by=service-name&aggregates-present=1&aggregate-avg=1&aggregate-p95=1&window=15m&limit=20");
+  await expect(page.locator("#oscope-screen svg polyline")).toHaveCount(1);
+  await expect(page.locator("#oscope-screen")).toContainText("demo.checkout.queue.depth · avg, p95");
+  await capture(page, "04-metric-series.png");
+
   await page.getByRole("link", {name: "Edit this chart"}).click();
   await page.getByRole("button", {name: "Load example"}).first().click();
   const editor = page.getByLabel("Chart specification");

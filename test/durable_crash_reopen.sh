@@ -8,10 +8,15 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/oscope-durable-crash.XXXXXX")
 pid=
 backend=${OSCOPE_DURABLE_CRASH_BACKEND:-local}
 build_alias=${OSCOPE_DURABLE_CRASH_BUILD_ALIAS:-test-durable-s3-dev}
+lease_ttl_ms=${OSCOPE_DURABLE_CRASH_LEASE_TTL_MS:-300}
+heartbeat_interval_ms=${OSCOPE_DURABLE_CRASH_HEARTBEAT_INTERVAL_MS:-50}
+takeover_wait_seconds=${OSCOPE_DURABLE_CRASH_TAKEOVER_WAIT_SECONDS:-1}
 
 : "${JOLT_CHDB_LIB:?JOLT_CHDB_LIB must name the qualified libchdb shared library}"
 
-if [ -n "${JOLT_BIN:-}" ]; then
+if [ -n "${JOLT_WRAPPER:-}" ]; then
+  jolt_command=("$JOLT_WRAPPER" jolt)
+elif [ -n "${JOLT_BIN:-}" ]; then
   jolt_command=("$JOLT_BIN")
 else
   jolt_command=("$toolchain" jolt)
@@ -39,6 +44,15 @@ case "$build_alias" in
     ;;
   *) echo "unsupported Durable crash build alias: $build_alias" >&2; exit 2 ;;
 esac
+for value in "$lease_ttl_ms" "$heartbeat_interval_ms" \
+             "$takeover_wait_seconds"; do
+  case "$value" in
+    ''|*[!0-9]*|0)
+      echo "Durable crash timing values must be positive integers" >&2
+      exit 2
+      ;;
+  esac
+done
 server_binary="$scenario/target/oscope-durable-server"
 verify_binary="$scenario/target/oscope-durable-crash-verify"
 
@@ -101,8 +115,8 @@ start_server() {
   env "${durable_env[@]}" \
       OSCOPE_PORT=0 \
       OSCOPE_DURABLE_INSTANCE="$instance" \
-      OSCOPE_DURABLE_LEASE_TTL_MS=300 \
-      OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS=50 \
+      OSCOPE_DURABLE_LEASE_TTL_MS="$lease_ttl_ms" \
+      OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS="$heartbeat_interval_ms" \
       "$server_binary" >"$log" 2>&1 &
   pid=$!
 
@@ -147,7 +161,7 @@ crash_server() {
   wait "$pid" 2>/dev/null || true
   pid=
   # The next process must take over through ordinary lease expiry, not force.
-  sleep 1
+  sleep "$takeover_wait_seconds"
 }
 
 start_server first "$tmp/first.log"

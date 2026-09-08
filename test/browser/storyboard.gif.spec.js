@@ -29,6 +29,15 @@ test("record the checkout-to-chart tour", async ({page, request, baseURL}) => {
   await expect(page.locator("#oscope-screen svg")).toBeVisible();
   await pause(1400);
 
+  await query.locator('select[name="mode"]').selectOption("metric-series");
+  await query.getByRole("button", {name: "Run query"}).click();
+  const series = page.getByRole("form", {name: "Metric series query"});
+  await series.getByLabel("Exact metric name").fill("demo.checkout.queue.depth");
+  await series.getByLabel("Time bucket").selectOption("5m");
+  await series.getByRole("button", {name: "Run query"}).click();
+  await expect(page.locator("#oscope-screen svg polyline")).toHaveCount(1);
+  await pause(1600);
+
   await page.getByRole("link", {name: "Edit this chart"}).click();
   await page.getByRole("button", {name: "Load example"}).first().click();
   const editor = page.getByLabel("Chart specification");
