@@ -523,8 +523,12 @@ onto one owned OS thread and publish a small immutable cache:
 ;; Rendering only dereferences the cached value; it never queries chDB.
 (def display-model (embedded-query/snapshot sampler))
 
-;; Stop and join the query thread before retiring its shared source.
-(assert (= :closed (:status (embedded-query/stop! sampler))))
+;; Retry a bounded stop until the native query has really completed and joined.
+(loop []
+  (when-not (= :closed (:status (embedded-query/stop! sampler)))
+    (Thread/sleep 50)
+    (recur)))
+;; Only now may the shared source be retired.
 (embedded/stop! runtime)
 ```
 
