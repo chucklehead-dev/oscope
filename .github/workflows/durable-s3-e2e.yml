@@ -70,5 +70,6 @@ jobs:
       - name: Recover oscope after process crashes through pinned MinIO
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
+          JOLT_BIN: jolt
           OSCOPE_DURABLE_CRASH_BUILD_ALIAS: test-durable-s3
         run: test/durable_s3_crash_reopen.sh

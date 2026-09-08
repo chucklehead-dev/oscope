@@ -11,6 +11,12 @@ build_alias=${OSCOPE_DURABLE_CRASH_BUILD_ALIAS:-test-durable-s3-dev}
 
 : "${JOLT_CHDB_LIB:?JOLT_CHDB_LIB must name the qualified libchdb shared library}"
 
+if [ -n "${JOLT_BIN:-}" ]; then
+  jolt_command=("$JOLT_BIN")
+else
+  jolt_command=("$toolchain" jolt)
+fi
+
 cleanup() {
   if [ -n "$pid" ]; then
     kill -9 "$pid" 2>/dev/null || true
@@ -39,9 +45,9 @@ verify_binary="$scenario/target/oscope-durable-crash-verify"
 mkdir -p "$scenario/target" "$tmp/scratch"
 if ! (
   cd "$scenario"
-  "$toolchain" jolt build -m oscope.durable-server-main \
+  "${jolt_command[@]}" build -m oscope.durable-server-main \
     -o target/oscope-durable-server
-  "$toolchain" jolt build -m oscope.durable-crash-verify \
+  "${jolt_command[@]}" build -m oscope.durable-crash-verify \
     -o target/oscope-durable-crash-verify
 ) >"$tmp/build.log" 2>&1; then
   cat "$tmp/build.log" >&2
