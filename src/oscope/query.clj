@@ -248,15 +248,31 @@
   (let [{:keys [signal field window limit] :as selected}
         (normalize-selection selection)
         start (max 0 (- end-unix-nano (window-nanos window)))]
-    (if (contains? #{:metric-series :counter-series} (:mode selected))
+    (case (:mode selected)
+      :counter-series
       {:oscope.query/version 1
        :selection selected
-       :request (-> selected
-                    (select-keys [:metric-kind :temporality :monotonic?
-                                  :metric-name :group-by :bucket :aggregates
-                                  :limit])
-                    (assoc :start-unix-nano start
-                           :end-unix-nano end-unix-nano))}
+       :request {:metric-kind (:metric-kind selected)
+                 :temporality (:temporality selected)
+                 :monotonic? (:monotonic? selected)
+                 :metric-name (:metric-name selected)
+                 :group-by (:group-by selected)
+                 :bucket (:bucket selected)
+                 :aggregates (:aggregates selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
+      :metric-series
+      {:oscope.query/version 1
+       :selection selected
+       :request {:metric-kind (:metric-kind selected)
+                 :metric-name (:metric-name selected)
+                 :group-by (:group-by selected)
+                 :bucket (:bucket selected)
+                 :aggregates (:aggregates selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
       {:oscope.query/version 1
        :selection selected
        :request {:signal signal :fields [field]

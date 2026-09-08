@@ -13,6 +13,23 @@
 (t/ann plan oscope.typed.contracts/QueryPlan)
 (def plan (query/compile-query selection 2000000000000000000))
 
+(t/ann counter-selection oscope.typed.contracts/CounterSeriesSelection)
+(def counter-selection
+  {:mode :counter-series
+   :metric-kind :sum
+   :temporality :cumulative
+   :monotonic? true
+   :metric-name "requests.total"
+   :group-by [:service-name]
+   :bucket :5m
+   :aggregates [:increase :rate]
+   :window :1h
+   :limit 100})
+
+(t/ann counter-plan oscope.typed.contracts/QueryPlan)
+(def counter-plan
+  (query/compile-query counter-selection 2000000000000000000))
+
 (t/ann query-command oscope.typed.contracts/QueryCommand)
 (def query-command (command/query-command [:web-refresh 7] selection))
 

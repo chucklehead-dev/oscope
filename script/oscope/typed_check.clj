@@ -16,19 +16,21 @@
   [{:namespace 'oscope.typed.controls.wrong-command-variant
     :evidence [":query" ":export"]}
    {:namespace 'oscope.typed.controls.wrong-signal-field
-    :evidence ["oscope.typed.contracts/Selection" ":unknown"]}
+    :evidence ["oscope.typed.contracts/QuerySelection" ":unknown"]}
    {:namespace 'oscope.typed.controls.wrong-window
-    :evidence ["oscope.typed.contracts/Selection" ":forever"]}
+    :evidence ["oscope.typed.contracts/QuerySelection" ":forever"]}
    {:namespace 'oscope.typed.controls.wrong-limit
-    :evidence ["oscope.typed.contracts/Selection" "many"]}
+    :evidence ["oscope.typed.contracts/QuerySelection" "many"]}
    {:namespace 'oscope.typed.controls.wrong-plan-time
     :evidence ["AnyInteger" "later"]}
    {:namespace 'oscope.typed.controls.wrong-bucket
     :evidence ["oscope.typed.contracts/BucketedTelemetryExpression" ":30s"]}
+   {:namespace 'oscope.typed.controls.wrong-counter-provenance
+    :evidence [":cumulative" ":delta"]}
    {:namespace 'oscope.typed.controls.wrong-view-row
     :evidence ["oscope.typed.contracts/RawDistributionRow" "three"]}])
 
-(def expected-mutant-count 7)
+(def expected-mutant-count 8)
 
 (def production-check-config
   {:check-config {:unannotated-def :unchecked
