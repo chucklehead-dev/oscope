@@ -7,6 +7,7 @@
             [oscope.effect :as effect]
             [oscope.query :as query]
             [oscope.query.chdb :as query-chdb]
+            [oscope.query.expression.chdb :as query-expression-chdb]
             [oscope.raw-export :as raw-export]
             [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.view-model :as view-model]
@@ -46,6 +47,19 @@
              load-command (fn [request-id selection]
                             (effect/run-command
                              loader (command/query-command request-id selection)))
+             plotje-query-active (atom false)
+             plotje-query-command
+             (fn [_request-id expression]
+               (when @closed?
+                 (throw (ex-info "oscope live source is closed"
+                                 {:oscope.live/error true :type ::closed})))
+               (when-not (compare-and-set! plotje-query-active false true)
+                 (throw (ex-info "oscope Plotje query capacity reached"
+                                 {:oscope.live/error true
+                                  :type ::plotje-query-capacity :status 503})))
+               (try
+                 (query-expression-chdb/execute! conn expression (now-fn))
+                 (finally (reset! plotje-query-active false))))
              exporter (fn [selection]
                         (when @closed?
                           (throw (ex-info "oscope live source is closed"
@@ -60,6 +74,7 @@
           :loader loader
           :screen (load-command :initial query/default-selection)
           :load-command load-command
+          :plotje-query-command plotje-query-command
           :export-command export-command
           :closed? closed?
           :close! (fn []

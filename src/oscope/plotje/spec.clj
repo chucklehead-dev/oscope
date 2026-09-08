@@ -1,7 +1,8 @@
 (ns oscope.plotje.spec
   "Bounded, portable Plotje/grammar-of-graphics subset used by oscope."
   (:require [clojure.edn :as edn]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [oscope.query.expression :as query-expression]))
 
 (def max-spec-chars 32768)
 (def ^:private max-rows 512)
@@ -16,7 +17,7 @@
     :bar-width})
 (def marks #{:line :point :bar :area :rule :tick})
 (def ^:private color-pattern #"#[0-9a-fA-F]{6}")
-(def ^:private data-reference-keys #{:source :select})
+(def ^:private data-reference-keys #{:source :query :select})
 
 (defn- fail! [message]
   (throw (ex-info message {:oscope.plotje/error true})))
@@ -73,14 +74,26 @@
   (unknown! "data reference" data-reference-keys value)
   (let [source (column-name! "data source must be a short, unqualified keyword"
                              (:source value))
-        fields (:select value)]
+        fields (:select value)
+        query (:query value)]
     (when-not (and (vector? fields) (<= 1 (count fields) max-columns))
       (fail! "data select must contain from 1 to 16 fields"))
     (doseq [field fields]
       (column-name! "selected fields must be short, unqualified keywords" field))
     (when-not (= (count fields) (count (distinct fields)))
       (fail! "data select fields must be unique"))
-    {:source source :select fields}))
+    (if (= :telemetry-query source)
+      (let [query (query-expression/validate-expression query)
+            available (set (query-expression/output-fields query))]
+        (doseq [field fields]
+          (when-not (contains? available field)
+            (fail! (str "selected field " (pr-str field)
+                        " is not produced by telemetry query"))))
+        {:source source :query query :select fields})
+      (do
+        (when (contains? value :query)
+          (fail! "query is supported only by the :telemetry-query data source"))
+        {:source source :select fields}))))
 (defn validate-data-sources [sources]
   (when-not (and (map? sources) (<= (count sources) max-data-sources)
                  (every? #(and (keyword? %) (nil? (namespace %))
@@ -110,8 +123,8 @@
     data
     (source-rows! sources (data-reference! data))))
 
-(defn referenced-source
-  "Return the named data source in bounded Plotje text, or nil for literal data."
+(defn referenced-data
+  "Return the validated data reference in bounded Plotje text, or nil for literal data."
   [text]
   (let [text (str (or text ""))]
     (when (> (count text) max-spec-chars) (fail! "chart spec is too large"))
@@ -124,9 +137,12 @@
                                            " is not allowed")))}
                    text)
             data (when (map? value) (:data value))]
-        (when (map? data) (:source (data-reference! data))))
+        (when (map? data) (data-reference! data)))
       (catch clojure.lang.ExceptionInfo error (throw error))
       (catch Throwable _ (fail! "chart spec is not valid EDN")))))
+
+(defn referenced-source [text]
+  (some-> (referenced-data text) :source))
 (defn- column! [rows layer key]
   (let [column (get layer key)]
     (when-not (and (keyword? column) (nil? (namespace column)))

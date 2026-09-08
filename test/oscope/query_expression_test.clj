@@ -1,0 +1,75 @@
+(ns oscope.query-expression-test
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing thrown-with-msg?]]
+            [jdbc.core :as jdbc]
+            [oscope.query.expression :as expression]
+            [oscope.query.expression.chdb :as expression-chdb]
+            [otel.context :as context]))
+
+(def now 2000000000000000000)
+(def all-aggregates
+  {:signal :spans :window :15m :group-by [:service-name]
+   :filters [{:field :status-code :op :eq :value "OK"}]
+   :series [{:as :requests :op :count}
+            {:as :total-ns :op :sum :field :duration-ns}
+            {:as :average-ns :op :avg :field :duration-ns}
+            {:as :minimum-ns :op :min :field :duration-ns}
+            {:as :maximum-ns :op :max :field :duration-ns}
+            {:as :p95-ns :op :percentile :field :duration-ns :percentile 95}]
+   :limit 20})
+
+(deftest expression-is-a-closed-typed-aggregate-contract
+  (is (= [:service-name :requests :total-ns :average-ns :minimum-ns
+          :maximum-ns :p95-ns]
+         (expression/output-fields all-aggregates)))
+  (doseq [percentile [50 75 90 95 99]]
+    (is (= percentile
+           (-> (expression/validate-expression
+                (assoc all-aggregates :series
+                       [{:as :latency :op :percentile :field :duration-ns
+                         :percentile percentile}]))
+               :series first :percentile))))
+  (testing "unsupported syntax and signal-specific numeric fields fail closed"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"p50, p75, p90, p95, or p99"
+                          (expression/validate-expression
+                           (assoc-in all-aggregates [:series 5 :percentile] 93))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"numeric field is unsupported"
+                          (expression/validate-expression
+                           (assoc-in all-aggregates [:series 1 :field] :sql))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"filter op must be :eq"
+                          (expression/validate-expression
+                           (assoc-in all-aggregates [:filters 0 :op] :regex))))))
+
+(deftest compiler-binds-values-and-uses-only-allowlisted-identifiers
+  (let [{:keys [sqlvec columns limit]}
+        (expression/compile-query all-aggregates now)
+        [sql & params] sqlvec]
+    (is (str/includes? sql "FROM otel_traces"))
+    (is (str/includes? sql "sum(Duration) AS series1"))
+    (is (str/includes? sql "quantileExact(0.95)(Duration) AS series5"))
+    (is (str/includes? sql "toString(StatusCode) = ?"))
+    (is (str/includes? sql "GROUP BY toString(ServiceName)"))
+    (is (not (str/includes? sql "GROUP BY dimension0")))
+    (is (not (str/includes? sql "OK")))
+    (is (not (str/includes? sql "requests")))
+    (is (= [160 (- now (* 15 60 1000000000)) now "OK" 20] params))
+    (is (= [[:dimension0 :service-name] [:series0 :requests]
+            [:series1 :total-ns] [:series2 :average-ns]
+            [:series3 :minimum-ns] [:series4 :maximum-ns]
+            [:series5 :p95-ns]] columns))
+    (is (= 20 limit))))
+
+(deftest executor-renames-generated-columns-and-suppresses-instrumentation
+  (let [seen (atom nil)]
+    (with-redefs [jdbc/fetch
+                  (fn [connection sqlvec options]
+                    (reset! seen [connection sqlvec options
+                                  (context/instrumentation-suppressed?)])
+                    [{:dimension0 "api" :series0 2 :series1 40.0
+                      :series2 20.0 :series3 10 :series4 30 :series5 30}])]
+      (is (= [{:service-name "api" :requests 2 :total-ns 40.0
+               :average-ns 20.0 :minimum-ns 10 :maximum-ns 30 :p95-ns 30}]
+             (expression-chdb/execute! ::connection all-aggregates now)))
+      (is (= ::connection (first @seen)))
+      (is (= {:max-rows 20} (nth @seen 2)))
+      (is (true? (nth @seen 3))))))

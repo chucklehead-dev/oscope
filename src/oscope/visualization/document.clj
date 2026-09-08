@@ -1,10 +1,12 @@
 (ns oscope.visualization.document
   "Versioned, renderer-neutral Plotje and safe-Hiccup edit documents."
   (:require [oscope.hiccup.spec :as hiccup]
-            [oscope.plotje.spec :as plotje]))
+            [oscope.plotje.spec :as plotje]
+            [oscope.query.expression :as query-expression]))
 
 (def version 2)
 (def current-query-source :current-query)
+(def telemetry-query-source :telemetry-query)
 (def kinds #{:plotje :hiccup})
 (def default-hiccup-text
   "[:section {:class \"card\"} [:h2 \"Telemetry note\"] [:p \"Edit this safe, data-only Hiccup.\"]]")
@@ -93,14 +95,22 @@
 (defn plotje-from-screen [screen]
   (if-let [chart (:chart screen)]
     (let [rows (:data chart)
-          fields (->> (:layers chart)
-                      (mapcat (fn [layer]
-                                (keep #(get layer %) [:x :y :color])))
-                      distinct
-                      vec)
-          template (assoc chart :data {:source current-query-source
-                                       :select fields})]
-      (prepare :plotje (pr-str template) {current-query-source rows}))
+          expression (query-expression/from-selection (:selection screen))
+          group-field (first (:group-by expression))
+          bound-rows (mapv #(-> % (assoc group-field (:value %))
+                                (dissoc :value)) rows)
+          template (-> chart
+                       (assoc :data {:source telemetry-query-source
+                                     :query expression
+                                     :select (query-expression/output-fields expression)})
+                       (update :layers
+                               (fn [layers]
+                                 (mapv #(cond-> %
+                                          (= :value (:x %)) (assoc :x group-field)
+                                          (= :value (:y %)) (assoc :y group-field)
+                                          (= :value (:color %)) (assoc :color group-field))
+                                       layers))))]
+      (prepare :plotje (pr-str template) {telemetry-query-source bound-rows}))
     (prepare :plotje (pr-str empty-plotje-spec))))
 
 (defn default-hiccup []

@@ -10,6 +10,7 @@
             [oscope.live-test]
             [oscope.otlp-test]
             [oscope.plotje-test]
+            [oscope.query-expression-test]
             [oscope.query-view-test]
             [oscope.raw-export-test]
             [oscope.sample-emitter-test]
@@ -26,6 +27,7 @@
                         'oscope.live-test
                         'oscope.otlp-test
                         'oscope.plotje-test
+                        'oscope.query-expression-test
                         'oscope.query-view-test
                         'oscope.raw-export-test
                         'oscope.sample-emitter-test

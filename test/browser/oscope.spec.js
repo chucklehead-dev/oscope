@@ -34,7 +34,9 @@ test("investigates checkout telemetry and changes its visual grammar", async ({p
   await page.getByRole("link", {name: "Edit this chart"}).click();
   const editor = page.getByLabel("Chart specification");
   await expect(editor).toHaveValue(/:mark :bar/);
-  await expect(editor).toHaveValue(/:data \{:source :current-query, :select \[:value :count\]\}/);
+  await expect(editor).toHaveValue(/:source :telemetry-query/);
+  await expect(editor).toHaveValue(/:group-by \[:metric-name\]/);
+  await expect(editor).toHaveValue(/:series \[\{:as :count, :op :count\}\]/);
   await expect(editor).not.toHaveValue(/demo\.checkout\.queue\.depth/);
   await page.getByRole("button", {name: "Load example"}).first().click();
   await expect(editor).toHaveValue(/:mark :area/);

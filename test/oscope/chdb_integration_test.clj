@@ -3,9 +3,12 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [oscope.live :as live]
+            [oscope.query.expression :as query-expression]
+            [oscope.query.expression.chdb :as query-expression-chdb]
             [oscope.raw-export :as raw-export]
             [oscope.ui.native :as native]
-            [oscope.ui.web :as web]))
+            [oscope.ui.web :as web]
+            [otel.exporter.chdb.schema :as schema]))
 
 (def test-now 1700000001000000000)
 (deftest owned-live-source-migrates-queries-and-closes
@@ -38,6 +41,78 @@
                               :now-fn (constantly test-now)})]
       (live/close! source)
       (is (= [{:answer 1}] (jdbc/fetch connection "select 1 as answer"))))))
+
+(deftest telemetry-expression-runs-bounded-aggregates-in-real-chdb
+  (with-open [connection (jdbc/connection "chdb::memory:")]
+    (schema/migrate! connection)
+    (doseq [[service duration status]
+            [["api" 10 "OK"] ["api" 30 "OK"] ["worker" 100 "ERROR"]]]
+      (jdbc/execute!
+       connection
+       ["INSERT INTO otel_traces (Timestamp, ServiceName, SpanName, Duration, StatusCode)
+           VALUES (fromUnixTimestamp64Nano(?), ?, 'aggregate.work', ?, ?)"
+        (- test-now 1000000) service duration status]))
+    (let [rows
+          (query-expression-chdb/execute!
+           connection
+           {:signal :spans :window :15m :group-by [:service-name] :filters []
+            :series [{:as :n :op :count}
+                     {:as :total :op :sum :field :duration-ns}
+                     {:as :mean :op :avg :field :duration-ns}
+                     {:as :low :op :min :field :duration-ns}
+                     {:as :high :op :max :field :duration-ns}
+                     {:as :p50 :op :percentile :field :duration-ns :percentile 50}
+                     {:as :p99 :op :percentile :field :duration-ns :percentile 99}]
+            :limit 10}
+           test-now)
+          api (first (filter #(= "api" (:service-name %)) rows))
+          worker (first (filter #(= "worker" (:service-name %)) rows))]
+      (is (= {:n 2 :total 40 :mean 20 :low 10 :high 30 :p50 30 :p99 30}
+             (dissoc api :service-name)))
+      (is (= {:n 1 :total 100 :mean 100 :low 100 :high 100
+              :p50 100 :p99 100}
+             (dissoc worker :service-name))))
+    (doseq [[table columns values]
+            [["otel_metrics_gauge" ", Value" ", 2.0"]
+             ["otel_metrics_sum" ", Value" ", 3.0"]
+             ["otel_metrics_histogram" ", Count, Sum, Min, Max"
+              ", 2, 10.0, 4.0, 6.0"]]]
+      (jdbc/execute!
+       connection
+       (str "INSERT INTO " table
+            " (ServiceName, MetricName, StartTimeUnix, TimeUnix" columns ") "
+            "VALUES ('api', 'work.duration', fromUnixTimestamp(1700000000), "
+            "fromUnixTimestamp(1700000000)" values ")")))
+    (let [rows
+          (query-expression-chdb/execute!
+           connection
+           {:signal :metrics :window :15m :group-by [:metric-kind] :filters []
+            :series [{:as :points :op :count}
+                     {:as :total-value :op :sum :field :value}
+                     {:as :p95-value :op :percentile :field :value
+                      :percentile 95}]
+            :limit 10}
+           test-now)]
+      (is (= [{:metric-kind "gauge" :points 1 :total-value 2 :p95-value 2}
+              {:metric-kind "histogram" :points 1 :total-value 5 :p95-value 5}
+              {:metric-kind "sum" :points 1 :total-value 3 :p95-value 3}]
+             (sort-by :metric-kind rows))))
+    (let [prefix (apply str (repeat 160 "x"))]
+      (doseq [suffix ["a" "b"]]
+        (jdbc/execute!
+         connection
+         ["INSERT INTO otel_traces (Timestamp, ServiceName, SpanName, Duration)
+             VALUES (fromUnixTimestamp64Nano(?), ?, 'long-name', 1)"
+          (- test-now 1000000) (str prefix suffix)]))
+      (let [rows (query-expression-chdb/execute!
+                  connection
+                  {:signal :spans :window :15m :group-by [:service-name]
+                   :filters [{:field :span-name :op :eq :value "long-name"}]
+                   :series [{:as :n :op :count}] :limit 10}
+                  test-now)]
+        (is (= 2 (count rows))
+            "display truncation must not merge distinct group identities")
+        (is (= [1 1] (sort (map :n rows))))))))
 
 (deftest native-adapter-renders-a-real-chdb-query-as-canonical-svg
   (let [source (live/open! {:db-spec "chdb::memory:"
