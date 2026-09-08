@@ -4,8 +4,19 @@ set -euo pipefail
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 workspace=$(CDPATH= cd -- "$repo_root/.." && pwd)
 toolchain="$workspace/tools/jolt-with-chez-10.4.1"
-aspect_repo="$workspace/jolt-aspect-packs"
-scenario="$repo_root/test/durable-aspect"
+build_alias=${OSCOPE_DURABLE_ASPECT_BUILD_ALIAS:-dev}
+
+case "$build_alias" in
+  dev)
+    aspect_repo="$workspace/jolt-aspect-packs"
+    scenario="$repo_root/test/durable-aspect"
+    ;;
+  published)
+    aspect_repo="$repo_root/.qualification/jolt-aspect-packs"
+    scenario="$repo_root/test/durable-aspect-published"
+    ;;
+  *) echo "unsupported Durable aspect build alias: $build_alias" >&2; exit 2 ;;
+esac
 binary="$scenario/target/oscope-durable-s3-aspect-test"
 report="$scenario/target/aspects.edn"
 effects="$scenario/target/oscope-durable-s3-aspect-test.build/effects.edn"
@@ -26,6 +37,13 @@ esac
 test -x "$JOLT_ASPECT_JOLT"
 test -f "$JOLT_CHDB_LIB"
 
+if [ -n "${JOLT_BIN:-}" ]; then
+  jolt_command=("$JOLT_BIN")
+else
+  test -x "$toolchain"
+  jolt_command=("$toolchain" "$JOLT_ASPECT_JOLT")
+fi
+
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
 }
@@ -33,7 +51,7 @@ trap cleanup EXIT
 
 (
   cd "$scenario"
-  "$toolchain" "$JOLT_ASPECT_JOLT" build \
+  "${jolt_command[@]}" build \
     -m oscope.durable-s3-aspect-test-runner \
     -o target/oscope-durable-s3-aspect-test
 )
@@ -62,7 +80,7 @@ env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
 (
   cd "$aspect_repo"
   sh test/assert-effect-report.sh "$JOLT_ASPECT_JOLT" "$effects" woven "$report"
-  "$toolchain" "$JOLT_ASPECT_JOLT" -Srepro \
+  "${jolt_command[@]}" -Srepro \
     -Sdeps '{:paths ["test" "src"]}' \
     -m jolt.aspect-packs.chdb-durable.report-test "$report"
 )
