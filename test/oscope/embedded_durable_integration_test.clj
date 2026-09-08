@@ -3,6 +3,7 @@
             [jdbc.chdb.durable.backend :as backend]
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
+            [oscope.embedded.query :as embedded-query]
             [oscope.live :as live]
             [oscope.sample-emitter :as sample]))
 
@@ -28,6 +29,16 @@
          (values source (keyword (str "metrics-" suffix))
                  :metrics :metric-name))))
 
+(defn- await-ready [lifecycle]
+  (let [deadline (+ (System/currentTimeMillis) 5000)]
+    (loop []
+      (let [snapshot (embedded-query/snapshot lifecycle)]
+        (cond
+          (= :ready (:status snapshot)) snapshot
+          (< (System/currentTimeMillis) deadline)
+          (do (Thread/sleep 5) (recur))
+          :else snapshot)))))
+
 (deftest direct-sdk-exports-survive-a-fresh-durable-reader
   (let [store (backend/memory-backend)
         db-spec {:vendor "chdb-durable"
@@ -49,6 +60,26 @@
       (sample/emit-scenario!)
       (is (true? (embedded/force-flush! lifecycle)))
       (assert-signals-visible! (:source lifecycle) "writer")
+      ;; This is the real counted-lock regression: the cadence runs on a Jolt
+      ;; fiber, but the live source/JDBC query must execute on the facade's OS
+      ;; thread rather than attempting to park the fiber while locks are held.
+      (let [query-lifecycle
+            (embedded-query/start!
+             {:load! #(get-in
+                       ((:load-command (:source lifecycle))
+                        :embedded-background-query
+                        {:signal :spans :field :span-name
+                         :window :15m :limit 20})
+                       [:table :rows])
+              :interval-ms 1000 :timeout-ms 2000 :stop-timeout-ms 2000})]
+        (try
+          (let [snapshot (await-ready query-lifecycle)]
+            (is (= :ready (:status snapshot)))
+            (is (some #(= "POST /checkout" (:value %)) (:rows snapshot))))
+          (finally
+            ;; The query thread is joined before embedded/stop! retires source.
+            (is (= :closed (:status
+                            (embedded-query/stop! query-lifecycle)))))))
       (is (= {:status :closed :phase :closed}
              (embedded/stop! lifecycle)))
       (with-open [reader (jdbc/connection
