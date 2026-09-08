@@ -45,11 +45,28 @@
                      (seq group-by) [(last base)]
                      :else [(select-keys (last base) aggregates)])]
     (->> candidates (take limit) (mapv #(select-keys % fields)))))
+(defn- counter-series-rows
+  [{:keys [group-by bucket aggregates limit]}]
+  (let [base {:bucket-start-unix-nano (- sample-time 300000000000)
+              :service-name "checkout" :metric-unit "{request}"
+              :scope-name "demo.metrics" :deployment-environment "demo"
+              :increase 42.0 :rate 0.14 :metric-kind :sum
+              :temporality :cumulative :monotonic? true
+              :interval-count 3 :reset-count 1
+              :observed-duration-nanos 300000000000}
+        fields (vec (concat (when (not= :none bucket)
+                              [:bucket-start-unix-nano])
+                            group-by aggregates
+                            [:metric-kind :temporality :monotonic?
+                             :interval-count :reset-count
+                             :observed-duration-nanos]))]
+    (->> [base] (take limit) (mapv #(select-keys % fields)))))
 (defn screen-for-selection [selection]
   (let [plan (query/compile-query selection sample-time)]
     (view-model/screen
      plan
-     (if (= :metric-series (get-in plan [:selection :mode]))
-       (series-rows (:selection plan))
+     (case (get-in plan [:selection :mode])
+       :metric-series (series-rows (:selection plan))
+       :counter-series (counter-series-rows (:selection plan))
        (rows (:selection plan))))))
 (def default-screen (screen-for-selection query/default-selection))

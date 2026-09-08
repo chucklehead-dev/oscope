@@ -15,6 +15,8 @@ sibling source paths and its source contains no demo namespaces.
 - spans, logs, and metrics distribution queries through a closed allowlist;
 - reusable metric-series recipes with fixed time buckets, service/unit/scope/
   environment dimensions, and named count/sum/min/max/avg/p50/p95/p99 fields;
+- reset-aware cumulative monotonic Sum recipes with exact observed increase,
+  per-second rate, stored provenance, interval duration, and reset counts;
 - a ClickStack-style trace workbench with bounded service, operation, status,
   duration, and time filters, complete parent/child span trees, span events,
   and trace-correlated logs;
@@ -41,7 +43,7 @@ sibling source paths and its source contains no demo namespaces.
   explicit, idempotent retirement; and
 - deterministic headless tests plus an opt-in real-chDB lifecycle gate.
 
-The distribution and metric-series query plans contain no SQL. User input
+The distribution, metric-series, and counter-series query plans contain no SQL. User input
 selects only values from closed sets plus an exact bounded metric name. The
 shared exporter library maps those recipes to parameterized queries; callers
 cannot supply identifiers, aggregate functions, or expressions. Raw export is

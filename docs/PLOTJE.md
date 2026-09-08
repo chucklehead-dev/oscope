@@ -76,11 +76,46 @@ aggregates. For example:
            :x :bucket-start-unix-nano :y :p95 :color :service-name}]}
 ```
 
+A counter editor stores the complete semantic recipe and field bindings, never
+the returned points:
+
+```clojure
+{:data
+ {:source :counter-query
+  :query {:mode :counter-series :metric-kind :sum
+          :temporality :cumulative :monotonic? true
+          :metric-name "http.server.requests"
+          :bucket :none :group-by [:service-name]
+          :aggregates [:increase :rate] :window :1h :limit 100}
+  :select [:service-name :increase :rate :interval-count :reset-count
+           :observed-duration-nanos :metric-kind :temporality :monotonic?]}
+ :layers [{:mark :bar :x :service-name :y :increase}]}
+```
+
 Gauge and sum point values provide `:count`, `:sum`, `:min`, `:max`, `:avg`,
 `:p50`, `:p95`, and `:p99`. Delta explicit histograms provide observation
 `:count`, `:sum`, and `:avg`. Cumulative histogram snapshots are excluded until
 reset-aware differencing is implemented. Scalar sum values are stored-point
-aggregates, not counter increases or rates. The available buckets are none,
+aggregates, not counter increases or rates. Select the separate
+`:counter-series` mode for those semantics. Its recipe explicitly retains
+`:metric-kind :sum`, `:temporality :cumulative`, and `:monotonic? true`, and
+offers only `:increase` and `:rate`. Rate is per second over the summed exact
+observed interval duration; it is not boundary-extrapolated. Every returned row
+also carries `:interval-count`, `:reset-count`, and
+`:observed-duration-nanos` plus the three provenance fields. The first
+positive-duration interval whose stored start is inside the window counts as a
+reset, as does each later interval after `StartTimeUnix` advances.
+
+Counter recipes reject rather than estimate when stored whole-second points do
+not prove the result: duplicate timestamps, unexplained decreases, overlapping
+epochs, dimension projections that collapse distinct OTEL streams, and
+intervals crossing requested bucket boundaries all fail visibly. The first
+snapshot is omitted when its start predates the window because its boundary
+increase is unknown. A zero-duration zero-valued reset has no rate interval and
+is not included in `:reset-count`. Source scan/result rows, bytes, memory,
+execution time, window, and output count all retain hard ceilings.
+
+The available buckets are none,
 1 minute, 5 minutes, 15 minutes, and 1 hour; dimensions are service, unit,
 scope, and deployment environment.
 

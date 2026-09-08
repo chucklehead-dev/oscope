@@ -257,6 +257,17 @@
               seeded (referenced-data (:text document))]
           (if (= query (:query seeded)) context {:data-sources {}})))
 
+      :counter-query
+      (if-let [load-command (:load-command source)]
+        (let [screen (load-command
+                      [:visualization-editor-counter-query (System/nanoTime)]
+                      query)]
+          {:data-sources
+           {document/counter-query-source (get-in screen [:chart :data])}})
+        (let [{:keys [document] :as context} (plotje-context source request)
+              seeded (referenced-data (:text document))]
+          (if (= query (:query seeded)) context {:data-sources {}})))
+
       :current-query (plotje-context source request)
       {:data-sources {}}))))
 

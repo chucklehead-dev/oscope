@@ -41,9 +41,16 @@
 (defn- keyword-param [params key allowed fallback]
   (or (some #(when (= (get params key) (name %)) %) allowed) fallback))
 (defn selection-from-params [params]
-  (let [series? (= "metric-series" (get params "mode"))
-        defaults (if series? query/default-metric-series-selection
-                     query/default-selection)
+  (let [mode (case (get params "mode")
+               "metric-series" :metric-series
+               "counter-series" :counter-series
+               :distribution)
+        series? (contains? #{:metric-series :counter-series} mode)
+        counter? (= :counter-series mode)
+        defaults (case mode
+                   :metric-series query/default-metric-series-selection
+                   :counter-series query/default-counter-series-selection
+                   query/default-selection)
         window (keyword-param params "window" (keys query/windows) (:window defaults))
         raw-limit (get params "limit")
         parsed (when (and (string? raw-limit) (re-matches #"[0-9]{1,3}" raw-limit))
@@ -51,10 +58,12 @@
         limit (if (and parsed (<= 1 parsed query/max-result-limit))
                 parsed (:limit defaults))]
     (if series?
-      (let [options query/metric-series-options
+      (let [options (if counter? query/counter-series-options
+                        query/metric-series-options)
             kind (keyword-param params "metric-kind" (:metric-kinds options)
                                 (:metric-kind defaults))
-            allowed-aggregates (get-in options [:aggregates kind])
+            allowed-aggregates (if counter? (:aggregates options)
+                                   (get-in options [:aggregates kind]))
             selected-group
             (keyword-param params "group-by"
                            (into [:none] (:group-by options))
@@ -65,7 +74,7 @@
             fallback-aggregates (vec (filter (set allowed-aggregates)
                                              (:aggregates defaults)))]
         (query/normalize-selection
-         {:mode :metric-series
+         (cond-> {:mode mode
           :metric-kind kind
           :metric-name (or (not-empty (get params "metric-name"))
                            (:metric-name defaults))
@@ -77,7 +86,8 @@
                           selected-aggregates [(first allowed-aggregates)])
                         (if (seq fallback-aggregates)
                           fallback-aggregates [(first allowed-aggregates)]))
-          :window window :limit limit}))
+          :window window :limit limit}
+           counter? (assoc :temporality :cumulative :monotonic? true))))
       (let [supported (query/supported-fields)
             signal (keyword-param params "signal" (keys supported)
                                   (:signal defaults))
@@ -122,6 +132,7 @@
          "<div class=\"controls\"><label>Query<select name=\"mode\">"
          (option :distribution "Distribution" true)
          (option :metric-series "Metric series" false)
+         (option :counter-series "Counter increase/rate" false)
          "</select></label><label>Signal<select name=\"signal\">"
          (apply str (map #(option (:value %) (:label %) (:selected? %)) signals))
          "</select></label><label>Group by<select name=\"field\">"
@@ -136,8 +147,9 @@
          "> Live refresh</label><button type=\"submit\">Run query</button></div></form>")))
 (defn- render-series-controls
   [controls selection action live?]
-  (let [{:keys [metric-kind metric-name group-by bucket aggregates window]}
+  (let [{:keys [mode metric-kind metric-name group-by bucket aggregates window]}
         selection
+        counter? (= :counter-series mode)
         metric-kinds (:metric-kinds controls)
         available-groups (:group-by controls)
         buckets (:buckets controls)
@@ -148,11 +160,15 @@
          "\" aria-label=\"Metric series query\">"
          "<div class=\"controls series-controls\"><label>Query<select name=\"mode\">"
          (option :distribution "Distribution" false)
-         (option :metric-series "Metric series" true)
+         (option :metric-series "Metric series" (= :metric-series mode))
+         (option :counter-series "Counter increase/rate" counter?)
          "</select></label><label>Metric kind<select name=\"metric-kind\">"
          (apply str (map #(option % (str/capitalize (name %)) (= % metric-kind))
                          metric-kinds))
-         "</select></label><label>Exact metric name<input required name=\"metric-name\" maxlength=\"256\" value=\""
+         "</select></label>"
+         (when counter?
+           "<input type=\"hidden\" name=\"temporality\" value=\"cumulative\"><input type=\"hidden\" name=\"monotonic\" value=\"true\"><p>Cumulative monotonic OTEL Sum · rate per second over exact observed intervals</p>")
+         "<label>Exact metric name<input required name=\"metric-name\" maxlength=\"256\" value=\""
          (esc metric-name) "\"></label><label>Time bucket<select name=\"bucket\">"
          (apply str (map #(option % (name %) (= % bucket)) buckets))
          "</select></label><label>Window<select name=\"window\">"
@@ -174,13 +190,16 @@
          (checkbox "live" "Live refresh" live?)
          "<button type=\"submit\">Run query</button></div></form>")))
 (defn- render-controls [controls selection action live?]
-  (if (= :metric-series (:mode selection))
+  (if (contains? #{:metric-series :counter-series} (:mode selection))
     (render-series-controls controls selection action live?)
     (render-distribution-controls controls selection action live?)))
 (defn selection-query-string [selection]
   (let [selection (query/normalize-selection selection)]
-    (if (= :metric-series (:mode selection))
-      (str "?mode=metric-series&metric-kind=" (name (:metric-kind selection))
+    (if (contains? #{:metric-series :counter-series} (:mode selection))
+      (str "?mode=" (name (:mode selection))
+           "&metric-kind=" (name (:metric-kind selection))
+           (when (= :counter-series (:mode selection))
+             "&temporality=cumulative&monotonic=true")
            "&metric-name=" (URLEncoder/encode (:metric-name selection) "UTF-8")
            "&bucket=" (name (:bucket selection))
            "&group-by=" (name (or (first (:group-by selection)) :none))
@@ -195,8 +214,9 @@
            "&limit=" (:limit selection)))))
 (defn- render-export-controls [screen action enabled?]
   (let [{:keys [signal mode metric-kind]} (:selection screen)
-        signal (if (= :metric-series mode) :metrics signal)
-        metric-kind (if (= :metric-series mode) metric-kind :gauge)
+        series? (contains? #{:metric-series :counter-series} mode)
+        signal (if series? :metrics signal)
+        metric-kind (if series? metric-kind :gauge)
         {:keys [start-unix-nano end-unix-nano]}
         (get-in screen [:query-plan :request])]
     (str "<section aria-labelledby=\"export-title\"><h2 id=\"export-title\">Export raw telemetry</h2>"

@@ -35,6 +35,15 @@
     :sum [:count :sum :min :max :avg :p50 :p95 :p99]
     :histogram [:count :sum :avg]}})
 
+(def counter-series-options
+  {:metric-kinds [:sum]
+   :temporalities [:cumulative]
+   :monotonic-values [true]
+   :group-by [:service-name :metric-unit :scope-name
+              :deployment-environment]
+   :buckets [:none :1m :5m :15m :1h]
+   :aggregates [:increase :rate]})
+
 (def default-metric-series-selection
   {:mode :metric-series
    :metric-kind :gauge
@@ -45,10 +54,25 @@
    :window :1h
    :limit 100})
 
+(def default-counter-series-selection
+  {:mode :counter-series
+   :metric-kind :sum
+   :temporality :cumulative
+   :monotonic? true
+   :metric-name "requests.total"
+   :group-by [:service-name]
+   :bucket :none
+   :aggregates [:increase :rate]
+   :window :1h
+   :limit 100})
+
 (def ^:private selection-keys #{:signal :field :window :limit})
 (def ^:private metric-series-selection-keys
   #{:mode :metric-kind :metric-name :group-by :bucket :aggregates
     :window :limit})
+(def ^:private counter-series-selection-keys
+  #{:mode :metric-kind :temporality :monotonic? :metric-name :group-by
+    :bucket :aggregates :window :limit})
 
 (defn- fail! [type message data]
   (throw (ex-info message (assoc data :oscope.query/error true :type type))))
@@ -145,9 +169,75 @@
      :aggregates (vec (filter (set aggregates) allowed-aggregates))
      :window window :limit limit}))
 
+(defn normalize-counter-series-selection [selection]
+  (when-not (map? selection)
+    (fail! ::invalid-selection "oscope counter series selection must be a map"
+           {:selection selection}))
+  (when-let [unknown (seq (remove counter-series-selection-keys
+                                  (keys selection)))]
+    (fail! ::unsupported-selection-key
+           "oscope counter series selection contains unsupported keys"
+           {:keys (error/sorted-keys unknown)}))
+  (let [{:keys [mode metric-kind temporality monotonic? metric-name group-by
+                bucket aggregates window limit]}
+        (merge default-counter-series-selection selection)]
+    (when-not (= :counter-series mode)
+      (fail! ::unsupported-mode "oscope query mode is not supported"
+             {:mode mode :supported-modes [:counter-series]}))
+    (when-not (and (= :sum metric-kind) (= :cumulative temporality)
+                   (true? monotonic?))
+      (fail! ::unsupported-counter-provenance
+             "oscope counter series requires cumulative monotonic sum provenance"
+             {:metric-kind metric-kind :temporality temporality
+              :monotonic? monotonic?}))
+    (when-not (and (string? metric-name) (not (str/blank? metric-name))
+                   (<= (count metric-name) max-value-length))
+      (fail! ::invalid-metric-name
+             "oscope metric name must contain from 1 to 256 characters"
+             {:maximum max-value-length}))
+    (when-not (valid-closed-vector? group-by
+                                    (:group-by counter-series-options) 1)
+      (fail! ::invalid-group-by
+             "oscope charts support zero or one counter group dimension"
+             {:group-by group-by :supported (:group-by counter-series-options)}))
+    (when-not (some #{bucket} (:buckets counter-series-options))
+      (fail! ::unsupported-bucket "oscope counter bucket is not supported"
+             {:bucket bucket :supported (:buckets counter-series-options)}))
+    (when-not (and (valid-closed-vector? aggregates
+                                         (:aggregates counter-series-options) 2)
+                   (seq aggregates))
+      (fail! ::invalid-aggregates
+             "oscope counter aggregates must select increase and/or rate"
+             {:aggregates aggregates
+              :supported (:aggregates counter-series-options)}))
+    (when-not (contains? windows window)
+      (fail! ::unsupported-window "oscope query window is not supported"
+             {:window window :supported-windows (vec (keys windows))}))
+    (when-not (and (integer? limit) (<= 1 limit max-result-limit))
+      (fail! ::invalid-limit "oscope result limit is outside the explorer cap"
+             {:limit limit :minimum 1 :maximum max-result-limit}))
+    {:mode :counter-series :metric-kind :sum :temporality :cumulative
+     :monotonic? true :metric-name metric-name
+     :group-by (vec (filter (set group-by) (:group-by counter-series-options)))
+     :bucket bucket
+     :aggregates (vec (filter (set aggregates)
+                              (:aggregates counter-series-options)))
+     :window window :limit limit}))
+
+(defn counter-series-output-fields [selection]
+  (let [{:keys [group-by bucket aggregates] :as selection}
+        (normalize-counter-series-selection selection)]
+    (vec (concat (when (and (= :none bucket) (empty? group-by))
+                   [:metric-name])
+                 (when (not= :none bucket) [:bucket-start-unix-nano])
+                 group-by aggregates
+                 [:interval-count :reset-count :observed-duration-nanos
+                  :metric-kind :temporality :monotonic?]))))
+
 (defn normalize-selection [selection]
-  (if (= :metric-series (:mode selection))
-    (normalize-metric-series-selection selection)
+  (case (:mode selection)
+    :metric-series (normalize-metric-series-selection selection)
+    :counter-series (normalize-counter-series-selection selection)
     (normalize-distribution-selection selection)))
 
 (defn compile-query [selection end-unix-nano]
@@ -158,14 +248,31 @@
   (let [{:keys [signal field window limit] :as selected}
         (normalize-selection selection)
         start (max 0 (- end-unix-nano (window-nanos window)))]
-    (if (= :metric-series (:mode selected))
+    (case (:mode selected)
+      :counter-series
       {:oscope.query/version 1
        :selection selected
-       :request (-> selected
-                    (select-keys [:metric-kind :metric-name :group-by :bucket
-                                  :aggregates :limit])
-                    (assoc :start-unix-nano start
-                           :end-unix-nano end-unix-nano))}
+       :request {:metric-kind (:metric-kind selected)
+                 :temporality (:temporality selected)
+                 :monotonic? (:monotonic? selected)
+                 :metric-name (:metric-name selected)
+                 :group-by (:group-by selected)
+                 :bucket (:bucket selected)
+                 :aggregates (:aggregates selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
+      :metric-series
+      {:oscope.query/version 1
+       :selection selected
+       :request {:metric-kind (:metric-kind selected)
+                 :metric-name (:metric-name selected)
+                 :group-by (:group-by selected)
+                 :bucket (:bucket selected)
+                 :aggregates (:aggregates selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
       {:oscope.query/version 1
        :selection selected
        :request {:signal signal :fields [field]

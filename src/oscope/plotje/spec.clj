@@ -2,6 +2,7 @@
   "Bounded, portable Plotje/grammar-of-graphics subset used by oscope."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [oscope.query :as query]
             [oscope.query.expression :as query-expression]))
 
 (def max-spec-chars 32768)
@@ -82,9 +83,13 @@
       (column-name! "selected fields must be short, unqualified keywords" field))
     (when-not (= (count fields) (count (distinct fields)))
       (fail! "data select fields must be unique"))
-    (if (= :telemetry-query source)
-      (let [query (query-expression/validate-expression query)
-            available (set (query-expression/output-fields query))]
+    (if (contains? #{:telemetry-query :counter-query} source)
+      (let [query (if (= :counter-query source)
+                    (query/normalize-counter-series-selection query)
+                    (query-expression/validate-expression query))
+            available (set (if (= :counter-query source)
+                             (query/counter-series-output-fields query)
+                             (query-expression/output-fields query)))]
         (doseq [field fields]
           (when-not (contains? available field)
             (fail! (str "selected field " (pr-str field)
@@ -92,7 +97,7 @@
         {:source source :query query :select fields})
       (do
         (when (contains? value :query)
-          (fail! "query is supported only by the :telemetry-query data source"))
+          (fail! "query is supported only by a bounded query data source"))
         {:source source :select fields}))))
 (defn validate-data-sources [sources]
   (when-not (and (map? sources) (<= (count sources) max-data-sources)

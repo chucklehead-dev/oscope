@@ -5,7 +5,20 @@
 
 (defn run [connection plan]
   (let [{:keys [selection request]} (query/validate-plan plan)]
-    (if (= :metric-series (:mode selection))
+    (case (:mode selection)
+      :counter-series
+      (do
+        (when-not (= query/counter-series-options
+                     (explorer/supported-cumulative-counter-series))
+          (throw (ex-info "oscope counter series choices do not match the chDB explorer"
+                          {:oscope.query/error true
+                           :type ::incompatible-counter-series
+                           :oscope-options query/counter-series-options
+                           :explorer-options
+                           (explorer/supported-cumulative-counter-series)})))
+        (explorer/cumulative-counter-series connection request))
+
+      :metric-series
       (do
         (when-not (= query/metric-series-options
                      (explorer/supported-metric-series))
@@ -15,6 +28,7 @@
                            :oscope-options query/metric-series-options
                            :explorer-options (explorer/supported-metric-series)})))
         (explorer/metric-series connection request))
+
       (do
         (when-not (= (query/supported-fields) (explorer/supported-fields))
           (throw (ex-info "oscope query fields do not match the chDB explorer"

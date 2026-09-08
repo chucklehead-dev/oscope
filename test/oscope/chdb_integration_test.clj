@@ -52,6 +52,33 @@
                (get-in screen [:table :rows])))
         (is (= [:count]
                (mapv :y (get-in screen [:chart :layers])))))
+      (doseq [[epoch-second time-second value]
+              [[1699999900 1699999960 10.0]
+               [1699999970 1699999980 4.0]
+               [1699999970 1700000000 9.0]]]
+        (jdbc/execute!
+         (:connection source)
+         ["INSERT INTO otel_metrics_sum
+             (TimeUnix, StartTimeUnix, ServiceName, MetricName, MetricUnit,
+              ScopeName, Value, AggregationTemporality, IsMonotonic)
+           VALUES (fromUnixTimestamp(?), fromUnixTimestamp(?), 'api',
+                   'requests.total', '{request}', 'demo.metrics', ?, 2, true)"
+          time-second epoch-second value]))
+      (let [screen
+            ((:load-command source) :counter-series
+             {:mode :counter-series :metric-kind :sum
+              :temporality :cumulative :monotonic? true
+              :metric-name "requests.total" :group-by [:service-name]
+              :bucket :none :aggregates [:increase :rate]
+              :window :15m :limit 10})]
+        (is (= :telemetry-metric-series (:view screen)))
+        (is (= [{:service-name "api" :increase 19.0 :rate (/ 19.0 90.0)
+                 :metric-kind :sum :temporality :cumulative :monotonic? true
+                 :interval-count 3 :reset-count 2
+                 :observed-duration-nanos 90000000000}]
+               (get-in screen [:table :rows])))
+        (is (= [:increase]
+               (mapv :y (get-in screen [:chart :layers])))))
       (finally (live/close! source)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source is closed"
                           ((:loader source) (:selection (:screen source)))))))

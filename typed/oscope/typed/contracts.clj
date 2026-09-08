@@ -29,10 +29,41 @@
                        :window Window :limit t/AnyInteger}
           :complete? true))
 
+(t/defalias MetricKind (t/U ':gauge ':sum ':histogram))
+(t/defalias MetricGroup
+  (t/U ':service-name ':metric-unit ':scope-name ':deployment-environment))
+(t/defalias MetricAggregate
+  (t/U ':count ':sum ':min ':max ':avg ':p50 ':p95 ':p99))
+(t/defalias CounterAggregate (t/U ':increase ':rate))
+(t/defalias MetricSeriesSelection
+  (t/HMap :mandatory {:mode ':metric-series
+                       :metric-kind MetricKind
+                       :metric-name t/Str
+                       :group-by (t/Vec MetricGroup)
+                       :bucket Bucket
+                       :aggregates (t/Vec MetricAggregate)
+                       :window Window
+                       :limit t/AnyInteger}
+          :complete? true))
+(t/defalias CounterSeriesSelection
+  (t/HMap :mandatory {:mode ':counter-series
+                       :metric-kind ':sum
+                       :temporality ':cumulative
+                       :monotonic? true
+                       :metric-name t/Str
+                       :group-by (t/Vec MetricGroup)
+                       :bucket Bucket
+                       :aggregates (t/Vec CounterAggregate)
+                       :window Window
+                       :limit t/AnyInteger}
+          :complete? true))
+(t/defalias QuerySelection
+  (t/U Selection MetricSeriesSelection CounterSeriesSelection))
+
 (t/defalias RequestId
   (t/U t/AnyInteger
        t/Kw
-       (t/HVec [t/Kw (t/U t/AnyInteger Selection)])))
+       (t/HVec [t/Kw (t/U t/AnyInteger QuerySelection)])))
 
 (t/defalias QueryRequest
   (t/HMap :mandatory {:signal Signal
@@ -41,16 +72,40 @@
                        :end-unix-nano t/AnyInteger
                        :limit t/AnyInteger}
           :complete? true))
+(t/defalias MetricSeriesRequest
+  (t/HMap :mandatory {:metric-kind MetricKind
+                       :metric-name t/Str
+                       :group-by (t/Vec MetricGroup)
+                       :bucket Bucket
+                       :aggregates (t/Vec MetricAggregate)
+                       :start-unix-nano t/AnyInteger
+                       :end-unix-nano t/AnyInteger
+                       :limit t/AnyInteger}
+          :complete? true))
+(t/defalias CounterSeriesRequest
+  (t/HMap :mandatory {:metric-kind ':sum
+                       :temporality ':cumulative
+                       :monotonic? true
+                       :metric-name t/Str
+                       :group-by (t/Vec MetricGroup)
+                       :bucket Bucket
+                       :aggregates (t/Vec CounterAggregate)
+                       :start-unix-nano t/AnyInteger
+                       :end-unix-nano t/AnyInteger
+                       :limit t/AnyInteger}
+          :complete? true))
+(t/defalias AnyQueryRequest
+  (t/U QueryRequest MetricSeriesRequest CounterSeriesRequest))
 (t/defalias QueryPlan
   (t/HMap :mandatory {:oscope.query/version (t/Val 1)
-                       :selection Selection
-                       :request QueryRequest}
+                       :selection QuerySelection
+                       :request AnyQueryRequest}
           :complete? true))
 (t/defalias QueryCommand
   (t/HMap :mandatory {:oscope.command/version (t/Val 1)
                        :command/type ':query
                        :request-id RequestId
-                       :selection Selection}
+                       :selection QuerySelection}
           :complete? true))
 
 (t/defalias RawDistributionRow
@@ -67,18 +122,20 @@
 (t/ann oscope.query/fields (t/Map Signal (t/Vec Field)))
 (t/ann oscope.query/windows (t/Map Window t/AnyInteger))
 (t/ann oscope.query/default-selection Selection)
+(t/ann oscope.query/default-metric-series-selection MetricSeriesSelection)
+(t/ann oscope.query/default-counter-series-selection CounterSeriesSelection)
 (t/ann oscope.query.expression/bucket-presets
   (t/Map Bucket (t/Option t/AnyInteger)))
 (t/ann oscope.query/supported-fields
   [-> (t/Map Signal (t/Vec Field))])
 (t/ann oscope.query/window-nanos [Window -> t/AnyInteger])
-(t/ann oscope.query/normalize-selection [Selection -> Selection])
+(t/ann oscope.query/normalize-selection [QuerySelection -> QuerySelection])
 (t/ann oscope.query/compile-query
-  [Selection t/AnyInteger -> QueryPlan])
+  [QuerySelection t/AnyInteger -> QueryPlan])
 (t/ann oscope.query/validate-plan [QueryPlan -> QueryPlan])
 
 (t/ann oscope.command/query-command
-  [RequestId Selection -> QueryCommand])
+  [RequestId QuerySelection -> QueryCommand])
 
 (t/ann oscope.view-model/normalize-rows
   [Selection (t/Vec RawDistributionRow) -> (t/Vec DistributionRow)])
