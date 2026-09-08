@@ -1,10 +1,15 @@
 /.jolt/
 /.cpcache/
 /.data/
+/.qualification/
 /target/
 /oscope-data/
 /test/durable-aspect/.jolt/
 /test/durable-aspect/target/
+/test/durable-fault/.jolt/
+/test/durable-fault/target/
+/test/durable-fault-published/.jolt/
+/test/durable-fault-published/target/
 /test/durable-process/.jolt/
 /test/durable-process/target/
 /test/durable-process-published/.jolt/
