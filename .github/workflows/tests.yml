@@ -32,6 +32,7 @@ jobs:
     env:
       JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.3
       JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.3
+      HEGEL_CACHE_DIR: ${{ github.workspace }}/.hegel-native
     steps:
       - uses: actions/checkout@v4
       - name: Install Jolt v0.8.3
@@ -45,5 +46,7 @@ jobs:
       - name: Assert Jolt version
         shell: bash
         run: test "$(jolt --version)" = "jolt v0.8.3"
+      - name: Install native property-test dependency
+        run: jolt -Srepro -A:test-headless -m hegel.install
       - name: Headless tests
         run: jolt -Srepro -M:test-headless
