@@ -6,6 +6,20 @@
 (defn run [connection plan]
   (let [{:keys [selection request]} (query/validate-plan plan)]
     (case (:mode selection)
+      :cumulative-histogram-series
+      (do
+        (when-not (= query/cumulative-histogram-series-options
+                     (explorer/supported-cumulative-histogram-series))
+          (throw
+           (ex-info
+            "oscope cumulative histogram choices do not match the chDB explorer"
+            {:oscope.query/error true
+             :type ::incompatible-cumulative-histogram-series
+             :oscope-options query/cumulative-histogram-series-options
+             :explorer-options
+             (explorer/supported-cumulative-histogram-series)})))
+        (explorer/cumulative-histogram-series connection request))
+
       :counter-series
       (do
         (when-not (= query/counter-series-options

@@ -78,6 +78,23 @@
     (is (not (str/includes? text "checkout")))
     (is (= (:chart screen) (:value document)))))
 
+(deftest cumulative-histogram-editor-retains-descriptors-without-returned-points
+  (let [screen (sample/screen-for-selection
+                query/default-cumulative-histogram-series-selection)
+        document (document/plotje-from-screen screen)
+        text (:text document)]
+    (is (str/includes? text ":source :histogram-query"))
+    (is (str/includes? text ":mode :cumulative-histogram-series"))
+    (is (str/includes? text ":metric-kind :histogram"))
+    (is (str/includes? text ":temporality :cumulative"))
+    (is (str/includes? text ":p95-estimate :p95-lower-bound :p95-upper-bound"))
+    (is (str/includes? text ":explicit-bounds"))
+    (is (str/includes? text ":interval-count :reset-count :observed-duration-nanos"))
+    (is (not (str/includes? text ":sum -83.0")))
+    (is (not (str/includes? text "checkout")))
+    (is (not (str/includes? text "(10.0, +Inf)")))
+    (is (= (:chart screen) (:value document)))))
+
 (deftest metric-distribution-editor-preserves-its-kind-union-query
   (let [screen (sample/screen-for-selection
                 {:signal :metrics :field :metric-name

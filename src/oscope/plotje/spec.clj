@@ -7,7 +7,7 @@
 
 (def max-spec-chars 32768)
 (def ^:private max-rows 512)
-(def ^:private max-columns 16)
+(def ^:private max-columns 48)
 (def ^:private max-data-sources 4)
 (def ^:private max-layers 4)
 (def ^:private max-text 160)
@@ -61,7 +61,9 @@
     (when-not (or (nil? value) (boolean? value) (finite? value)
                   (and (string? value) (<= (count value) max-text))
                   (and (keyword? value) (nil? (namespace value))
-                       (<= (count (name value)) 64)))
+                       (<= (count (name value)) 64))
+                  (and (vector? value) (<= (count value) 64)
+                       (every? finite? value)))
       (fail! (str "invalid bounded scalar in " (pr-str key)))))
   row)
 (defn- column-name! [message value]
@@ -78,17 +80,22 @@
         fields (:select value)
         query (:query value)]
     (when-not (and (vector? fields) (<= 1 (count fields) max-columns))
-      (fail! "data select must contain from 1 to 16 fields"))
+      (fail! "data select must contain from 1 to 48 fields"))
     (doseq [field fields]
       (column-name! "selected fields must be short, unqualified keywords" field))
     (when-not (= (count fields) (count (distinct fields)))
       (fail! "data select fields must be unique"))
-    (if (contains? #{:telemetry-query :counter-query} source)
-      (let [query (if (= :counter-query source)
-                    (query/normalize-counter-series-selection query)
+    (if (contains? #{:telemetry-query :counter-query :histogram-query} source)
+      (let [query (case source
+                    :counter-query (query/normalize-counter-series-selection query)
+                    :histogram-query
+                    (query/normalize-cumulative-histogram-series-selection query)
                     (query-expression/validate-expression query))
-            available (set (if (= :counter-query source)
+            available (set (case source
+                             :counter-query
                              (query/counter-series-output-fields query)
+                             :histogram-query
+                             (query/cumulative-histogram-series-output-fields query)
                              (query-expression/output-fields query)))]
         (doseq [field fields]
           (when-not (contains? available field)

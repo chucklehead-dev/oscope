@@ -195,6 +195,33 @@
     (is (not (re-find #":increase 42\.0" body))
         "returned counter values render but never enter editable chart text")))
 
+(deftest cumulative-histogram-url-form-and-page-retain-bounded-provenance
+  (let [selection (assoc query/default-cumulative-histogram-series-selection
+                         :metric-name "http.server.duration")
+        query-string (web/selection-query-string selection)
+        parsed (web/selection-from-params
+                (web/parse-query-params (subs query-string 1)))
+        body (:body ((web/sample-handler)
+                     {:request-method :get :uri "/oscope"
+                      :query-string (subs query-string 1)}))]
+    (is (= selection parsed))
+    (is (re-find #"mode=cumulative-histogram-series" query-string))
+    (is (re-find #"temporality=cumulative" query-string))
+    (is (re-find #"name=\"temporality\" value=\"cumulative\"" body))
+    (is (re-find #"Cumulative OTEL explicit histogram" body))
+    (is (re-find #"infinite tails have no numeric estimate" body))
+    (is (re-find #">P95 Estimate<" body))
+    (is (re-find #">P95 Containing Bucket<" body))
+    (is (re-find #">Reset Count<" body))
+    (is (not (re-find #":sum -83\.0" body))
+        "returned histogram values render but never enter editable chart text"))
+  (is (= [:count :p95]
+         (:aggregates
+          (web/selection-from-params
+           {"mode" "cumulative-histogram-series"
+            "aggregates-present" "1" "aggregate-p95" "1"})))
+      "forms restore mandatory count evidence for quantile empty semantics"))
+
 (deftest metric-series-aggregate-order-normalizes-before-url-round-trip
   (let [selection (assoc query/default-metric-series-selection
                          :aggregates [:p95 :avg])

@@ -35,6 +35,8 @@
 (t/defalias MetricAggregate
   (t/U ':count ':sum ':min ':max ':avg ':p50 ':p95 ':p99))
 (t/defalias CounterAggregate (t/U ':increase ':rate))
+(t/defalias HistogramAggregate
+  (t/U ':count ':sum ':avg ':p50 ':p95 ':p99))
 (t/defalias MetricSeriesSelection
   (t/HMap :mandatory {:mode ':metric-series
                        :metric-kind MetricKind
@@ -57,8 +59,20 @@
                        :window Window
                        :limit t/AnyInteger}
           :complete? true))
+(t/defalias CumulativeHistogramSeriesSelection
+  (t/HMap :mandatory {:mode ':cumulative-histogram-series
+                       :metric-kind ':histogram
+                       :temporality ':cumulative
+                       :metric-name t/Str
+                       :group-by (t/Vec MetricGroup)
+                       :bucket Bucket
+                       :aggregates (t/Vec HistogramAggregate)
+                       :window Window
+                       :limit t/AnyInteger}
+          :complete? true))
 (t/defalias QuerySelection
-  (t/U Selection MetricSeriesSelection CounterSeriesSelection))
+  (t/U Selection MetricSeriesSelection CounterSeriesSelection
+       CumulativeHistogramSeriesSelection))
 
 (t/defalias RequestId
   (t/U t/AnyInteger
@@ -94,8 +108,20 @@
                        :end-unix-nano t/AnyInteger
                        :limit t/AnyInteger}
           :complete? true))
+(t/defalias CumulativeHistogramSeriesRequest
+  (t/HMap :mandatory {:metric-kind ':histogram
+                       :temporality ':cumulative
+                       :metric-name t/Str
+                       :group-by (t/Vec MetricGroup)
+                       :bucket Bucket
+                       :aggregates (t/Vec HistogramAggregate)
+                       :start-unix-nano t/AnyInteger
+                       :end-unix-nano t/AnyInteger
+                       :limit t/AnyInteger}
+          :complete? true))
 (t/defalias AnyQueryRequest
-  (t/U QueryRequest MetricSeriesRequest CounterSeriesRequest))
+  (t/U QueryRequest MetricSeriesRequest CounterSeriesRequest
+       CumulativeHistogramSeriesRequest))
 (t/defalias QueryPlan
   (t/HMap :mandatory {:oscope.query/version (t/Val 1)
                        :selection QuerySelection
@@ -124,6 +150,8 @@
 (t/ann oscope.query/default-selection Selection)
 (t/ann oscope.query/default-metric-series-selection MetricSeriesSelection)
 (t/ann oscope.query/default-counter-series-selection CounterSeriesSelection)
+(t/ann oscope.query/default-cumulative-histogram-series-selection
+  CumulativeHistogramSeriesSelection)
 (t/ann oscope.query.expression/bucket-presets
   (t/Map Bucket (t/Option t/AnyInteger)))
 (t/ann oscope.query/supported-fields

@@ -268,6 +268,17 @@
               seeded (referenced-data (:text document))]
           (if (= query (:query seeded)) context {:data-sources {}})))
 
+      :histogram-query
+      (if-let [load-command (:load-command source)]
+        (let [screen (load-command
+                      [:visualization-editor-histogram-query (System/nanoTime)]
+                      query)]
+          {:data-sources
+           {document/histogram-query-source (get-in screen [:chart :data])}})
+        (let [{:keys [document] :as context} (plotje-context source request)
+              seeded (referenced-data (:text document))]
+          (if (= query (:query seeded)) context {:data-sources {}})))
+
       :current-query (plotje-context source request)
       {:data-sources {}}))))
 

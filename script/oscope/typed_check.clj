@@ -27,10 +27,12 @@
     :evidence ["oscope.typed.contracts/BucketedTelemetryExpression" ":30s"]}
    {:namespace 'oscope.typed.controls.wrong-counter-provenance
     :evidence [":cumulative" ":delta"]}
+   {:namespace 'oscope.typed.controls.wrong-histogram-temporality
+    :evidence [":cumulative" ":delta"]}
    {:namespace 'oscope.typed.controls.wrong-view-row
     :evidence ["oscope.typed.contracts/RawDistributionRow" "three"]}])
 
-(def expected-mutant-count 8)
+(def expected-mutant-count 9)
 
 (def production-check-config
   {:check-config {:unannotated-def :unchecked

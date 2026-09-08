@@ -92,10 +92,23 @@ the returned points:
  :layers [{:mark :bar :x :service-name :y :increase}]}
 ```
 
+The separate `:histogram-query` source does the same for cumulative explicit
+histograms. Its closed recipe retains `:metric-kind :histogram`,
+`:temporality :cumulative`, the exact metric name, grouping, bucket, window,
+aggregates, and limit. Returned rows expose observation `:count`, `:sum`,
+`:avg`, and p50/p95/p99 descriptors. Each selected quantile is flattened into
+an estimate, containing lower and upper bounds, exact rank numerator and
+denominator, worst-case absolute interpolation error, interpolation method,
+and a display bucket. Empty histograms return null average and quantiles.
+Implicit infinity-tail buckets have a null estimate and error instead of an
+invented scalar. Rows also retain explicit bounds, interval/reset counts,
+observed duration, kind, and temporality.
+
 Gauge and sum point values provide `:count`, `:sum`, `:min`, `:max`, `:avg`,
 `:p50`, `:p95`, and `:p99`. Delta explicit histograms provide observation
-`:count`, `:sum`, and `:avg`. Cumulative histogram snapshots are excluded until
-reset-aware differencing is implemented. Scalar sum values are stored-point
+`:count`, `:sum`, and `:avg`. Cumulative explicit histograms use the separate
+reset-aware histogram recipe above; they are never approximated from scalar
+samples. Scalar sum values are stored-point
 aggregates, not counter increases or rates. Select the separate
 `:counter-series` mode for those semantics. Its recipe explicitly retains
 `:metric-kind :sum`, `:temporality :cumulative`, and `:monotonic? true`, and
@@ -115,6 +128,14 @@ increase is unknown. A zero-duration zero-valued reset has no rate interval and
 is not included in `:reset-count`. Source scan/result rows, bytes, memory,
 execution time, window, and output count all retain hard ceilings.
 
+Histogram recipes likewise fail closed on changed boundary schemas, bucket or
+count decreases within an epoch, duplicate seconds, overlapping epochs,
+projection collapse, bucket-crossing intervals, non-finite data, and missing
+evidence. Sum decreases are allowed because cumulative histograms may observe
+negative values. Source scans are capped at 10,000 points and 100,000 rows read,
+64 MiB read/result bytes, 128 MiB memory, five seconds, and one thread; the
+rendered result remains capped at 100 rows and a 24-hour window.
+
 The available buckets are none,
 1 minute, 5 minutes, 15 minutes, and 1 hour; dimensions are service, unit,
 scope, and deployment environment.
@@ -128,9 +149,10 @@ oscope waits for a composite-series and legend contract before exposing them;
 otherwise distinct SQL groups could be drawn as one line.
 
 Data references are deliberately small. A reference names one source and
-selects 1–16 distinct fields. The source is capped at 512 rows, projected values
-must be bounded Plotje scalars, and a missing source or field is a visible spec
-error. Unknown keys fail closed. Literal `:data` row vectors remain supported
+selects 1–48 distinct fields. The source is capped at 512 rows; projected values
+must be bounded Plotje scalars or a finite explicit-bound vector of at most 64
+values, and a missing source or field is a visible spec error. Unknown keys fail
+closed. Literal `:data` row vectors remain supported
 for examples, fixed thresholds, and hand-authored charts.
 
 ## Query and aggregate grammar
@@ -235,5 +257,5 @@ insert resolved values into the Plotje text.
 
 Together with per-series filters, division supports error-rate-style charts
 over stored span or log events. With a fixed bucket this is a per-bucket ratio,
-not an OTel cumulative-counter rate. Calculation chaining, cumulative-counter
-rate/reset logic, and histogram reconstruction remain follow-ups.
+not an OTel cumulative-counter rate. Calculation chaining remains a follow-up;
+cumulative counters and explicit histograms use their dedicated closed sources.

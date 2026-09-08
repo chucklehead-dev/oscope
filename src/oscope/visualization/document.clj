@@ -9,6 +9,7 @@
 (def current-query-source :current-query)
 (def telemetry-query-source :telemetry-query)
 (def counter-query-source :counter-query)
+(def histogram-query-source :histogram-query)
 (def kinds #{:plotje :hiccup})
 (def default-hiccup-text
   "[:section {:class \"card\"} [:h2 \"Telemetry note\"] [:p \"Edit this safe, data-only Hiccup.\"]]")
@@ -98,7 +99,12 @@
   (if-let [chart (:chart screen)]
     (let [rows (:data chart)
           selection (:selection screen)]
-      (if (= :counter-series (:mode selection))
+      (if (= :cumulative-histogram-series (:mode selection))
+        (let [fields (query/cumulative-histogram-series-output-fields selection)
+              template (assoc chart :data {:source histogram-query-source
+                                           :query selection :select fields})]
+          (prepare :plotje (pr-str template) {histogram-query-source rows}))
+        (if (= :counter-series (:mode selection))
         (let [fields (query/counter-series-output-fields selection)
               template (assoc chart :data {:source counter-query-source
                                            :query selection :select fields})]
@@ -134,7 +140,7 @@
                                               (assoc :color group-field))
                                            layers))))]
           (prepare :plotje (pr-str template)
-                   {telemetry-query-source bound-rows})))))
+                   {telemetry-query-source bound-rows}))))))
     (prepare :plotje (pr-str empty-plotje-spec))))
 
 (defn default-hiccup []

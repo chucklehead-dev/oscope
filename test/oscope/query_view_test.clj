@@ -8,6 +8,7 @@
             [oscope.plotje.svg :as plotje]
             [oscope.query :as query]
             [oscope.query.chdb :as query-chdb]
+            [oscope.sample :as sample]
             [oscope.view-model :as view-model]
             [otel.exporter.chdb.explorer :as explorer]))
 
@@ -15,6 +16,48 @@
 
 (defn- ordered-selection [order selected]
   (vec (filter selected order)))
+
+(defn- histogram-descriptor
+  [quantile numerator denominator estimate lower upper bucket-count]
+  {:quantile quantile :rank (/ (double numerator) denominator)
+   :rank-numerator numerator :rank-denominator denominator
+   :estimate estimate :lower-bound lower :upper-bound upper
+   :lower-inclusive? false :upper-inclusive? (some? upper)
+   :lower-unbounded? (nil? lower) :upper-unbounded? (nil? upper)
+   :bucket-observation-count bucket-count
+   :absolute-error-bound (when (and estimate lower upper)
+                           (max (- estimate lower) (- upper estimate)))
+   :interpolation :uniform-within-explicit-bucket})
+
+(defn- histogram-result-row []
+  {:service-name "checkout" :count 13 :sum -83.0 :avg (/ -83.0 13.0)
+   :p50 (histogram-descriptor 0.5 13 2 (/ 45.0 7.0) 0.0 10.0 7)
+   :p95 (histogram-descriptor 0.95 247 20 nil 10.0 nil 4)
+   :p99 (histogram-descriptor 0.99 1287 100 nil 10.0 nil 4)
+   :metric-kind :histogram :temporality :cumulative
+   :explicit-bounds [0.0 10.0] :interval-count 4 :reset-count 2
+   :observed-duration-nanos 35000000000})
+
+(defn- raw-histogram-row [overrides]
+  (merge {:starttimenano 1699999990000000000
+          :timenano 1700000010000000000 :servicename "private-service"
+          :streamservice "private-service"
+          :streammetricdescription "private latency"
+          :streammetricunit "ms" :streamscopename "private.scope"
+          :streamscopeversion "1" :streamscopedroppedattrcount 0
+          :streamresourceschemaurl "" :streamscopeschemaurl ""
+          :streamresourceattributes {"token" "credential-secret"}
+          :streamscopeattributes {} :streamattributes {"route" "/private"}
+          :count 4 :sum 20.0 :bucketcounts [1 2 1]
+          :explicitbounds [0.0 10.0] :min 0.0 :max 20.0
+          :aggregationtemporality 2 :flags 0
+          :starttimetype "DateTime" :timetype "DateTime"
+          :counttype "UInt64" :sumtype "Float64"
+          :bucketcountstype "Array(UInt64)"
+          :explicitboundstype "Array(Float64)" :mintype "Float64"
+          :maxtype "Float64" :temporalitytype "Int32" :flagstype "UInt32"
+          :scopedroppedattrcounttype "UInt32"}
+         overrides))
 
 (deftest selection-compiles-to-the-bounded-explorer-contract
   (let [plan (query/compile-query
@@ -128,6 +171,181 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (query/validate-plan
                   (assoc-in plan [:request :monotonic?] false))))))
+
+(deftest cumulative-histogram-selection-is-a-separate-bounded-contract
+  (let [selection (assoc query/default-cumulative-histogram-series-selection
+                         :aggregates [:count :sum :avg :p50 :p95 :p99])
+        plan (query/compile-query selection now)]
+    (is (= {:metric-kind :histogram :temporality :cumulative
+            :metric-name "request.duration" :group-by [:service-name]
+            :bucket :none :aggregates [:count :sum :avg :p50 :p95 :p99]
+            :start-unix-nano (- now (* 60 60 1000000000))
+            :end-unix-nano now :limit 100}
+           (:request plan)))
+    (with-redefs [explorer/cumulative-histogram-series
+                  (fn [connection request]
+                    (is (= ::connection connection))
+                    (is (= (:request plan) request))
+                    [])]
+      (is (= [] (query-chdb/run ::connection plan))))
+    (doseq [invalid [(assoc selection :temporality :delta)
+                     (assoc selection :metric-kind :sum)
+                     (assoc selection :aggregates [:p95])
+                     (assoc selection :bucket :30s)
+                     (assoc selection :sql "SELECT *")]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (query/compile-query invalid now))
+          (pr-str invalid)))))
+
+(deftest generated-cumulative-histogram-recipes-are-closed-and-provenanced
+  (let [result
+        (h/run-test!
+         {:name "oscope cumulative histogram recipe plan"
+          :database "" :verbosity :quiet :derandomize? true :test-cases 120}
+         (fn [_]
+           (let [selected (h/draw! (g/set {:min-size 1 :max-size 5}
+                                          (g/sampled-from
+                                           [:sum :avg :p50 :p95 :p99])))
+                 aggregates (ordered-selection
+                             (:aggregates query/cumulative-histogram-series-options)
+                             (conj selected :count))
+                 groups (ordered-selection
+                         (:group-by query/cumulative-histogram-series-options)
+                         (h/draw! (g/set {:min-size 0 :max-size 1}
+                                         (g/sampled-from
+                                          (:group-by query/cumulative-histogram-series-options)))))
+                 selection {:mode :cumulative-histogram-series
+                            :metric-kind :histogram :temporality :cumulative
+                            :metric-name (h/draw! (g/sampled-from
+                                                  ["request.duration" "unicode.λ"]))
+                            :group-by groups
+                            :bucket (h/draw! (g/sampled-from
+                                              (:buckets query/cumulative-histogram-series-options)))
+                            :aggregates aggregates
+                            :window (h/draw! (g/sampled-from (vec (keys query/windows))))
+                            :limit (h/draw! (g/integer 1 query/max-result-limit))}
+                 plan (query/compile-query selection now)]
+             (when-not (and (= selection (:selection plan))
+                            (= plan (query/validate-plan plan))
+                            (= [:histogram :cumulative]
+                               ((juxt :metric-kind :temporality) (:request plan))))
+               (throw (ex-info "histogram recipe provenance drifted"
+                               {:hegel/origin "oscope-histogram-plan/drift"}))))))]
+    (is (:passed? result)
+        (pr-str (select-keys result [:status :seed :failures :error])))
+    (is (false? (:flaky? result)))))
+
+(deftest cumulative-histogram-screen-retains-bounds-and-null-tail-honestly
+  (let [selection (assoc query/default-cumulative-histogram-series-selection
+                         :aggregates [:count :sum :avg :p50 :p95 :p99])
+        screen (view-model/screen (query/compile-query selection now)
+                                  [(histogram-result-row)])
+        row (first (get-in screen [:table :rows]))]
+    (is (= :telemetry-cumulative-histogram-series (:view screen)))
+    (is (= [:sum] (mapv :y (get-in screen [:chart :layers])))
+        "count is evidence, so the first selected non-count aggregate is primary")
+    (is (= [(/ 45.0 7.0) 0.0 10.0 13 2 (/ 45.0 7.0)
+            :uniform-within-explicit-bucket "(0.0, 10.0]"]
+           (mapv row (query/quantile-descriptor-fields :p50))))
+    (is (= [nil 10.0 nil 247 20 nil
+            :uniform-within-explicit-bucket "(10.0, +Inf)"]
+           (mapv row (query/quantile-descriptor-fields :p95))))
+    (is (= [0.0 10.0] (:explicit-bounds row)))
+    (is (= [4 2 35000000000 :histogram :cumulative]
+           ((juxt :interval-count :reset-count :observed-duration-nanos
+                  :metric-kind :temporality) row)))))
+
+(deftest histogram-descriptor-schema-and-request-privacy-fail-closed
+  (let [selection (assoc query/default-cumulative-histogram-series-selection
+                         :aggregates [:count :p50])
+        plan (query/compile-query selection now)
+        base (select-keys (histogram-result-row)
+                          [:service-name :count :p50 :metric-kind :temporality
+                           :explicit-bounds :interval-count :reset-count
+                           :observed-duration-nanos])]
+    (doseq [row [(assoc-in base [:p50 :lower-bound] 5.0)
+                 (assoc-in base [:p50 :bucket-observation-count] 14)
+                 (assoc-in base [:p50 :rank] 6.6)
+                 (assoc base :explicit-bounds [0.0 20.0])]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (view-model/screen plan [row]))
+          (pr-str row)))
+    (let [sentinel (apply str (repeat 30 "credential-secret-"))]
+      (try
+        (query/compile-query (assoc selection :metric-name sentinel) now)
+        (is false "oversized credential-like metric name unexpectedly compiled")
+        (catch clojure.lang.ExceptionInfo error
+          (is (= {:reason :invalid-metric-name :maximum 256}
+                 (select-keys (ex-data error) [:reason :maximum])))
+          (is (not (str/includes? (pr-str (ex-data error))
+                                  "credential-secret-"))))))))
+
+(deftest histogram-view-preserves-empty-and-above-double-precision-ranks
+  (let [empty-selection
+        (assoc query/default-cumulative-histogram-series-selection
+               :group-by [] :aggregates [:count :avg :p50])
+        evidence {:metric-kind :histogram :temporality :cumulative
+                  :explicit-bounds [0.0] :interval-count 1 :reset-count 1
+                  :observed-duration-nanos 1000000000}
+        empty-row (merge evidence {:count 0 :avg nil :p50 nil})
+        empty-screen (view-model/screen
+                      (query/compile-query empty-selection now) [empty-row])
+        total 18014398509481985
+        large-selection (assoc empty-selection :aggregates [:count :p50])
+        large-row (merge evidence
+                         {:count total
+                          :p50 (histogram-descriptor
+                                0.5 total 2 nil 0.0 nil 9007199254740993)})
+        large-screen (view-model/screen
+                      (query/compile-query large-selection now) [large-row])]
+    (is (= [0 nil nil]
+           ((juxt :count :avg :p50-estimate)
+            (first (get-in empty-screen [:table :rows])))))
+    (is (= [total 2]
+           ((juxt :p50-rank-numerator :p50-rank-denominator)
+            (first (get-in large-screen [:table :rows])))))
+    (is (nil? (get-in large-screen [:table :rows 0 :p50-estimate])))))
+
+(deftest histogram-view-accepts-canonical-rounded-rank-display
+  (let [selection (assoc query/default-cumulative-histogram-series-selection
+                         :group-by [] :aggregates [:count :p95])
+        descriptor (assoc (histogram-descriptor 0.95 57 20 nil 10.0 nil 1)
+                          :rank (* 0.95 (double 3)))
+        row {:count 3 :p95 descriptor
+             :metric-kind :histogram :temporality :cumulative
+             :explicit-bounds [0.0 10.0] :interval-count 1 :reset-count 1
+             :observed-duration-nanos 1000000000}
+        screen (view-model/screen (query/compile-query selection now) [row])]
+    (is (= 57 (get-in screen [:table :rows 0 :p95-rank-numerator])))
+    (is (= 20 (get-in screen [:table :rows 0 :p95-rank-denominator])))
+    (is (= "(10.0, +Inf)"
+           (get-in screen [:table :rows 0 :p95-containing-bucket])))))
+
+(deftest bucket-crossing-histogram-interval-is-rejected-with-scrubbed-evidence
+  (let [selection (assoc query/default-cumulative-histogram-series-selection
+                         :bucket :1m)
+        plan (query/compile-query selection now)
+        interval-end (- now 10000000000)
+        epoch-start (- (get-in plan [:request :start-unix-nano]) 1000000000)
+        rows [(raw-histogram-row {:starttimenano epoch-start
+                                  :timenano (- interval-end 30000000000)})
+              (raw-histogram-row {:starttimenano epoch-start
+                                  :timenano interval-end
+                                  :count 8 :sum 44.0
+                                  :bucketcounts [2 4 2]})]]
+    (with-redefs [jdbc/fetch (fn [& _] rows)]
+      (try
+        (query-chdb/run ::connection plan)
+        (is false "bucket-crossing histogram interval unexpectedly rendered")
+        (catch clojure.lang.ExceptionInfo error
+          (let [data (ex-data error) rendered (pr-str data)]
+            (is (= :otel.exporter.chdb.explorer/histogram-interval-crosses-bucket
+                   (:type data)))
+            (is (not-any? #(contains? data %)
+                          [:row :projection :sum :bucket-counts
+                           :explicit-bounds :previous-value]))
+            (is (not (str/includes? rendered "private")))
+            (is (not (str/includes? rendered "credential-secret")))))))))
 
 (deftest generated-counter-recipes-round-trip-explicit-provenance
   (let [result

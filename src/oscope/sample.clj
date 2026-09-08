@@ -61,6 +61,36 @@
                              :interval-count :reset-count
                              :observed-duration-nanos]))]
     (->> [base] (take limit) (mapv #(select-keys % fields)))))
+(defn- quantile [q numerator denominator estimate lower upper bucket-count]
+  {:quantile q :rank (/ (double numerator) denominator)
+   :rank-numerator numerator :rank-denominator denominator
+   :estimate estimate :lower-bound lower :upper-bound upper
+   :lower-inclusive? false :upper-inclusive? (some? upper)
+   :lower-unbounded? (nil? lower) :upper-unbounded? (nil? upper)
+   :bucket-observation-count bucket-count
+   :absolute-error-bound (when (and estimate lower upper)
+                           (max (- estimate lower) (- upper estimate)))
+   :interpolation :uniform-within-explicit-bucket})
+(defn- cumulative-histogram-series-rows
+  [{:keys [group-by bucket aggregates limit]}]
+  (let [base {:bucket-start-unix-nano (- sample-time 300000000000)
+              :service-name "checkout" :metric-unit "ms"
+              :scope-name "demo.metrics" :deployment-environment "demo"
+              :count 13 :sum -83.0 :avg (/ -83.0 13.0)
+              :p50 (quantile 0.5 13 2 (/ 45.0 7.0) 0.0 10.0 7)
+              :p95 (quantile 0.95 247 20 nil 10.0 nil 4)
+              :p99 (quantile 0.99 1287 100 nil 10.0 nil 4)
+              :metric-kind :histogram :temporality :cumulative
+              :explicit-bounds [0.0 10.0]
+              :interval-count 4 :reset-count 2
+              :observed-duration-nanos 35000000000}
+        fields (vec (concat (when (not= :none bucket)
+                              [:bucket-start-unix-nano])
+                            group-by aggregates
+                            [:metric-kind :temporality :explicit-bounds
+                             :interval-count :reset-count
+                             :observed-duration-nanos]))]
+    (->> [base] (take limit) (mapv #(select-keys % fields)))))
 (defn screen-for-selection [selection]
   (let [plan (query/compile-query selection sample-time)]
     (view-model/screen
@@ -68,5 +98,7 @@
      (case (get-in plan [:selection :mode])
        :metric-series (series-rows (:selection plan))
        :counter-series (counter-series-rows (:selection plan))
+       :cumulative-histogram-series
+       (cumulative-histogram-series-rows (:selection plan))
        (rows (:selection plan))))))
 (def default-screen (screen-for-selection query/default-selection))

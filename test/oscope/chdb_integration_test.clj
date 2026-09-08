@@ -79,6 +79,50 @@
                (get-in screen [:table :rows])))
         (is (= [:increase]
                (mapv :y (get-in screen [:chart :layers])))))
+      (doseq [[epoch-second time-second count sum bucket-counts]
+              [[1699999900 1699999910 4 -20.0 [1 2 1]]
+               [1699999900 1699999920 8 -44.0 [2 4 2]]
+               [1699999925 1699999930 3 -21.0 [0 2 1]]
+               [1699999925 1699999940 5 -39.0 [0 3 2]]]]
+        (jdbc/execute!
+         (:connection source)
+         ["INSERT INTO otel_metrics_histogram
+             (TimeUnix, StartTimeUnix, ServiceName, MetricName,
+              MetricDescription, MetricUnit, ScopeName, Count, Sum,
+              BucketCounts, ExplicitBounds, Min, Max,
+              AggregationTemporality, Flags)
+           VALUES (fromUnixTimestamp(?), fromUnixTimestamp(?), 'api',
+                   'request.duration', 'request latency', 'ms',
+                   'demo.metrics', ?, ?, [?, ?, ?], [0.0, 10.0],
+                   -100.0, 100.0, 2, 0)"
+          time-second epoch-second count sum
+          (nth bucket-counts 0) (nth bucket-counts 1)
+          (nth bucket-counts 2)]))
+      (let [screen
+            ((:load-command source) :cumulative-histogram-series
+             {:mode :cumulative-histogram-series
+              :metric-kind :histogram :temporality :cumulative
+              :metric-name "request.duration" :group-by [:service-name]
+              :bucket :none :aggregates [:count :sum :avg :p50 :p95]
+              :window :15m :limit 10})
+            row (first (get-in screen [:table :rows]))]
+        (is (= :telemetry-cumulative-histogram-series (:view screen)))
+        (is (= {:service-name "api" :count 13 :sum -83.0
+                :avg (/ -83.0 13.0) :p50-estimate (/ 45.0 7.0)
+                :p50-lower-bound 0.0 :p50-upper-bound 10.0
+                :p95-estimate nil :p95-lower-bound 10.0
+                :p95-upper-bound nil :explicit-bounds [0.0 10.0]
+                :interval-count 4 :reset-count 2
+                :observed-duration-nanos 35000000000
+                :metric-kind :histogram :temporality :cumulative}
+               (select-keys row
+                            [:service-name :count :sum :avg
+                             :p50-estimate :p50-lower-bound :p50-upper-bound
+                             :p95-estimate :p95-lower-bound :p95-upper-bound
+                             :explicit-bounds :interval-count :reset-count
+                             :observed-duration-nanos :metric-kind :temporality])))
+        (is (= [:sum] (mapv :y (get-in screen [:chart :layers]))))
+        (is (= "(10.0, +Inf)" (:p95-containing-bucket row))))
       (finally (live/close! source)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source is closed"
                           ((:loader source) (:selection (:screen source)))))))
