@@ -252,6 +252,17 @@ env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
     test/durable_s3_crash_reopen.sh
 ```
 
+The manual `durable-aws-recovery` workflow performs that same crash/reopen
+acceptance against a pre-provisioned AWS bucket using GitHub OIDC temporary
+credentials. Configure the `aws-durable-ci` GitHub environment with the
+non-secret variables `AWS_DURABLE_ROLE_ARN`, `AWS_DURABLE_BUCKET`, and
+`AWS_DURABLE_REGION`. Each workflow attempt uses the isolated prefix
+`ci/oscope/<run-id>-<run-attempt>`, passes the AWS session token to the SigV4
+transport, and neither creates nor deletes the bucket. The role needs only
+`s3:GetObject` and `s3:PutObject` on
+`arn:aws:s3:::BUCKET/ci/oscope/*`; expire the shared `ci/` subtree with a bucket
+lifecycle rule.
+
 Optional settings are `OSCOPE_DURABLE_OWNER`, `OSCOPE_DURABLE_INSTANCE`,
 `OSCOPE_DURABLE_DATABASE`, `OSCOPE_DURABLE_SCRATCH_PARENT`,
 `OSCOPE_DURABLE_LEASE_TTL_MS`, `OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS`, and
