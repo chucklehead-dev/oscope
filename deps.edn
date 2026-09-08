@@ -7,10 +7,10 @@
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "fdaf877465c4b78399501b461ed43b1deea32ea4"}
+         :git/sha "58f090caa31445bcf9403a15bdd01b1901a4e860"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "df5a8a8c57add2600bc0fdd647affcf8baff01de"}
+         :git/sha "cd78aa5766775f7e9caea2722d0b33b039745946"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "9ae943fcaf7725b1b36e00bc216aef17405f295a"}
@@ -52,6 +52,10 @@
   :test-readers
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.reader-test-runner"]}
+
+  :test-durable
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :test-durable-dev
   {:override-deps
@@ -151,6 +155,7 @@
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"
          test-readers "jolt -M:test-readers"
+         test-durable "jolt -M:test-durable"
          test-durable-dev "jolt -M:test-durable-dev"
          test-durable-aspect "test/durable_aspect_smoke.sh"
          test-durable-fault "test/durable_fault_acceptance.sh"

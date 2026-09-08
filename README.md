@@ -131,6 +131,7 @@ close are not chDB Durable `close()` operations.
 | Local path persistence | `OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/oscope-data`; the standalone default is `chdb:./oscope-data` | Available now. Reopening the same local directory retains the database, as covered by the restart integration test. It is not object-backed Durable recovery. |
 | Local Durable development mode | `OSCOPE_DURABLE_ROOT=/absolute/path jolt -M:durable-server-dev` | Available with a qualified chDB Durable V1 native library. Uses the POSIX object backend, fenced single-writer lease, acknowledged WAL flushes, checkpoints, and recovery through the published head. |
 | Object-backed Durable mode | `OSCOPE_DURABLE_BACKEND=s3` plus the S3 settings below | Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend. Recovery uses the last CAS-published Durable checkpoint and WAL chain. |
+| In-process Durable SDK | `oscope.embedded/start!` with a Durable writer dbspec | Available with the same qualified native library. Instrumented application code exports spans, logs, and metrics directly into the shared writer and queries them through oscope without OTLP or HTTP framing. |
 
 These modes reserve “Durable” for the official
 [chDB Durable overview](https://github.com/chdb-io/chdb/blob/db10b548a3e1e21e51c213baf863cb1050963d9c/docs/durable/index.mdx)
@@ -460,6 +461,52 @@ A future runner API returning that root can add explicit unmount and release
 without changing the oscope contract. Applications that require independently
 owned embedded native windows should treat that runner enhancement as a gate.
 
+## Embed the SDK, Durable writer, and viewer
+
+`oscope.embedded` packages the direct in-process path behind one lifecycle:
+
+```clojure
+(require '[oscope.embedded :as embedded]
+         '[otel.sdk :as sdk]
+         '[otel.trace :as trace])
+
+(def runtime
+  (embedded/start!
+   {:db-spec {:vendor "chdb-durable"
+              :backend durable-object-backend
+              :owner "checkout"
+              :instance "checkout-1"
+              :database "default"}
+    :sdk-options {:service-name "checkout"
+                  :processor :batch
+                  :metrics? true
+                  :logs? true}}))
+
+(trace/with-span [_ (sdk/tracer "checkout.http") "POST /checkout"]
+  (handle-checkout))
+
+;; Stop application ingress first, then drain and retire the owned runtime.
+(embedded/stop! runtime)
+```
+
+The returned `:source` is the ordinary live oscope query source and can be
+given to the web or native UI handlers. The exporter owns schema migration,
+checkpoints it before startup returns, and confirms a Durable flush after every
+non-empty SDK batch. Shutdown drains the SDK, retires queries, checkpoints the
+committed WAL by default, and finally closes the writer. A failed boundary is
+reported as `{:status :closing ...}` and may be retried with `stop!`.
+
+This path avoids OTLP encoding, HTTP framing, and receiver decoding. The current
+chDB insert path still materializes `JSONEachRow` SQL internally; protobuf or
+gRPC would not remove that in-process storage encoding. Export acknowledgement
+is at-least-once: an ambiguous failed attempt followed by an SDK retry can
+produce a duplicate.
+
+An out-of-process viewer opens a read-only Durable connection after a published
+flush or checkpoint. It restores the immutable head selected at open time into
+private scratch storage; it does not need the writer's local state and does not
+tail uncommitted changes.
+
 ## Share a collector connection
 
 An in-process OTLP collector should share its existing connection:
@@ -675,8 +722,8 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 ## Exact dependency baselines
 
-- `chucklehead-dev/jolt-otel-clickhouse` `d5c38ab51e2002cc3795b247638a4fa212982a42`
-- `chucklehead-dev/jolt-chdb` `3ef8d97b62b467f1ad68f92b854498c124cb8811`
+- `chucklehead-dev/jolt-otel-clickhouse` `cd78aa5766775f7e9caea2722d0b33b039745946`
+- `chucklehead-dev/jolt-chdb` `58f090caa31445bcf9403a15bdd01b1901a4e860`
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
