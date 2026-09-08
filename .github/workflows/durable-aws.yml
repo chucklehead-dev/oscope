@@ -58,6 +58,11 @@ jobs:
           OSCOPE_DURABLE_S3_BUCKET: ${{ vars.AWS_DURABLE_BUCKET }}
           OSCOPE_DURABLE_S3_PREFIX: ci/oscope/${{ github.run_id }}-${{ github.run_attempt }}
           OSCOPE_DURABLE_S3_CREATE_BUCKET: false
+          # The lease must cover real-provider open/restore latency. Each
+          # process is still replaced only through ordinary expiry, not force.
+          OSCOPE_DURABLE_CRASH_LEASE_TTL_MS: 30000
+          OSCOPE_DURABLE_CRASH_HEARTBEAT_INTERVAL_MS: 5000
+          OSCOPE_DURABLE_CRASH_TAKEOVER_WAIT_SECONDS: 35
         run: |
           set -euo pipefail
           test -n "$AWS_ACCESS_KEY_ID"
