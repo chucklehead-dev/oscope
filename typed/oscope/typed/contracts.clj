@@ -3,6 +3,7 @@
   (:require [typed.clojure :as t]
             [oscope.command]
             [oscope.query]
+            [oscope.query.expression]
             [oscope.view-model]))
 
 (t/defalias Window (t/U ':15m ':1h ':6h ':24h))
@@ -19,6 +20,10 @@
 (t/defalias Field (t/U SpanField LogField MetricField))
 
 (t/defalias Signal (t/U ':spans ':logs ':metrics))
+(t/defalias Bucket (t/U ':none ':1m ':5m ':15m ':1h))
+(t/defalias BucketedTelemetryExpression
+  (t/HMap :mandatory {:bucket Bucket}
+          :complete? false))
 (t/defalias Selection
   (t/HMap :mandatory {:signal Signal :field Field
                        :window Window :limit t/AnyInteger}
@@ -62,6 +67,8 @@
 (t/ann oscope.query/fields (t/Map Signal (t/Vec Field)))
 (t/ann oscope.query/windows (t/Map Window t/AnyInteger))
 (t/ann oscope.query/default-selection Selection)
+(t/ann oscope.query.expression/bucket-presets
+  (t/Map Bucket (t/Option t/AnyInteger)))
 (t/ann oscope.query/supported-fields
   [-> (t/Map Signal (t/Vec Field))])
 (t/ann oscope.query/window-nanos [Window -> t/AnyInteger])

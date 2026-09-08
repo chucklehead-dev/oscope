@@ -77,6 +77,9 @@ debounced preview and one-click example loading. Its editable chart contains a
 bounded `:telemetry-query` with grouping, equality filters, and named
 count/sum/average/min/max/percentile series instead of copying returned
 telemetry rows into the spec, so it can be reused as values change.
+Reusable expressions can group those results into Unix-epoch-aligned `:1m`,
+`:5m`, `:15m`, or `:1h` buckets (or `:none`) and expose the bucket start as a
+named chart column.
 See [Reusable Plotje charts](docs/PLOTJE.md) for the current contract and the
 bounded aggregate/query grammar.
 The reusable grammar also supports bounded server-side `:add`, `:subtract`,

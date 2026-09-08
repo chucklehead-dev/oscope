@@ -182,6 +182,47 @@
               :error-p95 nil :error-rate 0.0}
              (second rows))))))
 
+(deftest reusable-expression-groups-filtered-calculations-into-real-time-buckets
+  (with-open [connection (jdbc/connection "chdb::memory:")]
+    (schema/migrate! connection)
+    (let [minute (* 60 1000000000)
+          current-bucket (* (quot test-now minute) minute)
+          previous-bucket (- current-bucket minute)]
+      (doseq [[timestamp status duration]
+              [[(- current-bucket 1) "ERROR" 50]
+               [(+ current-bucket 1) "OK" 10]
+               [(+ current-bucket 2) "ERROR" 30]]]
+        (jdbc/execute!
+         connection
+         ["INSERT INTO otel_traces
+             (Timestamp, ServiceName, SpanName, StatusCode, Duration)
+           VALUES (fromUnixTimestamp64Nano(?), 'api', 'bucket.work', ?, ?)"
+          timestamp status duration]))
+      (let [rows
+            (query-expression-chdb/execute!
+             connection
+             {:signal :spans :window :15m :bucket :1m
+              :group-by [:service-name]
+              :filters [{:field :span-name :op :eq :value "bucket.work"}]
+              :series [{:as :requests :op :count}
+                       {:as :errors :op :count
+                        :filters [{:field :status-code :op :eq
+                                   :value "ERROR"}]}
+                       {:as :error-duration :op :sum :field :duration-ns
+                        :filters [{:field :status-code :op :eq
+                                   :value "ERROR"}]}]
+              :calculations [{:as :error-ratio :op :divide
+                              :args [:errors :requests]}]
+              :limit 10}
+             test-now)]
+        (is (= [{:bucket-start-unix-nano previous-bucket
+                 :service-name "api" :requests 1 :errors 1
+                 :error-duration 50 :error-ratio 1.0}
+                {:bucket-start-unix-nano current-bucket
+                 :service-name "api" :requests 2 :errors 1
+                 :error-duration 30 :error-ratio 0.5}]
+               rows))))))
+
 (deftest native-adapter-renders-a-real-chdb-query-as-canonical-svg
   (let [source (live/open! {:db-spec "chdb::memory:"
                             :now-fn (constantly test-now)})

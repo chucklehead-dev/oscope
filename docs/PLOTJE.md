@@ -6,7 +6,7 @@ Opening **Edit this chart** produces a data reference such as:
 ```clojure
 {:title "Service Name in Spans"
  :data {:source :telemetry-query
-        :query {:signal :spans :window :1h
+        :query {:signal :spans :window :1h :bucket :none
                 :group-by [:service-name] :filters []
                 :series [{:as :count :op :count}]
                 :limit 12}
@@ -22,6 +22,7 @@ returned values:
  {:source :telemetry-query
   :query {:signal :spans
           :window :15m
+          :bucket :5m
           :group-by [:service-name]
           :filters [{:field :status-code :op :eq :value "ERROR"}]
           :series [{:as :requests :op :count}
@@ -29,8 +30,10 @@ returned values:
                    {:as :p95-ns :op :percentile
                     :field :duration-ns :percentile 95}]
           :limit 20}
-  :select [:service-name :requests :average-ns :p95-ns]}
- :layers [{:mark :bar :x :service-name :y :p95-ns}]}
+  :select [:bucket-start-unix-nano :service-name
+           :requests :average-ns :p95-ns]}
+ :layers [{:mark :line :x :bucket-start-unix-nano
+           :y :p95-ns :color :service-name}]}
 ```
 
 Oscope runs this query again for each preview, projects the selected fields,
@@ -38,18 +41,25 @@ validates the resulting rows, and only then renders SVG. Returned service names,
 metric names, counts, and other samples never become part of the editable chart
 text, so the same text keeps working as telemetry changes.
 
+The reusable query accepts `:none`, `:1m`, `:5m`, `:15m`, or `:1h`. A fixed
+bucket adds `:bucket-start-unix-nano` as the first output field and groups every
+aggregate at Unix-epoch-aligned boundaries. Global filters choose the source
+rows first; per-series filters then apply inside each bucket and group;
+calculations operate on the aggregate results from that same row. The bucket
+interval, times, filters, display lengths, and result limit are parameters.
+
 The legacy `:current-query` source remains available for the bounded query
-recipe selected in the editor URL. It is used for all current metric screens:
-their gauge/sum/histogram provenance and optional fixed time bucket are not yet
-part of the reusable gauge-only `:telemetry-query` grammar. This preserves the
-original result semantics across a no-edit preview. In both forms, the chart
-selects named result fields and never copies returned data points into editable
-text.
+recipe selected in the editor URL. It is used for current metric screens whose
+gauge/sum/histogram physical-kind provenance is richer than the reusable
+gauge-only `:telemetry-query` grammar. This preserves the original result
+semantics across a no-edit preview. In both forms, the chart selects named
+result fields and never copies returned data points into editable text.
 
 The current query produces one row per selected field value:
 
 | Field | Meaning |
 | --- | --- |
+| `:bucket-start-unix-nano` | Epoch-aligned start of a requested fixed bucket; omitted for `:none`. |
 | Group field | The selected dimension, such as `:service-name` or `:metric-name`. |
 | Series alias | The result of its aggregate, such as `:count` or `:p95-ns`. |
 | Calculation alias | Arithmetic derived from two named aggregate series or constants. |
@@ -90,8 +100,11 @@ for examples, fixed thresholds, and hand-authored charts.
 
 ## Query and aggregate grammar
 
-The server accepts up to two group fields, four global equality filters, eight
-series, and 100 result rows over a 15 minute, 1 hour, 6 hour, or 24 hour window.
+The server accepts one fixed bucket preset, up to two group fields, four global
+equality filters, eight series, and 100 result rows over a 15 minute, 1 hour,
+6 hour, or 24 hour window. Omitting `:bucket` is equivalent to `:none` for older
+saved expressions. Bucketed rows are ordered by bucket start and then group
+dimensions; unbucketed rows retain primary-aggregate ordering.
 Each series accepts up to two additional equality filters, with at most eight
 series filters across the whole expression. Series support:
 
@@ -161,7 +174,6 @@ not put arithmetic in editable JavaScript, accept arbitrary functions, or
 insert resolved values into the Plotje text.
 
 Together with per-series filters, division supports error-rate-style charts
-over stored span or log events. This is a ratio over the selected bounded
-window, not an OTel cumulative-counter rate. Fixed time buckets, calculation
-chaining, cumulative-counter rate/reset logic, and histogram reconstruction
-remain follow-ups.
+over stored span or log events. With a fixed bucket this is a per-bucket ratio,
+not an OTel cumulative-counter rate. Calculation chaining, cumulative-counter
+rate/reset logic, and histogram reconstruction remain follow-ups.

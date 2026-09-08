@@ -7,6 +7,7 @@
 (def valid-namespaces
   ['oscope.typed.contracts
    'oscope.query
+   'oscope.query.expression
    'oscope.command
    'oscope.view-model
    'oscope.typed.driver])
@@ -22,10 +23,12 @@
     :evidence ["oscope.typed.contracts/Selection" "many"]}
    {:namespace 'oscope.typed.controls.wrong-plan-time
     :evidence ["AnyInteger" "later"]}
+   {:namespace 'oscope.typed.controls.wrong-bucket
+    :evidence ["oscope.typed.contracts/BucketedTelemetryExpression" ":30s"]}
    {:namespace 'oscope.typed.controls.wrong-view-row
     :evidence ["oscope.typed.contracts/RawDistributionRow" "three"]}])
 
-(def expected-mutant-count 6)
+(def expected-mutant-count 7)
 
 (def production-check-config
   {:check-config {:unannotated-def :unchecked
