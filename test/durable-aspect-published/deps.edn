@@ -1,0 +1,16 @@
+{:paths [".." "../../.qualification/jolt-aspect-packs/models"]
+ :deps
+ {io.github.chucklehead-dev/oscope {:local/root "../.."}
+  io.github.chucklehead-dev/jolt-chdb
+  {:local/root "../../.qualification/jolt-chdb"}
+  io.github.chucklehead-dev/jolt-aspect-packs
+  {:local/root "../../.qualification/jolt-aspect-packs"}
+  io.github.chucklehead-dev/jolt-hegel
+  {:git/url "https://github.com/chucklehead-dev/jolt-hegel.git"
+   :git/sha "3bc46499e0cfb5cf8fe67c30e997fbcae135ab47"}}
+ :jolt/build
+ {:embed ["../../.qualification/jolt-chdb/resources"]
+  :aspects
+  [{:resource "META-INF/jolt/aspects/packs/chdb-durable-edc86af.edn"
+    :providers [jolt.aspect-packs.chdb-durable.provider/aspect-provider]}]
+  :aspect-report "target/aspects.edn"}}
