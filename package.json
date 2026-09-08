@@ -1,0 +1,15 @@
+{
+  "name": "oscope-browser-tests",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test:browser": "playwright test --project=chromium",
+    "demo:screenshots": "playwright test --project=docs",
+    "demo:gif": "scripts/render-browser-gif.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}
