@@ -1,0 +1,14 @@
+{:paths [".."]
+ :deps
+ {io.github.chucklehead-dev/oscope {:local/root "../.."}
+  io.github.chucklehead-dev/jolt-chdb
+  {:local/root "../../.qualification/jolt-chdb"}
+  io.github.chucklehead-dev/jolt-aspect-packs
+  {:local/root "../../.qualification/jolt-aspect-packs"}}
+ :jolt/build
+ {:embed ["../../.qualification/jolt-chdb/resources"]
+  :allow-control-aspects true
+  :aspects
+  [{:resource "META-INF/jolt/aspects/packs/chdb-durable-edc86af.edn"
+    :providers [jolt.aspect-packs.chdb-durable.faults/aspect-provider]}]
+  :aspect-report "target/aspects.edn"}}

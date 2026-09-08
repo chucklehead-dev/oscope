@@ -13,8 +13,14 @@ on:
       - test/durable_s3_minio.sh
       - test/durable_crash_reopen.sh
       - test/durable_s3_crash_reopen.sh
+      - test/durable_fault_acceptance.sh
+      - test/durable-fault/deps.edn
+      - test/durable-fault-published/deps.edn
       - test/durable-process-published/deps.edn
       - test/oscope/durable_crash_verify.clj
+      - test/oscope/durable_fault_report_verify.clj
+      - test/oscope/durable_fault_server_main.clj
+      - test/oscope/durable_fault_verify.clj
       - test/oscope/durable_s3_integration_test.clj
   pull_request:
     paths:
@@ -26,8 +32,14 @@ on:
       - test/durable_s3_minio.sh
       - test/durable_crash_reopen.sh
       - test/durable_s3_crash_reopen.sh
+      - test/durable_fault_acceptance.sh
+      - test/durable-fault/deps.edn
+      - test/durable-fault-published/deps.edn
       - test/durable-process-published/deps.edn
       - test/oscope/durable_crash_verify.clj
+      - test/oscope/durable_fault_report_verify.clj
+      - test/oscope/durable_fault_server_main.clj
+      - test/oscope/durable_fault_verify.clj
       - test/oscope/durable_s3_integration_test.clj
 
 permissions:
@@ -36,7 +48,7 @@ permissions:
 jobs:
   linux-x86-64:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.3
       JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.3
@@ -50,6 +62,22 @@ jobs:
           ref: 3ef8d97b62b467f1ad68f92b854498c124cb8811
           path: .qualification/jolt-chdb
           persist-credentials: false
+      - name: Checkout canonical Durable aspect pack
+        uses: actions/checkout@v4
+        with:
+          repository: chucklehead-dev/jolt-aspect-packs
+          ref: 3280fefd5b7e98cf4dee54b63b6b8156c6abe4d4
+          path: .qualification/jolt-aspect-packs
+          persist-credentials: false
+      - name: Checkout aspect-capable Jolt compiler
+        uses: actions/checkout@v4
+        with:
+          repository: casselc/jolt
+          ref: 5d56b9e5d295fe0968df07e535c45353050611f7
+          path: .qualification/jolt
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
       - name: Install Jolt v0.8.3
         run: |
           set -euo pipefail
@@ -59,6 +87,16 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
         run: test "$(jolt --version)" = "jolt v0.8.3"
+      - name: Install aspect compiler linker dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends uuid-dev
+      - name: Provision pinned Chez for the aspect compiler
+        run: make -C .qualification/jolt deps JOLT_SYSTEM_CHEZ=
+      - name: Assert aspect compiler version
+        run: >-
+          test "$(.qualification/jolt/bin/jolt --version)"
+          = "jolt v0.8.3-41-g5d56b9e5"
       - name: Qualify pinned Durable native ABI and asset
         working-directory: .qualification/jolt-chdb
         run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb-durable"
@@ -73,3 +111,10 @@ jobs:
           JOLT_BIN: jolt
           OSCOPE_DURABLE_CRASH_BUILD_ALIAS: test-durable-s3
         run: test/durable_s3_crash_reopen.sh
+      - name: Reject definite and ambiguous Durable acknowledgements
+        env:
+          JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
+          JOLT_ASPECT_JOLT: ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          JOLT_BIN: ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          OSCOPE_DURABLE_FAULT_BUILD_ALIAS: published
+        run: test/durable_fault_acceptance.sh

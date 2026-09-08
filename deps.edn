@@ -146,6 +146,7 @@
          test-readers "jolt -M:test-readers"
          test-durable-dev "jolt -M:test-durable-dev"
          test-durable-aspect "test/durable_aspect_smoke.sh"
+         test-durable-fault "test/durable_fault_acceptance.sh"
          test-durable-s3-aspect "test/durable_s3_aspect_smoke.sh"
          test-durable-crash "test/durable_crash_reopen.sh"
          test-durable-s3-crash "test/durable_s3_crash_reopen.sh"
