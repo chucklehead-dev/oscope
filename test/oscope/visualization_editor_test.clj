@@ -20,9 +20,14 @@
         hiccup-document (document/default-hiccup)]
     (is (= 2 (:oscope.visualization-document/version plotje)))
     (is (= :ready (:status plotje)))
-    (is (= (:chart sample/default-screen) (:value plotje)))
+    (is (= [{:service-name "gateway" :count 42}
+            {:service-name "checkout" :count 27}
+            {:service-name "worker" :count 13}]
+           (get-in plotje [:value :data])))
     (is (str/includes? (:text plotje)
-                       ":data {:source :current-query, :select [:value :count]}"))
+                       ":source :telemetry-query"))
+    (is (str/includes? (:text plotje) ":group-by [:service-name]"))
+    (is (str/includes? (:text plotje) ":series [{:as :count, :op :count}]"))
     (is (not (str/includes? (:text plotje) "gateway")))
     (is (= :ready (:status hiccup-document)))
     (is (= hiccup-document (document/validate-document hiccup-document)))
@@ -55,6 +60,17 @@
                        ":select [:bucket-start-unix-nano :service-name :avg :p95]"))
     (is (not (str/includes? text ":p95 5.8")))
     (is (not (str/includes? text "checkout")))
+    (is (= (:chart screen) (:value document)))))
+
+(deftest metric-distribution-editor-preserves-its-kind-union-query
+  (let [screen (sample/screen-for-selection
+                {:signal :metrics :field :metric-name
+                 :window :15m :limit 10})
+        document (document/plotje-from-screen screen)
+        text (:text document)]
+    (is (str/includes? text ":source :current-query"))
+    (is (not (str/includes? text ":source :telemetry-query")))
+    (is (not (str/includes? text "queue.depth")))
     (is (= (:chart screen) (:value document)))))
 
 (deftest safe-hiccup-is-data-only-bounded-and-escaped
@@ -138,7 +154,7 @@
     (is (zero? @loads)
         "literal Plotje and Hiccup posts stay detached from telemetry")))
 
-(deftest plotje-preview-rebinds-one-reusable-spec-to-current-query-results
+(deftest plotje-preview-rebinds-one-reusable-spec-to-telemetry-expression-results
   (let [loads (atom 0)
         source {:load-command
                 (fn [_ selection]
@@ -152,7 +168,10 @@
         query "signal=spans&field=service-name&window=15m&limit=10"
         page (handler {:request-method :get :uri "/oscope/edit/plotje"
                        :query-string query})
-        text (:text (document/plotje-from-screen sample/default-screen))
+        text (:text (document/plotje-from-screen
+                     (sample/screen-for-selection
+                      {:signal :spans :field :service-name
+                       :window :15m :limit 10})))
         preview (handler {:request-method :post
                           :uri "/oscope/edit/plotje/preview"
                           :query-string query
@@ -163,7 +182,7 @@
     (is (not (str/includes? text "service-2")))
     (is (= 2 @loads))))
 
-(deftest plotje-preview-reports-missing-current-query-binding
+(deftest plotje-preview-reports-missing-telemetry-query-binding
   (let [handler (editor/handler {:screen
                                  (assoc sample/default-screen
                                         :chart nil
@@ -174,7 +193,42 @@
                           :body (form text)})]
     (is (str/includes? (:body preview) "Spec error"))
     (is (str/includes? (:body preview)
-                       "data source :current-query is not available"))))
+                       "data source :telemetry-query is not available"))))
+
+(deftest legacy-current-query-references-remain-renderable
+  (let [text "{:data {:source :current-query :select [:value :count]} :layers [{:mark :bar :x :value :y :count}]}"
+        handler (editor/handler {:screen sample/default-screen})
+        preview (handler {:request-method :post
+                          :uri "/oscope/edit/plotje/preview"
+                          :body (form text)})]
+    (is (= 200 (:status preview)))
+    (is (str/includes? (:body preview) "gateway"))))
+
+(deftest plotje-editor-round-trips-a-custom-aggregate-expression
+  (let [seen (atom nil)
+        query {:signal :spans :window :15m :group-by [:service-name]
+               :filters [{:field :status-code :op :eq :value "ERROR"}]
+               :series [{:as :average-ns :op :avg :field :duration-ns}
+                        {:as :p95-ns :op :percentile :field :duration-ns
+                         :percentile 95}]
+               :limit 10}
+        text (pr-str {:title "Error latency"
+                      :data {:source :telemetry-query :query query
+                             :select [:service-name :average-ns :p95-ns]}
+                      :layers [{:mark :bar :x :service-name :y :p95-ns}]})
+        handler (editor/handler
+                 {:screen sample/default-screen
+                  :plotje-query-command
+                  (fn [_ expression]
+                    (reset! seen expression)
+                    [{:service-name "checkout" :average-ns 25.0 :p95-ns 47.0}])})
+        page (handler {:request-method :post :uri "/oscope/edit/plotje"
+                       :body (form text)})]
+    (is (= query @seen))
+    (is (str/includes? (:body page) ":as :average-ns"))
+    (is (str/includes? (:body page) ":percentile 95"))
+    (is (str/includes? (:body page) "checkout"))
+    (is (str/includes? (:body page) "Error latency"))))
 
 (deftest editor-request-bodies-are-bounded-before-decode
   (let [handler (editor/handler {:screen sample/default-screen})

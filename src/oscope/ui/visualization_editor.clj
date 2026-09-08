@@ -150,9 +150,13 @@
   (str "<details class=\"grammar-reference\" open><summary>Chart grammar reference &amp; examples</summary>"
        "<p>A chart is a bounded EDN map with one to four <code>:layers</code>. "
        "Every layer maps columns with <code>:x</code> and <code>:y</code>.</p>"
-       "<dl><dt>Current query data</dt><dd><code>:data {:source :current-query :select [:value :count]}</code> "
-       "or <code>:select [:bucket-start-unix-nano :service-name :p95]</code> keeps returned telemetry out of the editable chart. "
-       "The URL owns the bounded distribution or metric recipe; each preview resolves only the named result fields.</dd>"
+       "<dl><dt>Telemetry query data</dt><dd><code>:data</code> names <code>:telemetry-query</code>, a bounded query map, and selected output fields. "
+       "The editable chart contains signal, window, grouping, filters, aggregate series, and limit—not returned samples.</dd>"
+       "<dt>Aggregates</dt><dd><code>:count</code>, <code>:sum</code>, <code>:avg</code>, <code>:min</code>, <code>:max</code>, and "
+       "<code>:percentile</code> with 50, 75, 90, 95, or 99. Numeric fields are signal-specific and filters use bounded dimension equality.</dd>"
+       "<dt>Current query data</dt><dd><code>:data {:source :current-query :select [:value :count]}</code> "
+        "or <code>:select [:bucket-start-unix-nano :service-name :p95]</code> keeps returned telemetry out of the editable chart. "
+        "The URL owns the bounded distribution or metric recipe; each preview resolves only the named result fields.</dd>"
        "<dt>Literal data</dt><dd>A vector of row maps remains available for hand-authored examples and fixed thresholds.</dd>"
        "<dt>Marks</dt><dd><code>:line</code>, <code>:point</code>, <code>:bar</code>, <code>:area</code>, <code>:rule</code>, and <code>:tick</code>.</dd>"
        "<dt>Chart options</dt><dd><code>:title</code>, <code>:x-label</code>, <code>:y-label</code>, <code>:width</code>, <code>:height</code>, <code>:grid?</code>, and a 1–8 color <code>:palette</code>.</dd>"
@@ -226,15 +230,34 @@
 (defn- plotje-context [source request]
   (let [screen (screen-for-request source request)
         edit-document (document/plotje-from-screen screen)
-        selection (:selection screen)]
+        selection (:selection screen)
+        legacy-rows (get-in screen [:chart :data])]
     {:document edit-document
-     :data-sources (:data-sources edit-document)
+     :data-sources (cond-> (:data-sources edit-document)
+                     (seq legacy-rows)
+                     (assoc document/current-query-source legacy-rows))
      :selection-suffix (if selection (web/selection-query-string selection) "")}))
 
-(defn- referenced-data? [text]
+(defn- referenced-data [text]
   (try
-    (some? (plotje-spec/referenced-source text))
-    (catch clojure.lang.ExceptionInfo _ false)))
+    (plotje-spec/referenced-data text)
+    (catch clojure.lang.ExceptionInfo _ nil)))
+
+(defn- plotje-post-context [source request text]
+  (when-let [reference (referenced-data text)]
+    (let [{source-name :source query :query} reference]
+     (case source-name
+      :telemetry-query
+      (if-let [query-command (:plotje-query-command source)]
+        {:data-sources
+         {:telemetry-query
+          (query-command [:visualization-editor-query (System/nanoTime)] query)}}
+        (let [{:keys [document] :as context} (plotje-context source request)
+              seeded (referenced-data (:text document))]
+          (if (= query (:query seeded)) context {:data-sources {}})))
+
+      :current-query (plotje-context source request)
+      {:data-sources {}}))))
 
 (defn- dispatch [source path viewer-path request]
   (let [{:keys [request-method uri body]} request
@@ -266,8 +289,8 @@
       (let [kind (if (= uri plotje-uri) :plotje :hiccup)
             text (or (form-value body "spec") "")
             {:keys [data-sources selection-suffix]}
-            (if (and (= :plotje kind) (referenced-data? text))
-              (plotje-context source request) {})
+            (if (= :plotje kind)
+              (or (plotje-post-context source request text) {}) {})
             edit-document (document/prepare kind text (or data-sources {}))]
         {:status 200 :headers html-headers
          :body (render-page edit-document
@@ -279,8 +302,9 @@
                (= uri (preview-path path :hiccup))))
       (let [kind (if (= uri (preview-path path :plotje)) :plotje :hiccup)
             text (or (form-value body "spec") "")
-            data-sources (when (and (= :plotje kind) (referenced-data? text))
-                           (:data-sources (plotje-context source request)))]
+            data-sources (when (= :plotje kind)
+                           (:data-sources
+                            (plotje-post-context source request text)))]
         {:status 200 :headers html-headers
          :body (render-preview
                 (document/prepare kind text (or data-sources {})))})

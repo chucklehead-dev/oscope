@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [oscope.live :as live]
             [oscope.query.chdb :as query-chdb]
+            [oscope.query.expression.chdb :as query-expression-chdb]
             [otel.exporter.chdb.schema :as schema]))
 
 (def test-now 1700000001000000000)
@@ -36,3 +37,28 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must be boolean"
                         (live/open! {:connection ::shared
                                      :ensure-schema? nil}))))
+
+(deftest plotje-query-command-has-one-query-admission
+  (let [source* (atom nil)
+        rejected (atom nil)
+        expression {:signal :spans :window :15m :group-by [:service-name]
+                    :filters [] :series [{:as :count :op :count}] :limit 10}]
+    (with-redefs [schema/ensure-schema! (fn [_])
+                  query-chdb/run (fn [_ plan]
+                                   [{:signal :spans :field :service-name
+                                     :value "api" :count 1}])
+                  query-expression-chdb/execute!
+                  (fn [_ query _]
+                    (try
+                      ((:plotje-query-command @source*) :nested query)
+                      (catch clojure.lang.ExceptionInfo error
+                        (reset! rejected (ex-data error))))
+                    [{:service-name "api" :count 1}])]
+      (let [source (live/open! {:connection ::shared
+                                :now-fn (constantly test-now)})]
+        (reset! source* source)
+        (is (= [{:service-name "api" :count 1}]
+               ((:plotje-query-command source) :outer expression)))
+        (is (= 503 (:status @rejected)))
+        (is (= :oscope.live/plotje-query-capacity (:type @rejected)))
+        (live/close! source)))))

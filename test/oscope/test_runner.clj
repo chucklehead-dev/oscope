@@ -7,6 +7,7 @@
             [oscope.native-server-test]
             [oscope.otlp-test]
             [oscope.plotje-test]
+            [oscope.query-expression-test]
             [oscope.query-view-test]
             [oscope.raw-export-test]
             [oscope.sample-emitter-test]
@@ -20,6 +21,7 @@
         (test/run-tests 'oscope.core-test 'oscope.events-test 'oscope.live-test
                         'oscope.native-test 'oscope.native-server-test
                         'oscope.otlp-test 'oscope.plotje-test
+                        'oscope.query-expression-test
                         'oscope.query-view-test 'oscope.raw-export-test
                         'oscope.sample-emitter-test
                         'oscope.server-test 'oscope.visualization-editor-test

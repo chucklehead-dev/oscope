@@ -5,24 +5,53 @@ Opening **Edit this chart** produces a data reference such as:
 
 ```clojure
 {:title "Service Name in Spans"
- :data {:source :current-query
-        :select [:value :count]}
- :layers [{:mark :bar :x :value :y :count}]}
+ :data {:source :telemetry-query
+        :query {:signal :spans :window :1h
+                :group-by [:service-name] :filters []
+                :series [{:as :count :op :count}]
+                :limit 12}
+        :select [:service-name :count]}
+ :layers [{:mark :bar :x :service-name :y :count}]}
 ```
 
-`:current-query` means the bounded distribution or metric-series recipe selected
-in the editor URL. The chart chooses only the named result fields it needs.
-Oscope runs that query again for each preview, projects those fields, validates
-the resulting rows, and only then renders SVG. Returned service names, metric
-names, counts, percentiles, and other sample values never become part of the
-editable chart text, so the same text keeps working as telemetry changes.
+The current editor now writes the complete bounded query rather than relying on
+returned values:
+
+```clojure
+{:data
+ {:source :telemetry-query
+  :query {:signal :spans
+          :window :15m
+          :group-by [:service-name]
+          :filters [{:field :status-code :op :eq :value "ERROR"}]
+          :series [{:as :requests :op :count}
+                   {:as :average-ns :op :avg :field :duration-ns}
+                   {:as :p95-ns :op :percentile
+                    :field :duration-ns :percentile 95}]
+          :limit 20}
+  :select [:service-name :requests :average-ns :p95-ns]}
+ :layers [{:mark :bar :x :service-name :y :p95-ns}]}
+```
+
+Oscope runs this query again for each preview, projects the selected fields,
+validates the resulting rows, and only then renders SVG. Returned service names,
+metric names, counts, and other samples never become part of the editable chart
+text, so the same text keeps working as telemetry changes.
+
+The legacy `:current-query` source remains available for the bounded query
+recipe selected in the editor URL. It is used for all current metric screens:
+their gauge/sum/histogram provenance and optional fixed time bucket are not yet
+part of the reusable gauge-only `:telemetry-query` grammar. This preserves the
+original result semantics across a no-edit preview. In both forms, the chart
+selects named result fields and never copies returned data points into editable
+text.
 
 The current query produces one row per selected field value:
 
 | Field | Meaning |
 | --- | --- |
-| `:value` | The selected dimension value, such as a service or metric name. |
-| `:count` | The number of matching telemetry records in the selected window. |
+| Group field | The selected dimension, such as `:service-name` or `:metric-name`. |
+| Series alias | The result of its aggregate, such as `:count` or `:p95-ns`. |
 
 A metric recipe adds an exact metric name and physical kind, an optional fixed
 time bucket, zero or one allowlisted chart dimension, and one to four named
@@ -58,11 +87,43 @@ must be bounded Plotje scalars, and a missing source or field is a visible spec
 error. Unknown keys fail closed. Literal `:data` row vectors remain supported
 for examples, fixed thresholds, and hand-authored charts.
 
-## Query boundary and future transforms
+## Query and aggregate grammar
 
-The implemented operations compile into oscope's parameterized telemetry query
-layer and return named fields to Plotje. They are not arbitrary Clojure,
-JavaScript, SQL, or a client-side expression evaluator. Future transforms such
-as rates, cumulative histogram differencing, merged histogram percentiles, and
-arithmetic across result fields need similarly closed semantics and bounded
-server-side implementations before they become part of this grammar.
+The server accepts up to two group fields, four equality filters, eight series,
+and 100 result rows over a 15 minute, 1 hour, 6 hour, or 24 hour window. Series
+support:
+
+- `:count`, which has no numeric field;
+- `:sum`, `:avg`, `:min`, and `:max` over an allowlisted numeric field; and
+- `:percentile` with 50, 75, 90, 95, or 99.
+
+Span queries aggregate `:duration-ns`; log queries aggregate
+`:severity-number`; reusable metric expressions aggregate gauge `:value` only.
+They deliberately do not union sum and histogram rows: correct aggregation of
+those signals must retain temporality, reset, bucket, and optional-extrema
+provenance. The URL-owned metric-series source above remains available for its
+current kind-aware operations while that richer reusable contract is designed.
+
+All tables, columns, aggregate functions, percentile constants, and aliases in
+SQL come from closed server allowlists. Times, filter values, and limits are
+parameters. Query expressions cannot contain Clojure, JavaScript, SQL, regular
+expressions, or arbitrary functions. Every expression also installs hard chDB
+ceilings of 100,000 source rows, 64 MiB read, 128 MiB query memory, five seconds,
+and one execution thread. Exceeding a ceiling fails the preview rather than
+silently returning an unbounded or partial computation. The result row limit is
+separate and does not stand in for those execution bounds.
+
+Fixed time buckets and calculations that combine two aggregate series remain a
+follow-up. The proposed calculation contract is a typed server-side AST over
+named series, for example:
+
+```clojure
+:calculations [{:as :error-rate
+                :op :divide
+                :args [:errors :requests]}]
+```
+
+Operands would be previously named series or bounded numeric constants, with a
+small arithmetic allowlist and explicit division-by-zero behavior. It will not
+be a client-side evaluator. Oscope rejects `:calculations` and time-bucket keys
+until those query semantics and numeric edge cases are implemented.
