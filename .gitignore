@@ -4,6 +4,9 @@
 /.qualification/
 /target/
 /oscope-data/
+/node_modules/
+/test-results/
+/playwright-report/
 /test/durable-aspect/.jolt/
 /test/durable-aspect/target/
 /test/durable-fault/.jolt/

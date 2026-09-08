@@ -173,6 +173,14 @@ up to 100. Metric queries select service, case-insensitive metric name, gauge,
 sum, or histogram kind, window, and limit. These fields are parameters or
 closed choices; they cannot supply SQL, table names, or expressions.
 
+### Browser regression tours
+
+The [Playwright storyboard](docs/demo/README.md) drives a fixed checkout OTLP
+fixture through the real receiver, trace/event viewers, metric distribution,
+and Plotje editor. Its assertions generate four screenshots and an optional
+GIF, so the documentation path exercises the same behavior as the browser
+regression test.
+
 ### Run with Durable local storage
 
 During cross-repository development, the standalone collector can use the real
