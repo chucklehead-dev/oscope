@@ -2,11 +2,13 @@
   "Versioned, renderer-neutral Plotje and safe-Hiccup edit documents."
   (:require [oscope.hiccup.spec :as hiccup]
             [oscope.plotje.spec :as plotje]
+            [oscope.query :as query]
             [oscope.query.expression :as query-expression]))
 
 (def version 2)
 (def current-query-source :current-query)
 (def telemetry-query-source :telemetry-query)
+(def counter-query-source :counter-query)
 (def kinds #{:plotje :hiccup})
 (def default-hiccup-text
   "[:section {:class \"card\"} [:h2 \"Telemetry note\"] [:p \"Edit this safe, data-only Hiccup.\"]]")
@@ -96,7 +98,12 @@
   (if-let [chart (:chart screen)]
     (let [rows (:data chart)
           selection (:selection screen)]
-      (if (or (= :metric-series (:mode selection))
+      (if (= :counter-series (:mode selection))
+        (let [fields (query/counter-series-output-fields selection)
+              template (assoc chart :data {:source counter-query-source
+                                           :query selection :select fields})]
+          (prepare :plotje (pr-str template) {counter-query-source rows}))
+        (if (or (= :metric-series (:mode selection))
               (= :metrics (:signal selection)))
         ;; URL-owned metric queries include kind-aware sum/histogram rows and,
         ;; for series, fixed time buckets. The reusable expression deliberately
@@ -127,7 +134,7 @@
                                               (assoc :color group-field))
                                            layers))))]
           (prepare :plotje (pr-str template)
-                   {telemetry-query-source bound-rows}))))
+                   {telemetry-query-source bound-rows})))))
     (prepare :plotje (pr-str empty-plotje-spec))))
 
 (defn default-hiccup []

@@ -62,6 +62,22 @@
     (is (not (str/includes? text "checkout")))
     (is (= (:chart screen) (:value document)))))
 
+(deftest counter-editor-retains-recipe-provenance-without-returned-points
+  (let [screen (sample/screen-for-selection
+                query/default-counter-series-selection)
+        document (document/plotje-from-screen screen)
+        text (:text document)]
+    (is (str/includes? text ":source :counter-query"))
+    (is (str/includes? text ":mode :counter-series"))
+    (is (str/includes? text ":metric-kind :sum"))
+    (is (str/includes? text ":temporality :cumulative"))
+    (is (str/includes? text ":monotonic? true"))
+    (is (str/includes? text ":aggregates [:increase :rate]"))
+    (is (str/includes? text ":interval-count :reset-count :observed-duration-nanos"))
+    (is (not (str/includes? text ":increase 42.0")))
+    (is (not (str/includes? text "checkout")))
+    (is (= (:chart screen) (:value document)))))
+
 (deftest metric-distribution-editor-preserves-its-kind-union-query
   (let [screen (sample/screen-for-selection
                 {:signal :metrics :field :metric-name

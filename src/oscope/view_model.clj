@@ -91,42 +91,66 @@
 (defn- normalize-series-rows [selection request rows]
   (when-not (vector? rows)
     (fail! ::invalid-rows "oscope metric series rows must be a vector"
-           {:rows rows}))
+           (if (= :counter-series (:mode selection))
+             {:reason :non-vector-counter-result}
+             {:rows rows})))
   (when (> (count rows) (:limit selection))
     (fail! ::too-many-rows "oscope metric series exceeded its query limit"
            {:actual (count rows) :maximum (:limit selection)}))
   (let [{:keys [group-by bucket aggregates metric-name]} selection
+        counter? (= :counter-series (:mode selection))
         end-unix-nano (:end-unix-nano request)
         bucket? (not= :none bucket)
         expected-keys (into (set aggregates)
                             (concat group-by
                                     (when bucket?
-                                      [:bucket-start-unix-nano])))]
+                                      [:bucket-start-unix-nano])
+                                    (when counter?
+                                      [:metric-kind :temporality :monotonic?
+                                       :interval-count :reset-count
+                                       :observed-duration-nanos])))]
     (mapv
      (fn [row]
        (when-not (and (map? row) (= expected-keys (set (keys row))))
          (fail! ::invalid-row "oscope metric series row has unexpected fields"
-                {:row row :expected-fields expected-keys}))
+                (if counter?
+                  {:actual-fields (when (map? row) (set (keys row)))
+                   :expected-fields expected-keys}
+                  {:row row :expected-fields expected-keys})))
        (doseq [field group-by]
          (let [value (get row field)]
            (when-not (and (string? value)
                           (<= (count value) max-plotje-text))
              (fail! ::invalid-row "oscope metric series group is invalid"
-                    {:row row :field field}))))
+                    (if counter? {:field field} {:row row :field field})))))
        (when (and bucket?
                   (not (and (integer? (:bucket-start-unix-nano row))
                             (<= 0 (:bucket-start-unix-nano row)
                                 9223372036854775807)
                             (< (:bucket-start-unix-nano row) end-unix-nano))))
          (fail! ::invalid-row "oscope metric series bucket is invalid"
-                {:row row}))
+                (if counter? {:field :bucket-start-unix-nano} {:row row})))
        (doseq [aggregate aggregates]
          (let [value (get row aggregate)]
            (when-not (and (finite-number? value)
                           (or (not= :count aggregate)
                               (and (integer? value) (<= 0 value))))
              (fail! ::invalid-row "oscope metric series aggregate is invalid"
-                    {:row row :aggregate aggregate}))))
+                    (if counter? {:aggregate aggregate}
+                        {:row row :aggregate aggregate})))))
+       (when (and counter?
+                  (not (and (= :sum (:metric-kind row))
+                            (= :cumulative (:temporality row))
+                            (true? (:monotonic? row))
+                            (integer? (:interval-count row))
+                            (pos? (:interval-count row))
+                            (integer? (:reset-count row))
+                            (<= 0 (:reset-count row) (:interval-count row))
+                            (integer? (:observed-duration-nanos row))
+                            (pos? (:observed-duration-nanos row)))))
+         (fail! ::invalid-row
+                "oscope counter series row has invalid provenance or interval evidence"
+                {:reason :invalid-counter-evidence}))
        (cond-> row
          (and (not bucket?) (empty? group-by))
          (assoc :metric-name (bounded-display metric-name max-plotje-text))))
@@ -134,8 +158,11 @@
 
 (defn- metric-series-screen [plan rows]
   (let [plan (query/validate-plan plan)
-        {:keys [metric-kind metric-name group-by bucket aggregates window limit]
+        {:keys [mode metric-kind metric-name group-by bucket aggregates window limit]
          :as selection} (:selection plan)
+        counter? (= :counter-series mode)
+        options (if counter? query/counter-series-options
+                    query/metric-series-options)
         data (normalize-series-rows selection (:request plan) rows)
         bucket? (not= :none bucket)
         x (cond bucket? :bucket-start-unix-nano
@@ -158,7 +185,11 @@
         table-fields (vec (concat (when (and (not bucket?) (empty? group-by))
                                     [:metric-name])
                                   (when bucket? [:bucket-start-unix-nano])
-                                  group-by aggregates))]
+                                  group-by aggregates
+                                  (when counter?
+                                    [:interval-count :reset-count
+                                     :observed-duration-nanos :metric-kind
+                                     :temporality :monotonic?])))]
     {:oscope.view/version 1
      :view :telemetry-metric-series
      :status (if (seq data) :ready :empty)
@@ -166,12 +197,12 @@
      :selection selection
      :query-plan plan
      :controls
-     {:mode :metric-series
-      :metric-kinds (:metric-kinds query/metric-series-options)
-      :group-by (:group-by query/metric-series-options)
-      :buckets (:buckets query/metric-series-options)
-      :aggregates (get-in query/metric-series-options
-                          [:aggregates metric-kind])
+     {:mode mode
+      :metric-kinds (:metric-kinds options)
+      :group-by (:group-by options)
+      :buckets (:buckets options)
+      :aggregates (if counter? (:aggregates options)
+                      (get-in options [:aggregates metric-kind]))
       :windows (keys query/windows)
       :limit {:value limit :minimum 1 :maximum query/max-result-limit}}
      :chart chart
@@ -180,9 +211,12 @@
                             table-fields)
              :rows data}
      :empty-message (when (empty? data)
-                      "No metric points matched this bounded series recipe.")}))
+                      (if counter?
+                        "No exact counter intervals matched this bounded recipe."
+                        "No metric points matched this bounded series recipe."))}))
 
 (defn screen [plan rows]
-  (if (= :metric-series (get-in plan [:selection :mode]))
+  (if (contains? #{:metric-series :counter-series}
+                 (get-in plan [:selection :mode]))
     (metric-series-screen plan rows)
     (distribution-screen plan rows)))

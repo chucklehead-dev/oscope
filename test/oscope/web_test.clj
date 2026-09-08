@@ -173,6 +173,28 @@
            (web/selection-from-params
             (web/parse-query-params (subs query-string 1)))))))
 
+(deftest counter-series-url-and-page-retain-explicit-provenance
+  (let [selection (assoc query/default-counter-series-selection
+                         :metric-name "http.server.requests")
+        query-string (web/selection-query-string selection)
+        parsed (web/selection-from-params
+                (web/parse-query-params (subs query-string 1)))
+        body (:body ((web/sample-handler)
+                     {:request-method :get :uri "/oscope"
+                      :query-string (subs query-string 1)}))]
+    (is (= selection parsed))
+    (is (re-find #"mode=counter-series" query-string))
+    (is (re-find #"temporality=cumulative&monotonic=true" query-string))
+    (is (re-find #"name=\"temporality\" value=\"cumulative\"" body))
+    (is (re-find #"name=\"monotonic\" value=\"true\"" body))
+    (is (re-find #"Cumulative monotonic OTEL Sum" body))
+    (is (re-find #"rate per second over exact observed intervals" body))
+    (is (re-find #"name=\"aggregate-increase\"[^>]*checked" body))
+    (is (re-find #"name=\"aggregate-rate\"[^>]*checked" body))
+    (is (re-find #">Reset Count<" body))
+    (is (not (re-find #":increase 42\.0" body))
+        "returned counter values render but never enter editable chart text")))
+
 (deftest metric-series-aggregate-order-normalizes-before-url-round-trip
   (let [selection (assoc query/default-metric-series-selection
                          :aggregates [:p95 :avg])
