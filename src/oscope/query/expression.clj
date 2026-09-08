@@ -1,7 +1,8 @@
 (ns oscope.query.expression
   "Closed, bounded telemetry query expressions used by reusable Plotje charts."
   (:require [clojure.string :as str]
-            [oscope.query :as query]))
+            [oscope.query :as query]
+            [oscope.query.trace :as query-trace]))
 
 (def percentile-presets #{50 75 90 95 99})
 (def bucket-presets
@@ -318,7 +319,7 @@
       :max (str "max" suffix "(" (args number) ")")
       :percentile (str "quantileExact" suffix "(" (/ percentile 100.0) ")(" (args number) ")"))))
 
-(defn compile-query [expression now-unix-nano]
+(defn- compile-query* [expression now-unix-nano]
   (when-not (and (integer? now-unix-nano) (<= 1 now-unix-nano 9223372036854775807))
     (fail! ::invalid-time "telemetry query end must be epoch nanoseconds"
            {:end-unix-nano now-unix-nano}))
@@ -379,3 +380,23 @@
                            (map-indexed (fn [i item] [(keyword (str "series" i)) (:as item)]) series)))
      :calculations calculations
      :limit limit}))
+
+(defn- compiled-summary [{:keys [expression columns calculations]}]
+  {:outcome :compiled
+   :signal (:signal expression)
+   :window (:window expression)
+   :bucket (:bucket expression)
+   :group-count (count (:group-by expression))
+   :global-filter-count (count (:filters expression))
+   :series-count (count (:series expression))
+   :series-filter-count (reduce + (map #(count (:filters %))
+                                      (:series expression)))
+   :calculation-count (count calculations)
+   :output-count (+ (count columns) (count calculations))})
+
+(defn compile-query [expression now-unix-nano]
+  (query-trace/invoke!
+   :oscope.plotje-query/compile
+   compiled-summary
+   (fn [_] {:outcome :rejected})
+   #(compile-query* expression now-unix-nano)))

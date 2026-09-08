@@ -150,6 +150,31 @@ and one execution thread. Exceeding a ceiling fails the preview rather than
 silently returning an unbounded or partial computation. The result row limit is
 separate and does not stand in for those execution bounds.
 
+## Redacted query validation events
+
+Hosts and tests may opt into `oscope.query.trace/call-with-event-sink` around a
+Plotje preview. It emits a fresh, contiguous `:seq` and the canonical
+`:invoke`/`:return`/`:throw` lifecycle used by Hegel semantic trace rules. An
+execute operation contains its nested compile lifecycle, so a completed
+successful preview has the ordering execute invoke, compile invoke, compile
+return, execute return. Capture is only an adapter to a caller-owned event sink;
+it does not persist events or initialize another tracing or telemetry system.
+
+Compile success retains only closed grammar choices and counts: signal, window,
+bucket, group/filter/series/calculation/output counts. Compile rejection and
+execution success or failure retain only closed outcomes; execution failures
+are classified as expression or backend failures. Events never contain filter
+values, generated SQL or parameters, returned rows or row counts, credentials,
+user-chosen series/calculation aliases, exception messages, or exception data.
+The sink is observational and fail-open: a sink failure cannot replace the
+query result or application exception.
+
+Snapshot the caller-owned sink only after the preview completes, keep it
+bounded, then run sequence, closed-lifecycle, synchronous-parentage, and closed
+outcome checks offline. The checked-in Hegel property and negative privacy
+controls exercise both successful and failed traces; assertions deliberately
+run outside the event sink.
+
 Calculations combine two aggregate results with a small typed server-side AST.
 For example, if `:errors` and `:requests` are aggregate series:
 
