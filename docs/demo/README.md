@@ -8,15 +8,17 @@ timestamp follows wall clock so telemetry remains inside the selected window.
 | Scene | Playwright evidence |
 | --- | --- |
 | **Find the checkout.** Filter to `oscope-checkout-demo`, `POST /checkout`, and OK status, then open the trace. | The dialog must contain exactly five spans, `cart.validated`, `job.enqueued`, and the correlated `checkout workflow completed` log. |
-| **Follow the queue signal.** Select gauge metrics and find `demo.checkout.queue.depth`. | The bounded raw-event table must contain that metric and exactly one matching row. |
+| **Follow the queue signal.** Select gauge metrics and find `demo.checkout.queue.depth`. | The bounded raw-event table must contain the four emitted points for that metric. |
 | **Turn telemetry into a chart.** Query metric-name distributions and carry the selection into the editor. | The aggregate view must contain a visible SVG plus `demo.checkout.queue.depth`; the editor must start with `:mark :bar`. |
+| **Build a percentile series.** Select the exact gauge metric, five-minute buckets, service dimension, average, and p95. | The real chDB query must chart the canonical primary aggregate, retain every named aggregate column for the editor, and avoid placing returned points in Plotje source. |
 | **Change the visual grammar.** Load the layered example, then edit `:mark :area` to `:mark :line`. | The UI load must create an SVG polygon; the source edit must replace it with a polyline while retaining the `Latency band` title. |
 
 ![Checkout-to-chart browser tour](oscope-checkout-tour.gif)
 
-The four stills capture the [trace detail](01-checkout-trace.png),
+The five stills capture the [trace detail](01-checkout-trace.png),
 [filtered queue metric](02-queue-depth-metric.png),
-[metric distribution](03-metric-distribution.png), and
+[metric distribution](03-metric-distribution.png),
+[metric average/p95 series](04-metric-series.png), and
 [Plotje source edit](04-plotje-line-edit.png).
 
 Run the regression tests and regenerate captures with:

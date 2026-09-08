@@ -93,11 +93,7 @@
 (defn plotje-from-screen [screen]
   (if-let [chart (:chart screen)]
     (let [rows (:data chart)
-          fields (->> (:layers chart)
-                      (mapcat (fn [layer]
-                                (keep #(get layer %) [:x :y :color])))
-                      distinct
-                      vec)
+          fields (mapv :key (get-in screen [:table :columns]))
           template (assoc chart :data {:source current-query-source
                                        :select fields})]
       (prepare :plotje (pr-str template) {current-query-source rows}))

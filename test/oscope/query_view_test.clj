@@ -1,6 +1,8 @@
 (ns oscope.query-view-test
   (:require [clojure.edn :as edn]
             [clojure.test :refer [deftest is testing thrown-with-msg?]]
+            [hegel.core :as h]
+            [hegel.generator :as g]
             [oscope.plotje.svg :as plotje]
             [oscope.query :as query]
             [oscope.query.chdb :as query-chdb]
@@ -8,6 +10,9 @@
             [otel.exporter.chdb.explorer :as explorer]))
 
 (def now 2000000000000000000)
+
+(defn- ordered-selection [order selected]
+  (vec (filter selected order)))
 
 (deftest selection-compiles-to-the-bounded-explorer-contract
   (let [plan (query/compile-query
@@ -34,6 +39,96 @@
            clojure.lang.ExceptionInfo
            #"query fields do not match"
            (query-chdb/run ::connection plan))))))
+
+(deftest metric-series-selection-compiles-to-the-bounded-explorer-contract
+  (let [selection {:mode :metric-series :metric-kind :gauge
+                   :metric-name "http.server.active_requests"
+                   :group-by [:service-name] :bucket :5m
+                   :aggregates [:avg :p95 :p99] :window :1h :limit 40}
+        plan (query/compile-query selection now)]
+    (is (= {:metric-kind :gauge
+            :metric-name "http.server.active_requests"
+            :group-by [:service-name] :bucket :5m
+            :aggregates [:avg :p95 :p99]
+            :start-unix-nano (- now (* 60 60 1000000000))
+            :end-unix-nano now :limit 40}
+           (:request plan)))
+    (with-redefs [explorer/metric-series
+                  (fn [connection request]
+                    (is (= ::connection connection))
+                    (is (= (:request plan) request))
+                    [])]
+      (is (= [] (query-chdb/run ::connection plan))))))
+
+(deftest metric-series-contract-drift-and-unsafe-recipes-fail-closed
+  (let [selection query/default-metric-series-selection
+        plan (query/compile-query selection now)]
+    (with-redefs [explorer/supported-metric-series
+                  (fn [] (assoc query/metric-series-options
+                                :buckets [:none :30s]))]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo
+           #"metric series choices do not match"
+           (query-chdb/run ::connection plan))))
+    (doseq [invalid [(assoc selection :metric-name "")
+                     (assoc selection :group-by [:service-name :service-name])
+                     (assoc selection :group-by [:service-name :metric-unit])
+                     (assoc selection :group-by [:arbitrary-attribute])
+                     (assoc selection :bucket :30s)
+                     (assoc selection :aggregates [])
+                     (assoc selection :aggregates [:rate])
+                     (assoc selection :sql "SELECT *")]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (query/compile-query invalid now))
+          (pr-str invalid)))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (query/validate-plan
+                  (assoc-in plan [:request :aggregates] [:sum]))))))
+
+(deftest generated-metric-series-recipes-round-trip-the-pure-plan
+  (let [result
+        (h/run-test!
+         {:name "oscope metric series recipe plan"
+          :database "" :verbosity :quiet :derandomize? true :test-cases 160}
+         (fn [_]
+           (let [kind (h/draw!
+                       (g/sampled-from
+                        (:metric-kinds query/metric-series-options)))
+                 aggregate-order (get-in query/metric-series-options
+                                         [:aggregates kind])
+                 aggregates
+                 (ordered-selection
+                  aggregate-order
+                  (h/draw! (g/set {:min-size 1 :max-size 4}
+                                  (g/sampled-from aggregate-order))))
+                 groups
+                 (ordered-selection
+                  (:group-by query/metric-series-options)
+                  (h/draw! (g/set {:min-size 0 :max-size 1}
+                                  (g/sampled-from
+                                   (:group-by query/metric-series-options)))))
+                 metric-name
+                 (h/draw! (g/sampled-from
+                           ["queue.depth" "http.server.duration"
+                            "metric' OR 1 = 1 --" "unicode.λ"]))
+                 selection {:mode :metric-series :metric-kind kind
+                            :metric-name metric-name :group-by groups
+                            :bucket (h/draw!
+                                     (g/sampled-from
+                                      (:buckets query/metric-series-options)))
+                            :aggregates aggregates
+                            :window (h/draw! (g/sampled-from (vec (keys query/windows))))
+                            :limit (h/draw! (g/integer 1 query/max-result-limit))}
+                 plan (query/compile-query selection now)]
+             (when-not (and (= selection (:selection plan))
+                            (= plan (query/validate-plan plan))
+                            (= metric-name (get-in plan [:request :metric-name]))
+                            (every? (set aggregate-order)
+                                    (get-in plan [:request :aggregates])))
+               (throw (ex-info "generated metric series plan drifted"
+                               {:selection selection :plan plan}))))))]
+    (is (:passed? result))
+    (is (false? (:flaky? result)))))
 
 (deftest unsupported-or-tampered-plans-fail-closed
   (testing "unknown controls and signal-specific fields cannot imply SQL"
@@ -68,6 +163,56 @@
             {:value "checkout" :count 9}]
            (get-in screen [:table :rows])))
     (is (string? (plotje/spec->svg (:chart screen))))))
+
+(deftest metric-series-results-project-to-named-plotje-fields
+  (let [plan (query/compile-query query/default-metric-series-selection now)
+        rows [{:bucket-start-unix-nano (- now 300000000000)
+               :service-name "checkout" :avg 4.5 :p95 8.0}
+              {:bucket-start-unix-nano (dec now)
+               :service-name "checkout" :avg 5.0 :p95 9.0}]
+        screen (view-model/screen plan rows)]
+    (is (= screen (edn/read-string (pr-str screen))))
+    (is (= :telemetry-metric-series (:view screen)))
+    (is (= rows (get-in screen [:table :rows])))
+    (is (= rows (get-in screen [:chart :data])))
+    (is (= [:avg]
+           (mapv :y (get-in screen [:chart :layers]))))
+    (is (= [:bucket-start-unix-nano]
+           (mapv :x (get-in screen [:chart :layers]))))
+    (is (= [:service-name]
+           (mapv :color (get-in screen [:chart :layers]))))
+    (is (string? (plotje/spec->svg (:chart screen))))))
+
+(deftest unbucketed-series-keeps-the-exact-query-name-outside-plotje-data
+  (let [metric-name (apply str (repeat 256 "m"))
+        selection (assoc query/default-metric-series-selection
+                         :metric-name metric-name
+                         :group-by []
+                         :bucket :none
+                         :aggregates [:avg])
+        plan (query/compile-query selection now)
+        screen (view-model/screen plan [{:avg 4.5}])
+        display-name (get-in screen [:table :rows 0 :metric-name])]
+    (is (= metric-name (get-in screen [:selection :metric-name])))
+    (is (<= (count display-name) 160))
+    (is (not= metric-name display-name))
+    (is (= [:metric-name :avg]
+           (mapv :key (get-in screen [:table :columns]))))
+    (is (= [:avg] (mapv :y (get-in screen [:chart :layers]))))
+    (is (string? (plotje/spec->svg (:chart screen))))))
+
+(deftest malformed-metric-series-results-fail-closed
+  (let [plan (query/compile-query query/default-metric-series-selection now)
+        base {:bucket-start-unix-nano (dec now) :service-name "checkout"
+              :avg 4.5 :p95 8.0}]
+    (doseq [row [(assoc base :sql "unexpected")
+                 (assoc base :p95 ##Inf)
+                 (assoc base :service-name 42)
+                 (assoc base :bucket-start-unix-nano now)
+                 (dissoc base :avg)]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (view-model/screen plan [row]))
+          (pr-str row)))))
 
 (deftest malformed-cross-query-and-over-limit-results-fail-closed
   (let [plan (query/compile-query
