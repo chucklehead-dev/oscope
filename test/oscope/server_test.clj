@@ -21,7 +21,19 @@
     (is (str/includes? readme "**local path persistence**"))
     (is (str/includes? readme
                        "It is not object-backed Durable recovery."))
-    (is (= 2 (count (re-seq #"Proposed, not implemented" readme))))
+    (is (zero? (count (re-seq #"Proposed, not implemented" readme))))
+    (is (str/includes?
+         readme
+         "`OSCOPE_DURABLE_ROOT=/absolute/path jolt -M:durable-server-dev`"))
+    (is (str/includes?
+         readme
+         "Available with a qualified chDB Durable V1 native library."))
+    (is (str/includes?
+         readme
+         "Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend."))
+    (is (str/includes?
+         readme
+         "3ef8d97b62b467f1ad68f92b854498c124cb8811"))
     (is (str/includes?
          readme
          "docs/durable/protocol-v1.mdx"))
@@ -170,6 +182,62 @@
         (is (= [[:connection "chdb:test"] :ingress-started :ingress-stopped
                 :oscope :spans :logs :metrics :connection]
                @events))))))
+
+(deftest durable-startup-checkpoints-before-ingress-and-wires-request-flush
+  (let [events (atom [])
+        conn (reify java.io.Closeable
+               (close [_] (swap! events conj :connection)))
+        exporter (fake-exporter events)
+        source {:close! #(swap! events conj :oscope)}
+        received-otlp-options (atom nil)]
+    (with-redefs [jdbc/connection (fn [_] (swap! events conj :connection-open) conn)
+                  chdb-export/exporter (fn [_]
+                                         (swap! events conj :schema-ready)
+                                         exporter)
+                  live/open! (fn [_] (swap! events conj :source-open) source)
+                  otlp/handler (fn [_ options]
+                                 (reset! received-otlp-options options)
+                                 (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _]
+                                    (swap! events conj :ingress-started)
+                                    {:port 9194})
+                  http/stop-server (fn [_] (swap! events conj :ingress-stopped))]
+      (let [lifecycle
+            (server/start!
+             {:port 0
+              :durability
+              {:checkpoint! (fn [actual]
+                              (is (= conn actual))
+                              (swap! events conj :checkpoint)
+                              {:status :committed})
+               :flush! (fn [actual]
+                         (is (= conn actual))
+                         (swap! events conj :flush)
+                         {:status :committed})}})]
+        (is (= [:connection-open :schema-ready :checkpoint :source-open
+                :ingress-started]
+               @events))
+        ((:after-success! @received-otlp-options))
+        (is (= :flush (last @events)))
+        (server/stop! lifecycle)))))
+
+(deftest durable-startup-rejects-an-unconfirmed-checkpoint-before-ingress
+  (let [opened (atom 0)
+        closed (atom 0)
+        conn (reify java.io.Closeable (close [_] (swap! closed inc)))]
+    (with-redefs [jdbc/connection (fn [_] (swap! opened inc) conn)
+                  chdb-export/exporter (constantly (fake-exporter (atom [])))
+                  http/run-server (fn [& _]
+                                    (throw (ex-info "ingress must not start" {})))]
+      (doseq [result [nil false {:status :unexpected}]]
+        (is (thrown? Exception
+                     (server/start!
+                      {:port 0
+                       :durability {:checkpoint! (constantly result)
+                                    :flush! (constantly {:status :empty})}})))))
+    (is (= 3 @opened))
+    (is (= 3 @closed))))
 
 (deftest shutdown-stops-at-a-failed-boundary-and-retries-it
   (let [attempts (atom 0)

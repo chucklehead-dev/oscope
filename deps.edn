@@ -7,7 +7,7 @@
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "39c04ed04933fdeaa5e2f481aa8c9b294afb5e7e"}
+         :git/sha "3ef8d97b62b467f1ad68f92b854498c124cb8811"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
          :git/sha "a247f418a462357d0a114d5f51024d00bd38189f"}
@@ -45,6 +45,41 @@
   :test-readers
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.reader-test-runner"]}
+
+  :test-durable-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-test-runner"]}
+
+  :durable-server-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :main-opts ["-m" "oscope.durable-server-main"]}
+
+  :durable-crash-verify-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-crash-verify"]}
+
+  :test-durable-s3-dev
+  {:override-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:local/root "../jolt-chdb"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:local/root "../jolt-otel-clickhouse"}}
+   :extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-s3-test-runner"]}
 
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
   :server {:main-opts ["-m" "oscope.server-main"]}
@@ -105,6 +140,12 @@
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"
          test-readers "jolt -M:test-readers"
+         test-durable-dev "jolt -M:test-durable-dev"
+         test-durable-aspect "test/durable_aspect_smoke.sh"
+         test-durable-s3-aspect "test/durable_s3_aspect_smoke.sh"
+         test-durable-crash "test/durable_crash_reopen.sh"
+         test-durable-s3 "test/durable_s3_minio.sh"
+         durable-server-dev "jolt -M:durable-server-dev"
          test-standalone "test/standalone_build_smoke.sh"
          web-snapshot "jolt -M:web-snapshot"
          server "jolt -M:server"

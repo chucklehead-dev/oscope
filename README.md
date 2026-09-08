@@ -105,10 +105,10 @@ close are not chDB Durable `close()` operations.
 | --- | --- | --- |
 | Ephemeral/in-memory | `OSCOPE_CHDB_SPEC=chdb::memory:` | Available now. Process-local state is not expected to survive close or restart. |
 | Local path persistence | `OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/oscope-data`; the standalone default is `chdb:./oscope-data` | Available now. Reopening the same local directory retains the database, as covered by the restart integration test. It is not object-backed Durable recovery. |
-| Local Durable development mode | No oscope configuration yet | Proposed, not implemented. It is discussed in [oscope #1](https://github.com/chucklehead-dev/oscope/issues/1) and tracked in [jolt-chdb #2](https://github.com/chucklehead-dev/jolt-chdb/issues/2). The intended local backend must implement the same Durable V1 state machine before oscope can offer this mode. |
-| Object-backed Durable mode | No oscope configuration yet | Proposed, not implemented. The jolt-chdb work is split across the [core ABI](https://github.com/chucklehead-dev/jolt-chdb/issues/1), [control plane](https://github.com/chucklehead-dev/jolt-chdb/issues/2), and [S3-compatible backend](https://github.com/chucklehead-dev/jolt-chdb/issues/3). Recovery would be through the last successfully published Durable WAL or checkpoint, subject to the V1 single-writer protocol. |
+| Local Durable development mode | `OSCOPE_DURABLE_ROOT=/absolute/path jolt -M:durable-server-dev` | Available with a qualified chDB Durable V1 native library. Uses the POSIX object backend, fenced single-writer lease, acknowledged WAL flushes, checkpoints, and recovery through the published head. |
+| Object-backed Durable mode | `OSCOPE_DURABLE_BACKEND=s3` plus the S3 settings below | Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend. Recovery uses the last CAS-published Durable checkpoint and WAL chain. |
 
-The proposed modes reserve “Durable” for the official
+These modes reserve “Durable” for the official
 [chDB Durable overview](https://github.com/chdb-io/chdb/blob/db10b548a3e1e21e51c213baf863cb1050963d9c/docs/durable/index.mdx)
 and
 [Durable V1 protocol](https://github.com/chdb-io/chdb/blob/db10b548a3e1e21e51c213baf863cb1050963d9c/docs/durable/protocol-v1.mdx):
@@ -124,11 +124,11 @@ and
 - `close()` stops new operations, drains queued work, flushes, releases the
   writer lease, and cleans up local resources.
 
-Until those APIs are integrated, accepting a batch, closing the current local
-connection, or completing an Arrow/Parquet download does not establish that
-remote durability promise; the most recent accepted requests may be absent
-from a future recovery. Arrow and Parquet remain bounded data exports, not
-database checkpoints, WAL segments, or a database recovery mechanism.
+The ordinary `-M:server` path does not establish that remote durability
+promise. The `-M:durable-server-dev` path does: it does not return a successful
+OTLP response until the request's statement WAL is flushed and published.
+Arrow and Parquet remain bounded data exports, not database checkpoints, WAL
+segments, or a database recovery mechanism.
 
 This process does not initialize an OTel SDK and does not wrap its HTTP routes
 with tracing or logging middleware. Viewer, health, export, and receiver
@@ -172,6 +172,85 @@ select service, case-insensitive body text, severity, time window, and a limit
 up to 100. Metric queries select service, case-insensitive metric name, gauge,
 sum, or histogram kind, window, and limit. These fields are parameters or
 closed choices; they cannot supply SQL, table names, or expressions.
+
+### Run with Durable local storage
+
+During cross-repository development, the standalone collector can use the real
+Durable V1 POSIX backend instead of opening `oscope-data` directly:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/chdb-26.7.2-or-newer/libchdb.so \
+    OSCOPE_DURABLE_ROOT=/absolute/private/path/oscope-durable \
+    jolt -M:durable-server-dev
+```
+
+The Durable root contains immutable checkpoint/WAL objects and the CAS-protected
+head. Native chDB recovery uses a private scratch directory and never opens that
+root as a database directory. The default owner is `oscope`; every process start
+gets a UUIDv4 instance identity. Startup checkpoints schema migrations before
+the listener is bound. Each successful OTLP export flushes its statement WAL
+before the server returns 2xx. Durable admission spans export through flush, so
+a concurrent request receives 429 and cannot cross an earlier request's
+persistence boundary; a failed durability boundary returns 503. Both failures
+close the HTTP connection because the rejected streaming body may be unread. A
+clean shutdown flushes WAL and releases the lease. After an unclean stop, a new
+instance waits for the 30-second lease to expire. `OSCOPE_DURABLE_FORCE=true`
+is an explicit operator takeover and should only be used after proving the old
+process is gone.
+
+For S3-compatible storage, select the Jolt-native libcurl SigV4 backend. The
+bucket must already exist; oscope creates only keys below the configured prefix
+and stable object identity:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/chdb-26.7.2-or-newer/libchdb.so \
+    OSCOPE_DURABLE_BACKEND=s3 \
+    OSCOPE_DURABLE_OBJECT_ID=telemetry-prod \
+    OSCOPE_DURABLE_S3_ENDPOINT=https://s3.example.com \
+    OSCOPE_DURABLE_S3_BUCKET=observability \
+    OSCOPE_DURABLE_S3_PREFIX=team-blue \
+    OSCOPE_DURABLE_S3_REGION=us-west-2 \
+    OSCOPE_DURABLE_S3_ACCESS_KEY="$AWS_ACCESS_KEY_ID" \
+    OSCOPE_DURABLE_S3_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" \
+    OSCOPE_DURABLE_S3_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
+    jolt -M:durable-server-dev
+```
+
+`OSCOPE_DURABLE_OBJECT_ID` defaults to `oscope` and is the stable logical
+database identity; it is deliberately separate from the per-process UUIDv4
+lease instance. Optional transport controls are
+`OSCOPE_DURABLE_S3_MAX_ATTEMPTS` (default 3, maximum 8),
+`OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS` (default 10000), and
+`OSCOPE_DURABLE_S3_TIMEOUT_MS` (default 300000). Credentials are passed only to
+the backend and are not copied into bounded operator diagnostics.
+
+Startup and terminal failures print a bounded operator category before exiting
+nonzero. Recognized categories include `lease-held`, `lease-fenced`,
+`corrupt-head`, `engine-incompatible`, and bounded object-store authentication,
+permission, throttling, transport, provider, response, and configuration
+failures; each includes a fixed recovery action. Exception messages,
+credentials, backend paths, owner names, and instance IDs are not copied into
+this diagnostic.
+
+The qualified process-crash gate builds the standalone Durable server, crosses
+two HTTP 200/flush boundaries separated by `SIGKILL` and normal lease expiry,
+then verifies both traces through a separate read-only executable:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+    test/durable_crash_reopen.sh
+```
+
+Optional settings are `OSCOPE_DURABLE_OWNER`, `OSCOPE_DURABLE_INSTANCE`,
+`OSCOPE_DURABLE_DATABASE`, `OSCOPE_DURABLE_SCRATCH_PARENT`,
+`OSCOPE_DURABLE_LEASE_TTL_MS`, `OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS`, and
+`OSCOPE_DURABLE_CLOCK_SKEW_MS`. Invalid settings fail before the backend root is
+created. The server remains loopback-only.
+
+This development alias intentionally uses sibling-local library roots. The
+ordinary dependency is pinned to the reviewed control-plane commit. Both paths
+require a chDB release exporting the Durable V1 ABI; the current stable 26.7.0
+bundled pin is insufficient.
 
 ## Run or embed only the web version
 
@@ -443,6 +522,75 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
   jolt -M:test-readers
 ```
 
+The Durable implementation has a sibling-local integration lane. It uses the
+real oscope loopback server/exporter/viewer composition and real native chDB,
+checkpoints schema before ingress, sends one OTLP trace, log, gauge, sum, and
+histogram over HTTP/1.1, flushes before each 200 response, and verifies exact
+per-kind counts, UI querying, and Arrow/Parquet export after provider
+reconstruction and read-only recovery. It also proves the nondeterministic
+schema-migration record is covered by the checkpoint and absent from every
+statement WAL:
+
+```sh
+/home/chuck/ai-src/tools/jolt-with-chez-10.4.1 \
+  jolt -M:test-durable-dev
+```
+
+This alias intentionally overrides `jolt-chdb` and `jolt-otel-clickhouse` with
+`../jolt-chdb` and `../jolt-otel-clickhouse` so it can test coordinated local
+changes. The ordinary dependency declaration uses the reviewed exact commit
+pin listed below.
+
+When `JOLT_CHDB_LIB` names the qualified 26.7.2-rc.2 library, this lane runs the
+real integration, including backup/restore and classification. With the stable
+26.7.0 pin, the runner reports that integration as skipped and runs the
+configuration, startup ordering, request acknowledgement, failure, and
+shutdown controls; it never fabricates a successful checkpoint over the absent
+ABI. The test uses the POSIX Durable provider and reconstructs it from its
+filesystem root before read-only reopen, so recovery does not rely on the
+in-memory backend oracle.
+
+The opt-in S3 app gate starts a pinned MinIO container, launches the real oscope
+collector over the S3 namespace configuration above, crosses one HTTP 200/WAL
+flush boundary, performs a clean release, reconstructs the backend, and proves
+read-only recovery through a fresh native connection:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+  test/durable_s3_minio.sh
+```
+
+The same service path can be compiled with the Durable aspect pack and checked
+against its Hegel transition model. This also proves the explicit libcurl
+transport entry point remains reachable in a standalone Jolt executable:
+
+```sh
+env JOLT_ASPECT_JOLT=/absolute/path/to/aspect-capable/jolt \
+    JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+    test/durable_s3_aspect_smoke.sh
+```
+
+The same integration test also has an opt-in compiled aspect lane. It binds a
+semantic journal around the real oscope lifecycle, weaves only the six Durable
+control entry seams, and validates the completed privacy-shaped command history
+offline with the Hegel transition model:
+
+```sh
+env JOLT_ASPECT_JOLT=/absolute/path/to/aspect-capable/jolt \
+    JOLT_CHDB_LIB=/absolute/path/to/libchdb.so \
+    test/durable_aspect_smoke.sh
+```
+
+This subproject uses sibling-local roots for `jolt-chdb`,
+`jolt-otel-clickhouse`, and `jolt-aspect-packs`; it is an integration/release
+gate rather than a publishable dependency. Its compiler report at
+`target/aspects.edn` must be checked with the pack's report validator, while the
+ordinary `-M:test-durable-dev` lane remains the non-woven comparison. The build
+explicitly embeds jolt-chdb's canonical runtime resources so the standalone
+binary reads the same ABI descriptor used during compilation. The woven lane
+uses a release-mode build and the same real loopback transport as the unwoven
+integration.
+
 Self-contained receiver builds require Jolt v0.7.28 or newer. Jolt v0.7.27 can
 run `jolt -M:server` from source, but its app builder may incorrectly inherit
 `jolt.ffi` from the compiler image and produce a binary with an unbound
@@ -459,7 +607,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `chucklehead-dev/jolt-otel-clickhouse` `a247f418a462357d0a114d5f51024d00bd38189f`
-- `chucklehead-dev/jolt-chdb` `39c04ed04933fdeaa5e2f481aa8c9b294afb5e7e`
+- `chucklehead-dev/jolt-chdb` `3ef8d97b62b467f1ad68f92b854498c124cb8811`
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`

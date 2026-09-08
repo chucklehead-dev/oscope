@@ -24,8 +24,10 @@
                           :phase (:phase result)
                           :errors errors})))))))
 
-(defn -main [& _]
-  (let [lifecycle (server/start! (server/env-options))]
+(defn run!
+  "Run the standalone server for already validated server options."
+  [options]
+  (let [lifecycle (server/start! options)]
     (println (str "oscope receiving OTLP/HTTP and serving its viewer at http://"
                   (:host lifecycle) ":" (:port lifecycle) "/oscope"))
     (try
@@ -35,3 +37,6 @@
         ;; remains open. A thrown terminal failure produces a non-zero exit.
         (stop-until-closed! lifecycle)
         (System/exit 0)))))
+
+(defn -main [& _]
+  (run! (server/env-options)))

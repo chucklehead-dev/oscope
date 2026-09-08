@@ -99,6 +99,17 @@
            :phase (:phase state)}
     error (assoc :errors [error])))
 
+(defn- require-durability-status! [operation allowed result]
+  (let [status (:status result)]
+    (when-not (contains? allowed status)
+      (throw (ex-info (str "oscope Durable " (name operation)
+                           " did not confirm persistence")
+                      {:oscope.server/error true
+                       :type ::durability-unconfirmed
+                       :operation operation
+                       :status status})))
+    true))
+
 (defn- stop-lifecycle! [{:keys [server source exporter connection state lock]}]
   (locking lock
     (if (= :closed (:phase @state))
@@ -130,7 +141,7 @@
   127.0.0.1. The returned `:stop!` is idempotent and retries the first
   incomplete ownership boundary on each call."
   ([] (start! {}))
-  ([{:keys [host port db-spec]
+  ([{:keys [host port db-spec durability]
      :or {host default-host port default-port db-spec default-db-spec}}]
    (when-not (= default-host host)
      (throw (ex-info "oscope standalone receiver must bind to 127.0.0.1"
@@ -138,6 +149,12 @@
    (when-not (and (integer? port) (<= 0 port 65535))
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
+   (when (and durability
+              (not (and (map? durability)
+                        (ifn? (:checkpoint! durability))
+                        (ifn? (:flush! durability)))))
+     (throw (ex-info "oscope durability requires checkpoint! and flush! functions"
+                     {:oscope.server/error true :type ::invalid-durability})))
    (let [conn (jdbc/connection db-spec)
          exporter* (atom nil)
          source* (atom nil)
@@ -149,10 +166,25 @@
        (let [exporter (chdb-export/exporter
                        {:connection conn :signals #{:spans :logs :metrics}})
              _ (reset! exporter* exporter)
+             ;; Durable mode checkpoints the sole schema owner's migrations
+             ;; before ingress can become reachable. Ordinary local mode has
+             ;; no extra boundary and retains its existing startup behavior.
+             _ (when durability
+                 (require-durability-status!
+                  :checkpoint #{:committed :reconciled}
+                  ((:checkpoint! durability) conn)))
              source (live/open! {:connection conn :ensure-schema? false})
              _ (reset! source* source)
              editor-handler (visualization-editor/handler source)
-             app-handler (handler {:otlp-handler (otlp/handler exporter)
+             app-handler (handler {:otlp-handler
+                                   (if durability
+                                     (otlp/handler
+                                      exporter
+                                      {:after-success!
+                                       #(require-durability-status!
+                                         :flush #{:empty :committed :reconciled}
+                                         ((:flush! durability) conn))})
+                                     (otlp/handler exporter))
                                    :workbench-handler
                                    (workbench/handler conn)
                                    :events-handler (events/handler conn)

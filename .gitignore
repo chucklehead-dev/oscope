@@ -2,6 +2,11 @@
 /.cpcache/
 /.data/
 /target/
+/oscope-data/
+/test/durable-aspect/.jolt/
+/test/durable-aspect/target/
+/test/durable-process/.jolt/
+/test/durable-process/target/
 *.html
 *.chdb
 *.parquet
