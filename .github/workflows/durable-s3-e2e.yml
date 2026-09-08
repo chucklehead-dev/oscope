@@ -11,6 +11,10 @@ on:
       - src/oscope/otlp.clj
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
+      - test/durable_crash_reopen.sh
+      - test/durable_s3_crash_reopen.sh
+      - test/durable-process-published/deps.edn
+      - test/oscope/durable_crash_verify.clj
       - test/oscope/durable_s3_integration_test.clj
   pull_request:
     paths:
@@ -20,6 +24,10 @@ on:
       - src/oscope/otlp.clj
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
+      - test/durable_crash_reopen.sh
+      - test/durable_s3_crash_reopen.sh
+      - test/durable-process-published/deps.edn
+      - test/oscope/durable_crash_verify.clj
       - test/oscope/durable_s3_integration_test.clj
 
 permissions:
@@ -59,3 +67,8 @@ jobs:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
           OSCOPE_DURABLE_S3_TEST_ALIAS: test-durable-s3
         run: test/durable_s3_minio.sh
+      - name: Recover oscope after process crashes through pinned MinIO
+        env:
+          JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
+          OSCOPE_DURABLE_CRASH_BUILD_ALIAS: test-durable-s3
+        run: test/durable_s3_crash_reopen.sh
