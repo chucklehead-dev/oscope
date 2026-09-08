@@ -5,6 +5,7 @@
             [jdbc.chdb.durable.control :as control]
             [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.local-posix :as local-posix]
+            [jdbc.chdb.durable.s3 :as durable-s3]
             [oscope.server :as server]
             [oscope.server-main :as server-main]))
 
@@ -24,7 +25,39 @@
    ::durable/engine-incompatible
    {:category :engine-incompatible
     :message "the installed chDB engine cannot recover this Durable object"
-    :action "install a compatible qualified chDB build before retrying"}})
+    :action "install a compatible qualified chDB build before retrying"}
+   ::durable-s3/authentication
+   {:category :storage-authentication
+    :message "the Durable object store rejected its credentials"
+    :action "repair the configured object-store credentials before retrying"}
+   ::durable-s3/permission
+   {:category :storage-permission
+    :message "the Durable object store denied the required operation"
+    :action "grant object read and conditional write access to the configured prefix"}
+   ::durable-s3/throttled
+   {:category :storage-throttled
+    :message "the Durable object store remained throttled"
+    :action "inspect provider limits and retry after the throttle clears"}
+   ::durable-s3/transport
+   {:category :storage-transport
+    :message "the Durable object store could not be reached reliably"
+    :action "inspect endpoint, TLS, DNS, and network health before retrying"}
+   ::durable-s3/provider
+   {:category :storage-provider
+    :message "the Durable object store rejected a protocol operation"
+    :action "inspect the provider status and S3 conditional-write compatibility"}
+   ::durable-s3/invalid-response
+   {:category :storage-response
+    :message "the Durable object store returned an invalid response"
+    :action "preserve the store and inspect provider compatibility before retrying"}
+   ::durable-s3/invalid-options
+   {:category :storage-configuration
+    :message "the Durable object-store configuration is invalid"
+    :action "repair the named object-store setting before retrying"}
+   ::durable-s3/invalid-key
+   {:category :storage-configuration
+    :message "the Durable object-store namespace is invalid"
+    :action "repair the configured object prefix before retrying"}})
 
 (defn- causal-type [error]
   (loop [current error remaining 8]
@@ -61,6 +94,14 @@
                         {:oscope.durable-server/error true :option name})))
       value)))
 
+(defn- attempt-count [raw]
+  (let [value (positive-long raw "OSCOPE_DURABLE_S3_MAX_ATTEMPTS" 3)]
+    (when (> value 8)
+      (throw (ex-info "OSCOPE_DURABLE_S3_MAX_ATTEMPTS must not exceed eight"
+                      {:oscope.durable-server/error true
+                       :option "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"})))
+    value))
+
 (defn- boolean-option [raw name]
   (case (some-> raw str/lower-case)
     nil false
@@ -74,14 +115,37 @@
     (throw (ex-info (str name " must be true or false")
                     {:oscope.durable-server/error true :option name}))))
 
+(defn- required-option [environment name]
+  (or (not-empty (get environment name))
+      (throw (ex-info (str name " is required")
+                      {:oscope.durable-server/error true :option name}))))
+
+(defn- object-id! [value]
+  (when-not (and (string? value)
+                 (not (str/blank? value))
+                 (not (contains? #{"." ".."} value))
+                 (not (str/includes? value "/"))
+                 (not (str/includes? value "\\"))
+                 (<= (alength (.getBytes value "UTF-8")) 255))
+    (throw (ex-info "OSCOPE_DURABLE_OBJECT_ID is invalid"
+                    {:oscope.durable-server/error true
+                     :option "OSCOPE_DURABLE_OBJECT_ID"})))
+  value)
+
 (defn durable-options
   "Build server options from an environment-shaped map.
 
   `backend-fn` and `instance-fn` keep parsing deterministic in tests."
   ([environment]
-   (durable-options environment local-posix/local-backend #(str (random-uuid))))
+   (durable-options environment local-posix/local-backend
+                    durable-s3/s3-backend #(str (random-uuid))))
   ([environment backend-fn instance-fn]
-   (let [root (get environment "OSCOPE_DURABLE_ROOT")
+   (durable-options environment backend-fn durable-s3/s3-backend instance-fn))
+  ([environment local-backend-fn s3-backend-fn instance-fn]
+   (let [backend-kind (or (not-empty
+                           (some-> (get environment "OSCOPE_DURABLE_BACKEND")
+                                   str/lower-case))
+                          "local")
          owner (or (not-empty (get environment "OSCOPE_DURABLE_OWNER"))
                    "oscope")
          instance (or (not-empty (get environment "OSCOPE_DURABLE_INSTANCE"))
@@ -91,10 +155,10 @@
          scratch-parent (or (not-empty
                              (get environment "OSCOPE_DURABLE_SCRATCH_PARENT"))
                             (System/getProperty "java.io.tmpdir"))]
-     (when (str/blank? root)
-       (throw (ex-info "OSCOPE_DURABLE_ROOT is required"
+     (when-not (contains? #{"local" "s3"} backend-kind)
+       (throw (ex-info "OSCOPE_DURABLE_BACKEND must be local or s3"
                        {:oscope.durable-server/error true
-                        :option "OSCOPE_DURABLE_ROOT"})))
+                        :option "OSCOPE_DURABLE_BACKEND"})))
      (let [host (or (not-empty (get environment "OSCOPE_HOST"))
                     server/default-host)
            raw-port (get environment "OSCOPE_PORT")
@@ -145,27 +209,78 @@
                  "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS exceeds one third of the lease TTL"
                  {:oscope.durable-server/error true
                   :option "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS"})))
-       {:host host
-        :port port
-        :durability {:checkpoint! durable/checkpoint!
-                     :flush! durable/flush!}
-        :db-spec
-        {:vendor "chdb-durable"
-         :backend (backend-fn root)
-         :owner owner
-         :instance instance
-         :database database
-         :scratch-parent scratch-parent
-         :lease-ttl-ms ttl
-         :heartbeat-interval-ms heartbeat
-         :clock-skew-ms skew
-         :force? force?}}))))
+       (let [storage
+             (case backend-kind
+               "local"
+               {:backend
+                (local-backend-fn
+                 (required-option environment "OSCOPE_DURABLE_ROOT"))}
+
+               "s3"
+               (let [object-id
+                     (object-id!
+                      (or (not-empty
+                           (get environment "OSCOPE_DURABLE_OBJECT_ID"))
+                          "oscope"))
+                     options
+                     {:endpoint (required-option
+                                 environment "OSCOPE_DURABLE_S3_ENDPOINT")
+                      :bucket (required-option
+                               environment "OSCOPE_DURABLE_S3_BUCKET")
+                      :prefix (or (get environment "OSCOPE_DURABLE_S3_PREFIX") "")
+                      :region (required-option
+                               environment "OSCOPE_DURABLE_S3_REGION")
+                      :access-key (required-option
+                                   environment "OSCOPE_DURABLE_S3_ACCESS_KEY")
+                      :secret-key (required-option
+                                   environment "OSCOPE_DURABLE_S3_SECRET_KEY")
+                      :session-token
+                      (not-empty
+                       (get environment "OSCOPE_DURABLE_S3_SESSION_TOKEN"))
+                      :max-attempts
+                      (attempt-count
+                       (get environment "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"))
+                      :connect-timeout-ms
+                      (positive-long
+                       (get environment
+                            "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS")
+                       "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS" 10000)
+                      :timeout-ms
+                      (positive-long
+                       (get environment "OSCOPE_DURABLE_S3_TIMEOUT_MS")
+                       "OSCOPE_DURABLE_S3_TIMEOUT_MS" 300000)}]
+                 {:namespace-backend (s3-backend-fn options)
+                  :object-id object-id}))]
+         {:host host
+          :port port
+          :durability {:checkpoint! durable/checkpoint!
+                       :flush! durable/flush!}
+          :db-spec
+          (merge
+           {:vendor "chdb-durable"
+            :owner owner
+            :instance instance
+            :database database
+            :scratch-parent scratch-parent
+            :lease-ttl-ms ttl
+            :heartbeat-interval-ms heartbeat
+            :clock-skew-ms skew
+            :force? force?}
+           storage)})))))
 
 (defn env-options []
   (durable-options
    (into {}
          (map (fn [name] [name (System/getenv name)]))
          ["OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_DURABLE_ROOT"
+          "OSCOPE_DURABLE_BACKEND" "OSCOPE_DURABLE_OBJECT_ID"
+          "OSCOPE_DURABLE_S3_ENDPOINT" "OSCOPE_DURABLE_S3_BUCKET"
+          "OSCOPE_DURABLE_S3_PREFIX" "OSCOPE_DURABLE_S3_REGION"
+          "OSCOPE_DURABLE_S3_ACCESS_KEY" "OSCOPE_DURABLE_S3_SECRET_KEY"
+          "OSCOPE_DURABLE_S3_SESSION_TOKEN"
+          "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"
+          "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS"
+          "OSCOPE_DURABLE_S3_TIMEOUT_MS"
           "OSCOPE_DURABLE_OWNER" "OSCOPE_DURABLE_INSTANCE"
           "OSCOPE_DURABLE_DATABASE" "OSCOPE_DURABLE_SCRATCH_PARENT"
           "OSCOPE_DURABLE_LEASE_TTL_MS"

@@ -198,11 +198,39 @@ instance waits for the 30-second lease to expire. `OSCOPE_DURABLE_FORCE=true`
 is an explicit operator takeover and should only be used after proving the old
 process is gone.
 
+For S3-compatible storage, select the Jolt-native libcurl SigV4 backend. The
+bucket must already exist; oscope creates only keys below the configured prefix
+and stable object identity:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/chdb-26.7.2-or-newer/libchdb.so \
+    OSCOPE_DURABLE_BACKEND=s3 \
+    OSCOPE_DURABLE_OBJECT_ID=telemetry-prod \
+    OSCOPE_DURABLE_S3_ENDPOINT=https://s3.example.com \
+    OSCOPE_DURABLE_S3_BUCKET=observability \
+    OSCOPE_DURABLE_S3_PREFIX=team-blue \
+    OSCOPE_DURABLE_S3_REGION=us-west-2 \
+    OSCOPE_DURABLE_S3_ACCESS_KEY="$AWS_ACCESS_KEY_ID" \
+    OSCOPE_DURABLE_S3_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" \
+    OSCOPE_DURABLE_S3_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
+    jolt -M:durable-server-dev
+```
+
+`OSCOPE_DURABLE_OBJECT_ID` defaults to `oscope` and is the stable logical
+database identity; it is deliberately separate from the per-process UUIDv4
+lease instance. Optional transport controls are
+`OSCOPE_DURABLE_S3_MAX_ATTEMPTS` (default 3, maximum 8),
+`OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS` (default 10000), and
+`OSCOPE_DURABLE_S3_TIMEOUT_MS` (default 300000). Credentials are passed only to
+the backend and are not copied into bounded operator diagnostics.
+
 Startup and terminal failures print a bounded operator category before exiting
-nonzero. Recognized categories are `lease-held`, `lease-fenced`,
-`corrupt-head`, and `engine-incompatible`; each includes a fixed recovery
-action. Exception messages, backend paths, owner names, and instance IDs are
-not copied into this diagnostic.
+nonzero. Recognized categories include `lease-held`, `lease-fenced`,
+`corrupt-head`, `engine-incompatible`, and bounded object-store authentication,
+permission, throttling, transport, provider, response, and configuration
+failures; each includes a fixed recovery action. Exception messages,
+credentials, backend paths, owner names, and instance IDs are not copied into
+this diagnostic.
 
 The qualified process-crash gate builds the standalone Durable server, crosses
 two HTTP 200/flush boundaries separated by `SIGKILL` and normal lease expiry,
@@ -521,6 +549,16 @@ shutdown controls; it never fabricates a successful checkpoint over the absent
 ABI. The test uses the POSIX Durable provider and reconstructs it from its
 filesystem root before read-only reopen, so recovery does not rely on the
 in-memory backend oracle.
+
+The opt-in S3 app gate starts a pinned MinIO container, launches the real oscope
+collector over the S3 namespace configuration above, crosses one HTTP 200/WAL
+flush boundary, performs a clean release, reconstructs the backend, and proves
+read-only recovery through a fresh native connection:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+  test/durable_s3_minio.sh
+```
 
 The same integration test also has an opt-in compiled aspect lane. It binds a
 semantic journal around the real oscope lifecycle, weaves only the six Durable
