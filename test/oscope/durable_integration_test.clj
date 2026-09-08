@@ -8,7 +8,7 @@
             [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
-            [oscope.raw-export :as raw-export]
+            [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.server :as server]
             [teensyp.client :as client])
   (:import [java.io File]
@@ -294,9 +294,9 @@
             (let [selection {:signal signal :metric-kind kind
                              :start-unix-nano 0 :end-unix-nano 1
                              :max-rows 10 :max-bytes (* 4 1024 1024)}
-                  parquet (raw-export/execute!
+                  parquet (raw-export-chdb/execute!
                            reader (assoc selection :format :parquet))
-                  arrow (raw-export/execute!
+                  arrow (raw-export-chdb/execute!
                          reader (assoc selection :format :arrow))]
               (is (= [80 65 82 49]
                      (unsigned-prefix (:bytes parquet) 4)))
