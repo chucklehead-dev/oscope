@@ -75,6 +75,7 @@ jobs:
           repository: casselc/jolt
           ref: 5d56b9e5d295fe0968df07e535c45353050611f7
           path: .qualification/jolt
+          fetch-depth: 0
           submodules: recursive
           persist-credentials: false
       - name: Install Jolt v0.8.3
