@@ -7,6 +7,8 @@
 /test/durable-aspect/target/
 /test/durable-process/.jolt/
 /test/durable-process/target/
+/test/durable-process-published/.jolt/
+/test/durable-process-published/target/
 *.html
 *.chdb
 *.parquet
