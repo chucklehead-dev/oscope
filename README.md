@@ -633,7 +633,13 @@ env JOLT_ASPECT_JOLT=/absolute/path/to/aspect-capable/jolt \
 The same integration test also has an opt-in compiled aspect lane. It binds a
 semantic journal around the real oscope lifecycle, weaves only the six Durable
 control entry seams, and validates the completed privacy-shaped command history
-offline with the Hegel transition model:
+offline with the Hegel transition model. The same build composes an oscope
+consumer that emits one internal span and one duration-histogram observation
+per Durable control operation. Its attributes are limited to the closed
+operation, outcome, and failure-category sets; it never records arguments,
+object keys, owner identities, result bodies, or exception messages. Generic
+OpenTelemetry suppression is checked before observation, so an exporter backed
+by the same Durable chDB connection cannot recursively instrument itself:
 
 ```sh
 env JOLT_ASPECT_JOLT=/absolute/path/to/aspect-capable/jolt \
