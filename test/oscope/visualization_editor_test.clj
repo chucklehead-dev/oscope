@@ -62,6 +62,17 @@
     (is (not (str/includes? text "checkout")))
     (is (= (:chart screen) (:value document)))))
 
+(deftest metric-distribution-editor-preserves-its-kind-union-query
+  (let [screen (sample/screen-for-selection
+                {:signal :metrics :field :metric-name
+                 :window :15m :limit 10})
+        document (document/plotje-from-screen screen)
+        text (:text document)]
+    (is (str/includes? text ":source :current-query"))
+    (is (not (str/includes? text ":source :telemetry-query")))
+    (is (not (str/includes? text "queue.depth")))
+    (is (= (:chart screen) (:value document)))))
+
 (deftest safe-hiccup-is-data-only-bounded-and-escaped
   (is (= "<section class=\"card\"><h2>Safe</h2><p>&lt;not markup&gt;</p></section>"
          (hiccup/text->html

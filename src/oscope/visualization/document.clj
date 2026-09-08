@@ -96,10 +96,12 @@
   (if-let [chart (:chart screen)]
     (let [rows (:data chart)
           selection (:selection screen)]
-      (if (= :metric-series (:mode selection))
-        ;; The URL-owned metric recipe already supports fixed time buckets and
-        ;; kind-specific histogram semantics that the reusable expression does
-        ;; not yet claim. Preserve that bounded source contract during editing.
+      (if (or (= :metric-series (:mode selection))
+              (= :metrics (:signal selection)))
+        ;; URL-owned metric queries include kind-aware sum/histogram rows and,
+        ;; for series, fixed time buckets. The reusable expression deliberately
+        ;; starts with gauge-only semantics, so preserve the original source on
+        ;; every metric screen instead of changing results on a no-edit preview.
         (let [fields (mapv :key (get-in screen [:table :columns]))
               template (assoc chart :data {:source current-query-source
                                            :select fields})]

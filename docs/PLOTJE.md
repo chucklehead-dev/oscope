@@ -39,10 +39,12 @@ metric names, counts, and other samples never become part of the editable chart
 text, so the same text keeps working as telemetry changes.
 
 The legacy `:current-query` source remains available for the bounded query
-recipe selected in the editor URL. It is also used when editing metric-series
-screens whose fixed time bucket and metric-kind semantics are not yet part of
-the reusable `:telemetry-query` grammar. In both forms, the chart selects named
-result fields and never copies returned data points into editable text.
+recipe selected in the editor URL. It is used for all current metric screens:
+their gauge/sum/histogram provenance and optional fixed time bucket are not yet
+part of the reusable gauge-only `:telemetry-query` grammar. This preserves the
+original result semantics across a no-edit preview. In both forms, the chart
+selects named result fields and never copies returned data points into editable
+text.
 
 The current query produces one row per selected field value:
 
