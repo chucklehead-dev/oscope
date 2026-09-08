@@ -30,20 +30,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.0
-      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.0
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.3
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.3
     steps:
       - uses: actions/checkout@v4
-      - name: Install Jolt v0.8.0
+      - name: Install Jolt v0.8.3
         shell: bash
         run: |
           set -euo pipefail
           install_dir="$RUNNER_TEMP/jolt-bin"
-          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.0/install \
-            | bash -s -- --dir "$install_dir" --version 0.8.0
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.3/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.3
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
         shell: bash
-        run: test "$(jolt --version)" = "jolt v0.8.0"
+        run: test "$(jolt --version)" = "jolt v0.8.3"
       - name: Headless tests
         run: jolt -Srepro -M:test-headless
