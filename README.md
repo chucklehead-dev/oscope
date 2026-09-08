@@ -69,7 +69,11 @@ current bounded query selection; `/oscope/edit/hiccup` provides the companion
 data-only Hiccup surface. Both editors remain functional when JavaScript is
 disabled. The Plotje editor documents the supported grammar and includes
 loadable bar and layered area/point/rule examples; its JavaScript only adds
-debounced preview and one-click example loading.
+debounced preview and one-click example loading. Its editable chart names the
+bounded `:current-query` data source and selected fields instead of copying
+returned telemetry rows into the spec, so it can be reused as values change.
+See [Reusable Plotje charts](docs/PLOTJE.md) for the current contract and the
+bounded aggregate/query grammar planned next.
 
 Override the port or database without shell-specific `export` syntax:
 

@@ -3,7 +3,8 @@
   (:require [oscope.hiccup.spec :as hiccup]
             [oscope.plotje.spec :as plotje]))
 
-(def version 1)
+(def version 2)
+(def current-query-source :current-query)
 (def kinds #{:plotje :hiccup})
 (def default-hiccup-text
   "[:section {:class \"card\"} [:h2 \"Telemetry note\"] [:p \"Edit this safe, data-only Hiccup.\"]]")
@@ -17,16 +18,17 @@
    :layers [{:mark :bar :x :value :y :count}]})
 
 (def ^:private document-keys
-  #{:oscope.visualization-document/version :kind :text :status :value :error})
+  #{:oscope.visualization-document/version :kind :text :status :value :error
+    :data-sources})
 
 (defn- fail! [type message data]
   (throw (ex-info message
                   (assoc data :oscope.visualization-document/error true
                          :type type))))
 
-(defn- parse [kind text]
+(defn- parse [kind text data-sources]
   (case kind
-    :plotje (plotje/parse-spec text)
+    :plotje (plotje/parse-spec text data-sources)
     :hiccup (hiccup/parse-spec text)
     (fail! ::unsupported-kind "visualization document kind is unsupported"
            {:kind kind :supported-kinds (vec (sort kinds))})))
@@ -40,9 +42,12 @@
 
 (defn prepare
   "Parse bounded editor text into a serializable ready-or-invalid document."
-  [kind text]
-  (let [text (str (or text ""))
-        maximum (max-text-chars kind)]
+  ([kind text] (prepare kind text {}))
+  ([kind text data-sources]
+   (let [text (str (or text ""))
+         data-sources (if (= :plotje kind)
+                        (plotje/validate-data-sources data-sources) {})
+         maximum (max-text-chars kind)]
     ;; Do not retain oversized source text in an otherwise "invalid" document:
     ;; the document itself is a serializable boundary consumed by renderers.
     (when (> (count text) maximum)
@@ -53,18 +58,20 @@
       {:oscope.visualization-document/version version
        :kind kind
        :text text
+       :data-sources data-sources
        :status :ready
-       :value (parse kind text)
+       :value (parse kind text data-sources)
        :error nil}
       (catch clojure.lang.ExceptionInfo error
         {:oscope.visualization-document/version version
          :kind kind
          :text text
+         :data-sources data-sources
          :status :invalid
          :value nil
          :error (subs (str (or (ex-message error) "invalid visualization"))
                       0 (min 400 (count (str (or (ex-message error)
-                                                 "invalid visualization")))))}))))
+                                                 "invalid visualization")))))})))))
 
 (defn validate-document [document]
   (when-not (map? document)
@@ -74,7 +81,8 @@
     (fail! ::unsupported-document-key
            "visualization document contains unsupported keys"
            {:keys (vec (sort-by str unknown))}))
-  (let [expected (prepare (:kind document) (:text document))]
+  (let [expected (prepare (:kind document) (:text document)
+                          (:data-sources document))]
     (when-not (and (= version (:oscope.visualization-document/version document))
                    (= expected document))
       (fail! ::invalid-document
@@ -83,7 +91,17 @@
     document))
 
 (defn plotje-from-screen [screen]
-  (prepare :plotje (pr-str (or (:chart screen) empty-plotje-spec))))
+  (if-let [chart (:chart screen)]
+    (let [rows (:data chart)
+          fields (->> (:layers chart)
+                      (mapcat (fn [layer]
+                                (keep #(get layer %) [:x :y :color])))
+                      distinct
+                      vec)
+          template (assoc chart :data {:source current-query-source
+                                       :select fields})]
+      (prepare :plotje (pr-str template) {current-query-source rows}))
+    (prepare :plotje (pr-str empty-plotje-spec))))
 
 (defn default-hiccup []
   (prepare :hiccup default-hiccup-text))

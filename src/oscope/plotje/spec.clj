@@ -6,6 +6,7 @@
 (def max-spec-chars 32768)
 (def ^:private max-rows 512)
 (def ^:private max-columns 16)
+(def ^:private max-data-sources 4)
 (def ^:private max-layers 4)
 (def ^:private max-text 160)
 (def ^:private top-keys
@@ -15,6 +16,7 @@
     :bar-width})
 (def marks #{:line :point :bar :area :rule :tick})
 (def ^:private color-pattern #"#[0-9a-fA-F]{6}")
+(def ^:private data-reference-keys #{:source :select})
 
 (defn- fail! [message]
   (throw (ex-info message {:oscope.plotje/error true})))
@@ -60,6 +62,71 @@
                        (<= (count (name value)) 64)))
       (fail! (str "invalid bounded scalar in " (pr-str key)))))
   row)
+(defn- column-name! [message value]
+  (when-not (and (keyword? value) (nil? (namespace value))
+                 (<= 1 (count (name value)) 64))
+    (fail! message))
+  value)
+(defn- data-reference! [value]
+  (when-not (map? value)
+    (fail! "data must be literal rows or a named data source"))
+  (unknown! "data reference" data-reference-keys value)
+  (let [source (column-name! "data source must be a short, unqualified keyword"
+                             (:source value))
+        fields (:select value)]
+    (when-not (and (vector? fields) (<= 1 (count fields) max-columns))
+      (fail! "data select must contain from 1 to 16 fields"))
+    (doseq [field fields]
+      (column-name! "selected fields must be short, unqualified keywords" field))
+    (when-not (= (count fields) (count (distinct fields)))
+      (fail! "data select fields must be unique"))
+    {:source source :select fields}))
+(defn validate-data-sources [sources]
+  (when-not (and (map? sources) (<= (count sources) max-data-sources)
+                 (every? #(and (keyword? %) (nil? (namespace %))
+                               (<= 1 (count (name %)) 64))
+                         (keys sources)))
+    (fail! "data sources must be a bounded map with short keyword names"))
+  (doseq [[source rows] sources]
+    (when-not (and (vector? rows) (<= 1 (count rows) max-rows))
+      (fail! (str "data source " (pr-str source)
+                  " must contain from 1 to 512 rows")))
+    (doseq [row rows] (row! row)))
+  sources)
+(defn- source-rows! [sources {:keys [source select]}]
+  (when-not (contains? sources source)
+    (fail! (str "data source " (pr-str source) " is not available")))
+  (let [rows (get sources source)]
+    (mapv
+     (fn [row]
+       (doseq [field select]
+         (when-not (contains? row field)
+           (fail! (str "selected field " (pr-str field)
+                       " is missing from data source " (pr-str source)))))
+       (row! (select-keys row select)))
+     rows)))
+(defn- rows! [data sources]
+  (if (vector? data)
+    data
+    (source-rows! sources (data-reference! data))))
+
+(defn referenced-source
+  "Return the named data source in bounded Plotje text, or nil for literal data."
+  [text]
+  (let [text (str (or text ""))]
+    (when (> (count text) max-spec-chars) (fail! "chart spec is too large"))
+    (when (str/blank? text) (fail! "chart spec is empty"))
+    (try
+      (let [value (edn/read-string
+                   {:readers {}
+                    :default (fn [tag _]
+                               (fail! (str "tagged literal " tag
+                                           " is not allowed")))}
+                   text)
+            data (when (map? value) (:data value))]
+        (when (map? data) (:source (data-reference! data))))
+      (catch clojure.lang.ExceptionInfo error (throw error))
+      (catch Throwable _ (fail! "chart spec is not valid EDN")))))
 (defn- column! [rows layer key]
   (let [column (get layer key)]
     (when-not (and (keyword? column) (nil? (namespace column)))
@@ -97,10 +164,13 @@
       (assoc :bar-width
              (bounded-number! :bar-width (:bar-width layer) 0.1 1.0)))))
 
-(defn validate-spec [value]
-  (when-not (map? value) (fail! "the chart spec must be an EDN map"))
-  (unknown! "chart spec" top-keys value)
-  (let [rows (:data value) layers (:layers value)]
+(defn validate-spec
+  ([value] (validate-spec value {}))
+  ([value sources]
+   (when-not (map? value) (fail! "the chart spec must be an EDN map"))
+   (unknown! "chart spec" top-keys value)
+   (let [sources (validate-data-sources sources)
+         rows (rows! (:data value) sources) layers (:layers value)]
     (when-not (and (vector? rows) (<= 1 (count rows) max-rows))
       (fail! "data must be a vector containing from 1 to 512 rows"))
     (doseq [row rows] (row! row))
@@ -120,18 +190,21 @@
                         ["#e41a1c" "#377eb8" "#4daf4a" "#984ea3"])}
       (contains? value :title) (assoc :title (label! :title (:title value)))
       (contains? value :x-label) (assoc :x-label (label! :x-label (:x-label value)))
-      (contains? value :y-label) (assoc :y-label (label! :y-label (:y-label value))))))
+      (contains? value :y-label) (assoc :y-label (label! :y-label (:y-label value)))))))
 
-(defn parse-spec [text]
-  (let [text (str (or text ""))]
-    (when (> (count text) max-spec-chars) (fail! "chart spec is too large"))
-    (when (str/blank? text) (fail! "chart spec is empty"))
-    (try
-      (validate-spec
-       (edn/read-string
-        {:readers {}
-         :default (fn [tag _]
-                    (fail! (str "tagged literal " tag " is not allowed")))}
-        text))
-      (catch clojure.lang.ExceptionInfo error (throw error))
-      (catch Throwable _ (fail! "chart spec is not valid EDN")))))
+(defn parse-spec
+  ([text] (parse-spec text {}))
+  ([text sources]
+   (let [text (str (or text ""))]
+     (when (> (count text) max-spec-chars) (fail! "chart spec is too large"))
+     (when (str/blank? text) (fail! "chart spec is empty"))
+     (try
+       (validate-spec
+        (edn/read-string
+         {:readers {}
+          :default (fn [tag _]
+                     (fail! (str "tagged literal " tag " is not allowed")))}
+         text)
+        sources)
+       (catch clojure.lang.ExceptionInfo error (throw error))
+       (catch Throwable _ (fail! "chart spec is not valid EDN"))))))

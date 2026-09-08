@@ -3,6 +3,7 @@
   (:require [clojure.string :as str]
             [jolt.http.body :as http-body]
             [oscope.hiccup.spec :as hiccup]
+            [oscope.plotje.spec :as plotje-spec]
             [oscope.plotje.svg :as plotje-svg]
             [oscope.ui.web :as web]
             [oscope.visualization.document :as document])
@@ -147,9 +148,13 @@
 
 (defn- render-grammar-reference []
   (str "<details class=\"grammar-reference\" open><summary>Chart grammar reference &amp; examples</summary>"
-       "<p>A chart is a bounded EDN map with <code>:data</code> rows and one to four <code>:layers</code>. "
+       "<p>A chart is a bounded EDN map with one to four <code>:layers</code>. "
        "Every layer maps columns with <code>:x</code> and <code>:y</code>.</p>"
-       "<dl><dt>Marks</dt><dd><code>:line</code>, <code>:point</code>, <code>:bar</code>, <code>:area</code>, <code>:rule</code>, and <code>:tick</code>.</dd>"
+       "<dl><dt>Current query data</dt><dd><code>:data {:source :current-query :select [:value :count]}</code> "
+       "keeps returned telemetry out of the editable chart. The URL owns the bounded signal, field, window, and limit; "
+       "each preview resolves those selected fields from the current query.</dd>"
+       "<dt>Literal data</dt><dd>A vector of row maps remains available for hand-authored examples and fixed thresholds.</dd>"
+       "<dt>Marks</dt><dd><code>:line</code>, <code>:point</code>, <code>:bar</code>, <code>:area</code>, <code>:rule</code>, and <code>:tick</code>.</dd>"
        "<dt>Chart options</dt><dd><code>:title</code>, <code>:x-label</code>, <code>:y-label</code>, <code>:width</code>, <code>:height</code>, <code>:grid?</code>, and a 1–8 color <code>:palette</code>.</dd>"
        "<dt>Layer options</dt><dd><code>:color</code> maps a data column; <code>:stroke</code> and <code>:fill</code> accept six-digit hex colors. "
        "Use <code>:opacity</code>, <code>:stroke-width</code>, <code>:point-radius</code>, and <code>:bar-width</code> for bounded styling.</dd></dl>"
@@ -162,12 +167,16 @@
 
 (defn render-page
   [raw-document {:keys [path viewer-path]
-                 :or {path default-path viewer-path web/default-path}}]
+                 :or {path default-path viewer-path web/default-path}
+                 :as options}]
   (let [{:keys [kind text] :as edit-document}
         (document/validate-document raw-document)
         kind-name (name kind)
         title (if (= :plotje kind) "Plotje editor" "Safe Hiccup editor")
-        action (if (= :plotje kind) (plotje-path path) (hiccup-path path))]
+        selection-suffix (if (= :plotje kind)
+                           (or (:selection-suffix options) "") "")
+        action (str (if (= :plotje kind) (plotje-path path) (hiccup-path path))
+                    selection-suffix)]
     (str "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
          "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
          "<title>oscope · " title "</title><style>" style "</style></head><body>"
@@ -181,7 +190,8 @@
          " Rendering works without JavaScript.</p></header><main>"
          "<form method=\"post\" action=\"" (esc action)
          "\" data-oscope-editor data-preview-path=\""
-         (esc (preview-path path kind)) "\"><label for=\"oscope-" kind-name
+         (esc (str (preview-path path kind) selection-suffix))
+         "\"><label for=\"oscope-" kind-name
          "-spec\">" (if (= :plotje kind) "Chart specification" "Hiccup value")
          "</label><textarea id=\"oscope-" kind-name
          "-spec\" name=\"spec\" maxlength=\""
@@ -203,7 +213,7 @@
        "f.addEventListener('click',e=>{const b=e.target.closest('[data-oscope-load-example]');if(!b)return;"
        "const code=b.parentElement?.querySelector('code');if(code){i.value=code.textContent;i.dispatchEvent(new Event('input'))}})})()"))
 
-(defn- seed-plotje [source request]
+(defn- screen-for-request [source request]
   (let [screen
         (if-let [load-command (:load-command source)]
           (let [params (or (:query-params request)
@@ -211,7 +221,20 @@
                 selection (web/selection-from-params params)]
             (load-command [:visualization-editor (System/nanoTime)] selection))
           (:screen source))]
-    (document/plotje-from-screen screen)))
+    screen))
+
+(defn- plotje-context [source request]
+  (let [screen (screen-for-request source request)
+        edit-document (document/plotje-from-screen screen)
+        selection (:selection screen)]
+    {:document edit-document
+     :data-sources (:data-sources edit-document)
+     :selection-suffix (if selection (web/selection-query-string selection) "")}))
+
+(defn- referenced-data? [text]
+  (try
+    (some? (plotje-spec/referenced-source text))
+    (catch clojure.lang.ExceptionInfo _ false)))
 
 (defn- dispatch [source path viewer-path request]
   (let [{:keys [request-method uri body]} request
@@ -227,9 +250,11 @@
        :body progressive-script}
 
       (and (= :get request-method) (= uri plotje-uri))
-      {:status 200 :headers html-headers
-       :body (render-page (seed-plotje source request)
-                          {:path path :viewer-path viewer-path})}
+      (let [{:keys [document selection-suffix]} (plotje-context source request)]
+        {:status 200 :headers html-headers
+         :body (render-page document
+                            {:path path :viewer-path viewer-path
+                             :selection-suffix selection-suffix})})
 
       (and (= :get request-method) (= uri hiccup-uri))
       {:status 200 :headers html-headers
@@ -239,17 +264,26 @@
       (and (= :post request-method)
            (or (= uri plotje-uri) (= uri hiccup-uri)))
       (let [kind (if (= uri plotje-uri) :plotje :hiccup)
-            edit-document (document/prepare kind (or (form-value body "spec") ""))]
+            text (or (form-value body "spec") "")
+            {:keys [data-sources selection-suffix]}
+            (if (and (= :plotje kind) (referenced-data? text))
+              (plotje-context source request) {})
+            edit-document (document/prepare kind text (or data-sources {}))]
         {:status 200 :headers html-headers
-         :body (render-page edit-document {:path path :viewer-path viewer-path})})
+         :body (render-page edit-document
+                            {:path path :viewer-path viewer-path
+                             :selection-suffix selection-suffix})})
 
       (and (= :post request-method)
            (or (= uri (preview-path path :plotje))
                (= uri (preview-path path :hiccup))))
-      (let [kind (if (= uri (preview-path path :plotje)) :plotje :hiccup)]
+      (let [kind (if (= uri (preview-path path :plotje)) :plotje :hiccup)
+            text (or (form-value body "spec") "")
+            data-sources (when (and (= :plotje kind) (referenced-data? text))
+                           (:data-sources (plotje-context source request)))]
         {:status 200 :headers html-headers
          :body (render-preview
-                (document/prepare kind (or (form-value body "spec") "")))})
+                (document/prepare kind text (or data-sources {})))})
 
       :else
       {:status 405 :headers (assoc html-headers "Allow"

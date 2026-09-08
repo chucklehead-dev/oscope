@@ -1,6 +1,6 @@
 (ns oscope.plotje-test
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :refer [deftest is testing thrown-with-msg?]]
             [oscope.plotje.spec :as spec]
             [oscope.plotje.svg :as svg]))
 
@@ -81,3 +81,42 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (spec/validate-spec
                   (assoc-in latency [:layers 0 :opacity] 2.0))))))
+
+(deftest named-data-sources-project-fields-and-keep-chart-text-reusable
+  (let [template (assoc latency :data {:source :current-query
+                                       :select [:minute :latency-ms :series]})
+        first-rows [{:minute 0 :latency-ms 31 :series "p50" :ignored "one"}]
+        later-rows [{:minute 8 :latency-ms 73 :series "p95" :ignored "two"}]
+        first-chart (spec/parse-spec (pr-str template)
+                                     {:current-query first-rows})
+        later-chart (spec/parse-spec (pr-str template)
+                                     {:current-query later-rows})]
+    (is (= [{:minute 0 :latency-ms 31 :series "p50"}] (:data first-chart)))
+    (is (= [{:minute 8 :latency-ms 73 :series "p95"}] (:data later-chart)))
+    (is (= (dissoc first-chart :data) (dissoc later-chart :data)))
+    (is (not (str/includes? (pr-str template) "73")))))
+
+(deftest named-data-sources-fail-clearly-and-remain-bounded
+  (let [template (assoc latency :data {:source :current-query
+                                       :select [:minute :latency-ms :series]})]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"data source :current-query is not available"
+                          (spec/validate-spec template)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"selected field :latency-ms is missing"
+                          (spec/validate-spec
+                           template
+                           {:current-query [{:minute 0 :series "p50"}]})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"unsupported keys: :aggregate"
+                          (spec/validate-spec
+                           (assoc template :data
+                                  {:source :current-query
+                                   :select [:minute :latency-ms :series]
+                                   :aggregate :avg})
+                           {:current-query (:data latency)})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"data source :unused must contain from 1 to 512 rows"
+                          (spec/validate-spec latency
+                                              {:unused (vec (repeat 513
+                                                                    {:value 1}))})))))
