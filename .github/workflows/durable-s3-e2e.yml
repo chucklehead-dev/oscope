@@ -87,6 +87,10 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
         run: test "$(jolt --version)" = "jolt v0.8.3"
+      - name: Install aspect compiler linker dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends uuid-dev
       - name: Provision pinned Chez for the aspect compiler
         run: make -C .qualification/jolt deps JOLT_SYSTEM_CHEZ=
       - name: Assert aspect compiler version
