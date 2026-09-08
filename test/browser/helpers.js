@@ -80,6 +80,30 @@ async function emitCheckout(request, baseURL) {
   return TRACE_ID;
 }
 
+async function emitGaugeBuckets(request, baseURL, {metricName, buckets}) {
+  const bucketMillis = 5 * 60 * 1000;
+  const currentBucketMillis = Math.floor(Date.now() / bucketMillis) * bucketMillis;
+  const resource = {attributes: [attribute("service.name", SERVICE)]};
+  const scope = {name: "oscope.browser.dynamic-chart", version: "1.0"};
+  const dataPoints = buckets.flatMap((values, bucketIndex) => {
+    // Keep every fixture bucket fully elapsed. Besides avoiding a point just
+    // beyond wall clock at a five-minute boundary, this makes both x values
+    // stable across the before/after emissions in the acceptance test.
+    const bucketStartMillis = currentBucketMillis -
+      ((buckets.length - bucketIndex) * bucketMillis);
+    return values.map((value, valueIndex) => ({
+      timeUnixNano: String(BigInt(bucketStartMillis + 1000 + valueIndex) * 1000000n),
+      asDouble: value,
+    }));
+  });
+
+  await postSignal(request, baseURL, "/v1/metrics", {
+    resourceMetrics: [{resource, scopeMetrics: [{scope, metrics: [
+      {name: metricName, unit: "{job}", gauge: {dataPoints}},
+    ]}]}],
+  });
+}
+
 async function openCheckoutTrace(page) {
   await page.goto("/oscope/telemetry");
   await page.getByLabel("Service").selectOption(SERVICE);
@@ -91,4 +115,10 @@ async function openCheckoutTrace(page) {
   return page.getByRole("dialog", {name: "Trace detail"});
 }
 
-module.exports = {emitCheckout, openCheckoutTrace, SERVICE, TRACE_ID};
+module.exports = {
+  emitCheckout,
+  emitGaugeBuckets,
+  openCheckoutTrace,
+  SERVICE,
+  TRACE_ID,
+};
