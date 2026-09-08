@@ -96,19 +96,20 @@ support:
 - `:percentile` with 50, 75, 90, 95, or 99.
 
 Span queries aggregate `:duration-ns`; log queries aggregate
-`:severity-number`; metric queries aggregate `:value`, `:count`, `:sum`,
-`:min`, or `:max`. Histogram `:value` is its point mean (`Sum / Count`), while
-the other histogram fields retain their recorded point summaries. Percentiles
-therefore describe the selected stored numeric field across matching rows; they
-do not reconstruct a percentile from merged histogram buckets.
-Likewise, aggregating `:value` from a cumulative OTel sum combines the stored
-points; it does not yet calculate a rate or delta from temporality and reset
-metadata.
+`:severity-number`; reusable metric expressions aggregate gauge `:value` only.
+They deliberately do not union sum and histogram rows: correct aggregation of
+those signals must retain temporality, reset, bucket, and optional-extrema
+provenance. The URL-owned metric-series source above remains available for its
+current kind-aware operations while that richer reusable contract is designed.
 
 All tables, columns, aggregate functions, percentile constants, and aliases in
 SQL come from closed server allowlists. Times, filter values, and limits are
 parameters. Query expressions cannot contain Clojure, JavaScript, SQL, regular
-expressions, or arbitrary functions.
+expressions, or arbitrary functions. Every expression also installs hard chDB
+ceilings of 100,000 source rows, 64 MiB read, 128 MiB query memory, five seconds,
+and one execution thread. Exceeding a ceiling fails the preview rather than
+silently returning an unbounded or partial computation. The result row limit is
+separate and does not stand in for those execution bounds.
 
 Fixed time buckets and calculations that combine two aggregate series remain a
 follow-up. The proposed calculation contract is a typed server-side AST over

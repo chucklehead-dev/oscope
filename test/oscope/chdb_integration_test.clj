@@ -107,17 +107,17 @@
     (let [rows
           (query-expression-chdb/execute!
            connection
-           {:signal :metrics :window :15m :group-by [:metric-kind] :filters []
+           {:signal :metrics :window :15m :group-by [:metric-name] :filters []
             :series [{:as :points :op :count}
                      {:as :total-value :op :sum :field :value}
                      {:as :p95-value :op :percentile :field :value
                       :percentile 95}]
             :limit 10}
            test-now)]
-      (is (= [{:metric-kind "gauge" :points 1 :total-value 2 :p95-value 2}
-              {:metric-kind "histogram" :points 1 :total-value 5 :p95-value 5}
-              {:metric-kind "sum" :points 1 :total-value 3 :p95-value 3}]
-             (sort-by :metric-kind rows))))
+      (is (= [{:metric-name "work.duration" :points 1
+               :total-value 2 :p95-value 2}]
+             rows)
+          "reusable metrics aggregate gauges without mixing sum/histogram provenance"))
     (let [prefix (apply str (repeat 160 "x"))]
       (doseq [suffix ["a" "b"]]
         (jdbc/execute!

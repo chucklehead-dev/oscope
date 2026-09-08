@@ -50,6 +50,11 @@
     (is (str/includes? sql "toString(StatusCode) = ?"))
     (is (str/includes? sql "GROUP BY toString(ServiceName)"))
     (is (not (str/includes? sql "GROUP BY dimension0")))
+    (is (str/includes? sql "max_rows_to_read = 100000"))
+    (is (str/includes? sql "max_bytes_to_read = 67108864"))
+    (is (str/includes? sql "max_execution_time = 5"))
+    (is (str/includes? sql "max_memory_usage = 134217728"))
+    (is (str/includes? sql "max_threads = 1"))
     (is (not (str/includes? sql "OK")))
     (is (not (str/includes? sql "requests")))
     (is (= [160 (- now (* 15 60 1000000000)) now "OK" 20] params))
@@ -58,6 +63,24 @@
             [:series3 :minimum-ns] [:series4 :maximum-ns]
             [:series5 :p95-ns]] columns))
     (is (= 20 limit))))
+
+(deftest reusable-metric-expressions-retain-gauge-provenance
+  (let [expression {:signal :metrics :window :15m
+                    :group-by [:metric-name] :filters []
+                    :series [{:as :p95 :op :percentile
+                              :field :value :percentile 95}]
+                    :limit 10}
+        sql (first (:sqlvec (expression/compile-query expression now)))]
+    (is (str/includes? sql "FROM otel_metrics_gauge"))
+    (is (not (str/includes? sql "UNION ALL")))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"numeric field is unsupported"
+                          (expression/validate-expression
+                           (assoc-in expression [:series 0 :field] :sum))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"group-by field is unsupported"
+                          (expression/validate-expression
+                           (assoc expression :group-by [:metric-kind]))))))
 
 (deftest executor-renames-generated-columns-and-suppresses-instrumentation
   (let [seen (atom nil)]

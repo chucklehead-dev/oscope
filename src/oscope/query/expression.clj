@@ -9,23 +9,10 @@
 (def max-filters 4)
 (def max-series 8)
 (def max-group-text-length 160)
-
-(def ^:private metric-source
-  "(SELECT TimeUnix, ServiceName, MetricName, MetricUnit, ScopeName,
-           ResourceAttributes, Attributes, 'gauge' AS MetricKind,
-           Value, toFloat64(1) AS Count, Value AS Sum, Value AS Min, Value AS Max
-      FROM otel_metrics_gauge
-    UNION ALL
-    SELECT TimeUnix, ServiceName, MetricName, MetricUnit, ScopeName,
-           ResourceAttributes, Attributes, 'sum' AS MetricKind,
-           Value, toFloat64(1) AS Count, Value AS Sum, Value AS Min, Value AS Max
-      FROM otel_metrics_sum
-    UNION ALL
-    SELECT TimeUnix, ServiceName, MetricName, MetricUnit, ScopeName,
-           ResourceAttributes, Attributes, 'histogram' AS MetricKind,
-           if(Count = 0, 0, Sum / Count) AS Value, toFloat64(Count) AS Count,
-           Sum, Min, Max
-      FROM otel_metrics_histogram) AS plotje_metrics")
+(def max-source-rows 100000)
+(def max-source-bytes 67108864)
+(def max-query-memory-bytes 134217728)
+(def max-query-seconds 5)
 
 (def ^:private signals
   {:spans
@@ -46,16 +33,19 @@
                  :event-name "EventName" :scope-name "ScopeName"
                  :deployment-environment
                  "ResourceAttributes['deployment.environment.name']"}
-    :numbers {:severity-number "SeverityNumber"}}
+   :numbers {:severity-number "SeverityNumber"}}
    :metrics
-   {:source metric-source
+   ;; Reusable expressions intentionally start with gauge samples. Sum and
+   ;; histogram rows require temporality/reset and optional-extrema semantics;
+   ;; the existing kind-aware metric-series path owns those until the reusable
+   ;; grammar can retain that provenance.
+   {:source "otel_metrics_gauge"
     :time "toInt64(toUnixTimestamp(TimeUnix)) * 1000000000"
     :dimensions {:service-name "ServiceName" :metric-name "MetricName"
-                 :metric-unit "MetricUnit" :metric-kind "MetricKind"
-                 :scope-name "ScopeName"
+                 :metric-unit "MetricUnit" :scope-name "ScopeName"
                  :deployment-environment
                  "ResourceAttributes['deployment.environment.name']"}
-    :numbers {:value "Value" :count "Count" :sum "Sum" :min "Min" :max "Max"}}})
+    :numbers {:value "Value"}}})
 
 (def ^:private expression-keys
   #{:signal :window :group-by :filters :series :limit})
@@ -220,7 +210,13 @@
                  (when (seq groups) (str "\nGROUP BY " (str/join ", " groups)))
                  "\nORDER BY " order-alias " DESC"
                  (when (seq groups) (str ", " (str/join ", " groups) " ASC"))
-                 "\nLIMIT ?")
+                 "\nLIMIT ?"
+                 "\nSETTINGS max_rows_to_read = " max-source-rows
+                 ", max_bytes_to_read = " max-source-bytes
+                 ", max_execution_time = " max-query-seconds
+                 ", timeout_overflow_mode = 'throw'"
+                 ", max_memory_usage = " max-query-memory-bytes
+                 ", max_threads = 1")
         params (vec (concat (repeat (count group-by) max-group-text-length)
                             [start now-unix-nano]
                             (map :value filters) [limit]))]
