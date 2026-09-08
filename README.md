@@ -560,6 +560,16 @@ env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
   test/durable_s3_minio.sh
 ```
 
+The same service path can be compiled with the Durable aspect pack and checked
+against its Hegel transition model. This also proves the explicit libcurl
+transport entry point remains reachable in a standalone Jolt executable:
+
+```sh
+env JOLT_ASPECT_JOLT=/absolute/path/to/aspect-capable/jolt \
+    JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+    test/durable_s3_aspect_smoke.sh
+```
+
 The same integration test also has an opt-in compiled aspect lane. It binds a
 semantic journal around the real oscope lifecycle, weaves only the six Durable
 control entry seams, and validates the completed privacy-shaped command history

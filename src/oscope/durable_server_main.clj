@@ -6,6 +6,7 @@
             [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.chdb.durable.s3 :as durable-s3]
+            [jdbc.chdb.durable.s3-curl :as s3-curl]
             [oscope.server :as server]
             [oscope.server-main :as server-main]))
 
@@ -138,9 +139,9 @@
   `backend-fn` and `instance-fn` keep parsing deterministic in tests."
   ([environment]
    (durable-options environment local-posix/local-backend
-                    durable-s3/s3-backend #(str (random-uuid))))
+                    s3-curl/s3-backend #(str (random-uuid))))
   ([environment backend-fn instance-fn]
-   (durable-options environment backend-fn durable-s3/s3-backend instance-fn))
+   (durable-options environment backend-fn s3-curl/s3-backend instance-fn))
   ([environment local-backend-fn s3-backend-fn instance-fn]
    (let [backend-kind (or (not-empty
                            (some-> (get environment "OSCOPE_DURABLE_BACKEND")
