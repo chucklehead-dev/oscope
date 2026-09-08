@@ -84,14 +84,17 @@
                      {:as :high :op :max :field :duration-ns}
                      {:as :p50 :op :percentile :field :duration-ns :percentile 50}
                      {:as :p99 :op :percentile :field :duration-ns :percentile 99}]
+            :calculations [{:as :range :op :subtract :args [:high :low]}
+                           {:as :mean-from-total :op :divide :args [:total :n]}]
             :limit 10}
            test-now)
           api (first (filter #(= "api" (:service-name %)) rows))
           worker (first (filter #(= "worker" (:service-name %)) rows))]
-      (is (= {:n 2 :total 40 :mean 20 :low 10 :high 30 :p50 30 :p99 30}
+      (is (= {:n 2 :total 40 :mean 20 :low 10 :high 30 :p50 30 :p99 30
+              :range 20.0 :mean-from-total 20.0}
              (dissoc api :service-name)))
       (is (= {:n 1 :total 100 :mean 100 :low 100 :high 100
-              :p50 100 :p99 100}
+              :p50 100 :p99 100 :range 0.0 :mean-from-total 100.0}
              (dissoc worker :service-name))))
     (doseq [[table columns values]
             [["otel_metrics_gauge" ", Value" ", 2.0"]

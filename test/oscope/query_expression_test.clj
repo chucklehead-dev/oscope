@@ -18,6 +18,14 @@
             {:as :p95-ns :op :percentile :field :duration-ns :percentile 95}]
    :limit 20})
 
+(def calculated-aggregates
+  (assoc all-aggregates
+         :calculations
+         [{:as :mean-from-total :op :divide :args [:total-ns :requests]}
+          {:as :extrema-total :op :add :args [:minimum-ns :maximum-ns]}
+          {:as :extrema-range :op :subtract :args [:maximum-ns :minimum-ns]}
+          {:as :average-percent :op :multiply :args [:average-ns 100]}]))
+
 (deftest expression-is-a-closed-typed-aggregate-contract
   (is (= [:service-name :requests :total-ns :average-ns :minimum-ns
           :maximum-ns :p95-ns]
@@ -40,9 +48,73 @@
                           (expression/validate-expression
                            (assoc-in all-aggregates [:filters 0 :op] :regex))))))
 
+(deftest calculations-are-a-closed-typed-series-contract
+  (is (= [:service-name :requests :total-ns :average-ns :minimum-ns
+          :maximum-ns :p95-ns :mean-from-total :extrema-total
+          :extrema-range :average-percent]
+         (expression/output-fields calculated-aggregates)))
+  (is (= (:calculations calculated-aggregates)
+         (:calculations (expression/validate-expression calculated-aggregates))))
+  (doseq [[query message]
+          [[(assoc calculated-aggregates :calculations
+                   [{:as :bad :op :power :args [:requests 2]}])
+            #"must be :add, :subtract, :multiply, or :divide"]
+           [(assoc calculated-aggregates :calculations
+                   [{:as :bad :op :divide :args [:requests]}])
+            #"exactly two operands"]
+           [(assoc calculated-aggregates :calculations
+                   [{:as :bad :op :divide :args [:unknown :requests]}])
+            #"aggregate series aliases or finite numbers"]
+           [(assoc calculated-aggregates :calculations
+                   [{:as :first :op :divide :args [:total-ns :requests]}
+                    {:as :second :op :multiply :args [:first 100]}])
+            #"aggregate series aliases or finite numbers"]
+           [(assoc calculated-aggregates :calculations
+                   [{:as :requests :op :divide :args [:total-ns :requests]}])
+            #"must not replace group-by fields or aggregate series"]
+           [(assoc calculated-aggregates :calculations
+                   [{:as :same :op :add :args [:requests 1]}
+                    {:as :same :op :subtract :args [:requests 1]}])
+            #"aliases must be unique"]
+           [(assoc calculated-aggregates :calculations
+                   [{:as :bad :op :multiply :args [:requests ##Inf]}])
+            #"aggregate series aliases or finite numbers"]]]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+                          (expression/validate-expression query)))))
+
+(deftest calculations-have-explicit-numeric-null-and-zero-semantics
+  (is (= {:requests 2 :total-ns 40 :average-ns 20 :minimum-ns 10
+          :maximum-ns 30 :mean-from-total 20.0 :extrema-total 40.0
+          :extrema-range 20.0 :average-percent 2000.0}
+         (expression/apply-calculations
+          {:requests 2 :total-ns 40 :average-ns 20
+           :minimum-ns 10 :maximum-ns 30}
+          (:calculations calculated-aggregates))))
+  (testing "nil propagates, zero division and non-finite results become nil"
+    (is (= {:a nil :b 2 :ratio nil}
+           (expression/apply-calculations
+            {:a nil :b 2} [{:as :ratio :op :divide :args [:a :b]}])))
+    (is (= {:a 2 :b 0 :ratio nil}
+           (expression/apply-calculations
+            {:a 2 :b 0} [{:as :ratio :op :divide :args [:a :b]}])))
+    (is (nil? (:ratio
+               (expression/apply-calculations
+                {:a 2 :b -0.0} [{:as :ratio :op :divide :args [:a :b]}]))))
+    (is (nil? (:product
+               (expression/apply-calculations
+                {:a Double/MAX_VALUE :b 2}
+                [{:as :product :op :multiply :args [:a :b]}])))))
+  (testing "missing and non-numeric aggregate results are contract failures"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"aggregate result is missing"
+                          (expression/apply-calculations
+                           {:a 1} [{:as :result :op :add :args [:a :b]}])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"finite number or nil"
+                          (expression/apply-calculations
+                           {:a "1"} [{:as :result :op :add :args [:a 1]}])))))
+
 (deftest compiler-binds-values-and-uses-only-allowlisted-identifiers
-  (let [{:keys [sqlvec columns limit]}
-        (expression/compile-query all-aggregates now)
+  (let [{:keys [sqlvec columns calculations limit]}
+        (expression/compile-query calculated-aggregates now)
         [sql & params] sqlvec]
     (is (str/includes? sql "FROM otel_traces"))
     (is (str/includes? sql "sum(Duration) AS series1"))
@@ -57,11 +129,13 @@
     (is (str/includes? sql "max_threads = 1"))
     (is (not (str/includes? sql "OK")))
     (is (not (str/includes? sql "requests")))
+    (is (not (str/includes? sql "mean-from-total")))
     (is (= [160 (- now (* 15 60 1000000000)) now "OK" 20] params))
     (is (= [[:dimension0 :service-name] [:series0 :requests]
             [:series1 :total-ns] [:series2 :average-ns]
             [:series3 :minimum-ns] [:series4 :maximum-ns]
             [:series5 :p95-ns]] columns))
+    (is (= (:calculations calculated-aggregates) calculations))
     (is (= 20 limit))))
 
 (deftest reusable-metric-expressions-retain-gauge-provenance
@@ -91,8 +165,10 @@
                     [{:dimension0 "api" :series0 2 :series1 40.0
                       :series2 20.0 :series3 10 :series4 30 :series5 30}])]
       (is (= [{:service-name "api" :requests 2 :total-ns 40.0
-               :average-ns 20.0 :minimum-ns 10 :maximum-ns 30 :p95-ns 30}]
-             (expression-chdb/execute! ::connection all-aggregates now)))
+               :average-ns 20.0 :minimum-ns 10 :maximum-ns 30 :p95-ns 30
+               :mean-from-total 20.0 :extrema-total 40.0
+               :extrema-range 20.0 :average-percent 2000.0}]
+             (expression-chdb/execute! ::connection calculated-aggregates now)))
       (is (= ::connection (first @seen)))
       (is (= {:max-rows 20} (nth @seen 2)))
       (is (true? (nth @seen 3))))))

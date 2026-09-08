@@ -52,6 +52,7 @@ The current query produces one row per selected field value:
 | --- | --- |
 | Group field | The selected dimension, such as `:service-name` or `:metric-name`. |
 | Series alias | The result of its aggregate, such as `:count` or `:p95-ns`. |
+| Calculation alias | Arithmetic derived from two named aggregate series or constants. |
 
 A metric recipe adds an exact metric name and physical kind, an optional fixed
 time bucket, zero or one allowlisted chart dimension, and one to four named
@@ -113,9 +114,8 @@ and one execution thread. Exceeding a ceiling fails the preview rather than
 silently returning an unbounded or partial computation. The result row limit is
 separate and does not stand in for those execution bounds.
 
-Fixed time buckets and calculations that combine two aggregate series remain a
-follow-up. The proposed calculation contract is a typed server-side AST over
-named series, for example:
+Calculations combine two aggregate results with a small typed server-side AST.
+For example, if `:errors` and `:requests` are aggregate series:
 
 ```clojure
 :calculations [{:as :error-rate
@@ -123,7 +123,23 @@ named series, for example:
                 :args [:errors :requests]}]
 ```
 
-Operands would be previously named series or bounded numeric constants, with a
-small arithmetic allowlist and explicit division-by-zero behavior. It will not
-be a client-side evaluator. Oscope rejects `:calculations` and time-bucket keys
-until those query semantics and numeric edge cases are implemented.
+An expression accepts at most six calculations. `:op` is `:add`, `:subtract`,
+`:multiply`, or `:divide`; `:args` contains exactly two aggregate-series aliases
+or finite numeric constants. A calculation alias must be unique and cannot
+replace a group or aggregate alias. Calculations cannot refer to other
+calculations in this first slice, which makes ordering and cycles impossible.
+
+Calculation results are doubles. A null aggregate operand propagates to a null
+result, division by positive or negative zero returns null, and overflow to a
+non-finite result returns null. Missing aggregate columns and non-numeric
+non-null aggregate values are server contract errors. Oscope computes these
+values after the bounded aggregate query in its trusted server adapter; it does
+not put arithmetic in editable JavaScript, accept arbitrary functions, or
+insert resolved values into the Plotje text.
+
+The division primitive supports error-rate-style charts once both numerator
+and denominator aggregate series exist. Per-series filters are not in the
+current grammar, so independently filtering an `:errors` numerator and a
+`:requests` denominator within one expression remains follow-up work. Fixed
+time buckets, calculation chaining, OTel cumulative-counter rate/reset logic,
+and histogram reconstruction also remain follow-ups.

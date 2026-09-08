@@ -211,22 +211,28 @@
                :series [{:as :average-ns :op :avg :field :duration-ns}
                         {:as :p95-ns :op :percentile :field :duration-ns
                          :percentile 95}]
+               :calculations [{:as :tail-ratio :op :divide
+                               :args [:p95-ns :average-ns]}]
                :limit 10}
         text (pr-str {:title "Error latency"
                       :data {:source :telemetry-query :query query
-                             :select [:service-name :average-ns :p95-ns]}
-                      :layers [{:mark :bar :x :service-name :y :p95-ns}]})
+                             :select [:service-name :average-ns :p95-ns
+                                      :tail-ratio]}
+                      :layers [{:mark :bar :x :service-name :y :tail-ratio}]})
         handler (editor/handler
                  {:screen sample/default-screen
                   :plotje-query-command
                   (fn [_ expression]
                     (reset! seen expression)
-                    [{:service-name "checkout" :average-ns 25.0 :p95-ns 47.0}])})
+                    [{:service-name "checkout" :average-ns 25.0 :p95-ns 47.0
+                      :tail-ratio 1.88}])})
         page (handler {:request-method :post :uri "/oscope/edit/plotje"
                        :body (form text)})]
     (is (= query @seen))
     (is (str/includes? (:body page) ":as :average-ns"))
     (is (str/includes? (:body page) ":percentile 95"))
+    (is (str/includes? (:body page) ":op :divide"))
+    (is (str/includes? (:body page) ":tail-ratio"))
     (is (str/includes? (:body page) "checkout"))
     (is (str/includes? (:body page) "Error latency"))))
 

@@ -79,6 +79,9 @@ count/sum/average/min/max/percentile series instead of copying returned
 telemetry rows into the spec, so it can be reused as values change.
 See [Reusable Plotje charts](docs/PLOTJE.md) for the current contract and the
 bounded aggregate/query grammar.
+The reusable grammar also supports bounded server-side `:add`, `:subtract`,
+`:multiply`, and `:divide` calculations over named aggregate series, with
+explicit null and division-by-zero behavior.
 
 Override the port or database without shell-specific `export` syntax:
 

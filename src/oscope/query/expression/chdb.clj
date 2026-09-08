@@ -10,10 +10,12 @@
     (throw (ex-info "telemetry query requires a connection"
                     {:oscope.query-expression/error true
                      :type ::invalid-connection})))
-  (let [{:keys [sqlvec columns limit]}
+  (let [{:keys [sqlvec columns calculations limit]}
         (expression/compile-query query now-unix-nano)]
     (context/with-instrumentation-suppressed
       (mapv (fn [row]
-              (into {} (map (fn [[internal external]]
-                              [external (get row internal)]) columns)))
+              (expression/apply-calculations
+               (into {} (map (fn [[internal external]]
+                               [external (get row internal)]) columns))
+               calculations))
             (jdbc/fetch connection sqlvec {:max-rows limit})))))
