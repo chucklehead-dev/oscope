@@ -90,13 +90,36 @@ for examples, fixed thresholds, and hand-authored charts.
 
 ## Query and aggregate grammar
 
-The server accepts up to two group fields, four equality filters, eight series,
-and 100 result rows over a 15 minute, 1 hour, 6 hour, or 24 hour window. Series
-support:
+The server accepts up to two group fields, four global equality filters, eight
+series, and 100 result rows over a 15 minute, 1 hour, 6 hour, or 24 hour window.
+Each series accepts up to two additional equality filters, with at most eight
+series filters across the whole expression. Series support:
 
 - `:count`, which has no numeric field;
 - `:sum`, `:avg`, `:min`, and `:max` over an allowlisted numeric field; and
 - `:percentile` with 50, 75, 90, 95, or 99.
+
+Global filters restrict the source rows seen by every aggregate. A series filter
+is an additional `AND` predicate applied only to that aggregate. This makes a
+filtered numerator and unfiltered denominator explicit:
+
+```clojure
+:filters [{:field :span-name :op :eq :value "request"}]
+:series [{:as :requests :op :count}
+         {:as :errors :op :count
+          :filters [{:field :status-code :op :eq :value "ERROR"}]}]
+:calculations [{:as :error-rate
+                :op :divide
+                :args [:errors :requests]}]
+```
+
+Here both counts include only `request` spans, while only `:errors` also
+requires error status. Filter fields come from the signal's dimension
+allowlist, the only operator is `:eq`, and values remain bounded SQL parameters.
+Series filters work with every supported aggregate, including percentiles.
+When no rows match a series filter, filtered `:count` returns zero and filtered
+numeric aggregates return null. Calculations then use their documented null
+propagation and division-by-zero rules.
 
 Span queries aggregate `:duration-ns`; log queries aggregate
 `:severity-number`; reusable metric expressions aggregate gauge `:value` only.
@@ -137,9 +160,8 @@ values after the bounded aggregate query in its trusted server adapter; it does
 not put arithmetic in editable JavaScript, accept arbitrary functions, or
 insert resolved values into the Plotje text.
 
-The division primitive supports error-rate-style charts once both numerator
-and denominator aggregate series exist. Per-series filters are not in the
-current grammar, so independently filtering an `:errors` numerator and a
-`:requests` denominator within one expression remains follow-up work. Fixed
-time buckets, calculation chaining, OTel cumulative-counter rate/reset logic,
-and histogram reconstruction also remain follow-ups.
+Together with per-series filters, division supports error-rate-style charts
+over stored span or log events. This is a ratio over the selected bounded
+window, not an OTel cumulative-counter rate. Fixed time buckets, calculation
+chaining, cumulative-counter rate/reset logic, and histogram reconstruction
+remain follow-ups.

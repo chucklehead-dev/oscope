@@ -8,6 +8,8 @@
 (def calculation-ops #{:add :subtract :multiply :divide})
 (def max-groups 2)
 (def max-filters 4)
+(def max-series-filters 2)
+(def max-total-series-filters 8)
 (def max-series 8)
 (def max-calculations 6)
 (def max-group-text-length 160)
@@ -52,7 +54,7 @@
 (def ^:private expression-keys
   #{:signal :window :group-by :filters :series :calculations :limit})
 (def ^:private filter-keys #{:field :op :value})
-(def ^:private series-keys #{:as :op :field :percentile})
+(def ^:private series-keys #{:as :op :field :percentile :filters})
 (def ^:private calculation-keys #{:as :op :args})
 
 (defn- fail! [type message data]
@@ -79,6 +81,32 @@
   (and (number? value)
        (let [number (double value)]
          (and (= number number) (not= number ##Inf) (not= number ##-Inf)))))
+
+(defn- validate-filter [config filter where]
+  (when-not (map? filter)
+    (fail! ::invalid-filter (str "every " where " filter must be a map")
+           {:filter filter :where where}))
+  (unknown! (str "telemetry " where " filter") filter-keys filter)
+  (let [{:keys [field op value]} filter]
+    (when-not (contains? (:dimensions config) field)
+      (fail! ::unsupported-filter-field "filter field is unsupported"
+             {:field field :where where
+              :supported-fields (vec (keys (:dimensions config)))}))
+    (when-not (= :eq op)
+      (fail! ::unsupported-filter-op "filter op must be :eq"
+             {:op op :where where}))
+    (when-not (and (string? value) (<= 1 (count value) query/max-value-length))
+      (fail! ::invalid-filter-value
+             "filter value must be a non-empty bounded string"
+             {:value value :where where}))
+    {:field field :op op :value value}))
+
+(defn- validate-series-filters [config filters]
+  (when-not (and (vector? filters) (<= (count filters) max-series-filters))
+    (fail! ::invalid-series-filters
+           "series filters must contain up to 2 entries"
+           {:filters filters :maximum max-series-filters}))
+  (mapv #(validate-filter config % "series") filters))
 
 (defn- validate-calculations [value series-aliases occupied-aliases]
   (let [calculations (get value :calculations [])]
@@ -145,23 +173,7 @@
       (fail! ::invalid-filters "filters must contain up to 4 entries"
              {:filters filters}))
     (let [filters
-          (mapv
-           (fn [filter]
-             (when-not (map? filter)
-               (fail! ::invalid-filter "every filter must be a map" {:filter filter}))
-             (unknown! "telemetry filter" filter-keys filter)
-             (let [{:keys [field op value]} filter]
-               (when-not (contains? (:dimensions config) field)
-                 (fail! ::unsupported-filter-field "filter field is unsupported"
-                        {:field field :supported-fields
-                         (vec (keys (:dimensions config)))}))
-               (when-not (= :eq op)
-                 (fail! ::unsupported-filter-op "filter op must be :eq" {:op op}))
-               (when-not (and (string? value) (<= 1 (count value) query/max-value-length))
-                 (fail! ::invalid-filter-value
-                        "filter value must be a non-empty bounded string" {:value value}))
-               {:field field :op op :value value}))
-           filters)]
+          (mapv #(validate-filter config % "global") filters)]
       (when-not (and (vector? series) (<= 1 (count series) max-series))
         (fail! ::invalid-series "series must contain from 1 to 8 entries"
                {:series series}))
@@ -171,7 +183,8 @@
                (when-not (map? item)
                  (fail! ::invalid-series "every series must be a map" {:series item}))
                (unknown! "telemetry series" series-keys item)
-               (let [{alias :as op :op field :field percentile :percentile} item]
+               (let [{alias :as op :op field :field percentile :percentile} item
+                     filters (validate-series-filters config (get item :filters []))]
                  (alias! alias)
                  (when-not (contains? aggregate-ops op)
                    (fail! ::unsupported-aggregate "series aggregate is unsupported"
@@ -199,9 +212,15 @@
                                 {:series item})))))
                  (cond-> {:as alias :op op}
                    field (assoc :field field)
-                   percentile (assoc :percentile percentile))))
+                   percentile (assoc :percentile percentile)
+                   (seq filters) (assoc :filters filters))))
              series)
             aliases (mapv :as series)]
+        (when (> (reduce + (map #(count (:filters %)) series))
+                 max-total-series-filters)
+          (fail! ::too-many-series-filters
+                 "telemetry query must contain at most 8 series filters in total"
+                 {:maximum max-total-series-filters}))
         (when-not (= (count aliases) (count (distinct aliases)))
           (fail! ::duplicate-alias "series aliases must be unique" {:aliases aliases}))
         (when (some (set group-by) aliases)
@@ -258,15 +277,23 @@
             (assoc result (:as calculation) (calculate calculation row)))
           row calculations))
 
-(defn- aggregate-sql [config {:keys [op field percentile]}]
-  (let [number (get-in config [:numbers field])]
+(defn- filter-sql [config filter]
+  (str "toString(" (get-in config [:dimensions (:field filter)]) ") = ?"))
+
+(defn- aggregate-sql [config {:keys [op field percentile filters]}]
+  (let [number (get-in config [:numbers field])
+        condition (when (seq filters)
+                    (str/join " AND " (map #(filter-sql config %) filters)))
+        suffix (if condition "OrNullIf" "")
+        args (fn [value]
+               (if condition (str value ", " condition) value))]
     (case op
-      :count "count()"
-      :sum (str "sum(" number ")")
-      :avg (str "avg(" number ")")
-      :min (str "min(" number ")")
-      :max (str "max(" number ")")
-      :percentile (str "quantileExact(" (/ percentile 100.0) ")(" number ")"))))
+      :count (if condition (str "countIf(" condition ")") "count()")
+      :sum (str "sum" suffix "(" (args number) ")")
+      :avg (str "avg" suffix "(" (args number) ")")
+      :min (str "min" suffix "(" (args number) ")")
+      :max (str "max" suffix "(" (args number) ")")
+      :percentile (str "quantileExact" suffix "(" (/ percentile 100.0) ")(" (args number) ")"))))
 
 (defn compile-query [expression now-unix-nano]
   (when-not (and (integer? now-unix-nano) (<= 1 now-unix-nano 9223372036854775807))
@@ -287,10 +314,9 @@
                         [(str (aggregate-sql config item) " AS series" index)
                          (:as item)]) series)
         selections (concat (map first group-pairs) (map first series-pairs))
-        filter-sql (mapv #(str "toString(" (get-in config [:dimensions (:field %)])
-                              ") = ?") filters)
+        global-filter-sql (mapv #(filter-sql config %) filters)
         where (concat [(str (:time config) " >= ?")
-                       (str (:time config) " < ?")] filter-sql)
+                       (str (:time config) " < ?")] global-filter-sql)
         groups (mapv #(str "toString(" (get-in config [:dimensions %]) ")")
                      group-by)
         order-alias "series0"
@@ -307,6 +333,7 @@
                  ", max_memory_usage = " max-query-memory-bytes
                  ", max_threads = 1")
         params (vec (concat (repeat (count group-by) max-group-text-length)
+                            (mapcat #(map :value (:filters %)) series)
                             [start now-unix-nano]
                             (map :value filters) [limit]))]
     {:expression expression :sqlvec (into [sql] params)

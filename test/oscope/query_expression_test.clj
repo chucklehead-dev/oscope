@@ -26,6 +26,25 @@
           {:as :extrema-range :op :subtract :args [:maximum-ns :minimum-ns]}
           {:as :average-percent :op :multiply :args [:average-ns 100]}]))
 
+(def filtered-aggregates
+  {:signal :spans :window :15m :group-by [:service-name]
+   :filters [{:field :span-name :op :eq :value "aggregate.work"}]
+   :series [{:as :requests :op :count}
+            {:as :errors :op :count
+             :filters [{:field :status-code :op :eq :value "ERROR"}]}
+            {:as :error-total :op :sum :field :duration-ns
+             :filters [{:field :status-code :op :eq :value "ERROR"}]}
+            {:as :error-avg :op :avg :field :duration-ns
+             :filters [{:field :status-code :op :eq :value "ERROR"}]}
+            {:as :error-min :op :min :field :duration-ns
+             :filters [{:field :status-code :op :eq :value "ERROR"}]}
+            {:as :error-max :op :max :field :duration-ns
+             :filters [{:field :status-code :op :eq :value "ERROR"}]}
+            {:as :error-p95 :op :percentile :field :duration-ns :percentile 95
+             :filters [{:field :status-code :op :eq :value "ERROR"}]}]
+   :calculations [{:as :error-rate :op :divide :args [:errors :requests]}]
+   :limit 20})
+
 (deftest expression-is-a-closed-typed-aggregate-contract
   (is (= [:service-name :requests :total-ns :average-ns :minimum-ns
           :maximum-ns :p95-ns]
@@ -112,6 +131,40 @@
                           (expression/apply-calculations
                            {:a "1"} [{:as :result :op :add :args [:a 1]}])))))
 
+(deftest per-series-filters-are-closed-and-bounded
+  (is (= (:series filtered-aggregates)
+         (:series (expression/validate-expression filtered-aggregates))))
+  (testing "series predicates use the same signal-specific equality allowlist"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"filter op must be :eq"
+                          (expression/validate-expression
+                           (assoc-in filtered-aggregates
+                                     [:series 1 :filters 0 :op] :regex))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"filter field is unsupported"
+                          (expression/validate-expression
+                           (assoc-in filtered-aggregates
+                                     [:series 1 :filters 0 :field] :sql))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"non-empty bounded string"
+                          (expression/validate-expression
+                           (assoc-in filtered-aggregates
+                                     [:series 1 :filters 0 :value] "")))))
+  (testing "both per-series and expression-wide predicate counts are capped"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"up to 2 entries"
+                          (expression/validate-expression
+                           (assoc-in filtered-aggregates [:series 1 :filters]
+                                     (vec (repeat 3 {:field :status-code
+                                                     :op :eq :value "ERROR"}))))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at most 8 series filters"
+                          (expression/validate-expression
+                           (assoc filtered-aggregates :series
+                                  (mapv (fn [index]
+                                          {:as (keyword (str "count-" index))
+                                           :op :count
+                                           :filters [{:field :status-code :op :eq
+                                                      :value "ERROR"}
+                                                     {:field :span-kind :op :eq
+                                                      :value "SERVER"}]})
+                                        (range 5))))))))
+
 (deftest compiler-binds-values-and-uses-only-allowlisted-identifiers
   (let [{:keys [sqlvec columns calculations limit]}
         (expression/compile-query calculated-aggregates now)
@@ -137,6 +190,23 @@
             [:series5 :p95-ns]] columns))
     (is (= (:calculations calculated-aggregates) calculations))
     (is (= 20 limit))))
+
+(deftest compiler-uses-parameterized-aggregate-filter-combinators
+  (let [[sql & params] (:sqlvec (expression/compile-query filtered-aggregates now))]
+    (is (str/includes? sql "count() AS series0"))
+    (is (str/includes? sql "countIf(toString(StatusCode) = ?) AS series1"))
+    (is (str/includes? sql "sumOrNullIf(Duration, toString(StatusCode) = ?) AS series2"))
+    (is (str/includes? sql "avgOrNullIf(Duration, toString(StatusCode) = ?) AS series3"))
+    (is (str/includes? sql "minOrNullIf(Duration, toString(StatusCode) = ?) AS series4"))
+    (is (str/includes? sql "maxOrNullIf(Duration, toString(StatusCode) = ?) AS series5"))
+    (is (str/includes? sql
+                       "quantileExactOrNullIf(0.95)(Duration, toString(StatusCode) = ?) AS series6"))
+    (is (str/includes? sql "toString(SpanName) = ?"))
+    (is (not (str/includes? sql "ERROR")))
+    (is (not (str/includes? sql "aggregate.work")))
+    (is (= (vec (concat [160] (repeat 6 "ERROR")
+                        [(- now (* 15 60 1000000000)) now "aggregate.work" 20]))
+           params))))
 
 (deftest reusable-metric-expressions-retain-gauge-provenance
   (let [expression {:signal :metrics :window :15m
