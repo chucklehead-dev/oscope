@@ -86,8 +86,11 @@ async function emitGaugeBuckets(request, baseURL, {metricName, buckets}) {
   const resource = {attributes: [attribute("service.name", SERVICE)]};
   const scope = {name: "oscope.browser.dynamic-chart", version: "1.0"};
   const dataPoints = buckets.flatMap((values, bucketIndex) => {
+    // Keep every fixture bucket fully elapsed. Besides avoiding a point just
+    // beyond wall clock at a five-minute boundary, this makes both x values
+    // stable across the before/after emissions in the acceptance test.
     const bucketStartMillis = currentBucketMillis -
-      ((buckets.length - 1 - bucketIndex) * bucketMillis);
+      ((buckets.length - bucketIndex) * bucketMillis);
     return values.map((value, valueIndex) => ({
       timeUnixNano: String(BigInt(bucketStartMillis + 1000 + valueIndex) * 1000000n),
       asDouble: value,

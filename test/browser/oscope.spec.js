@@ -79,27 +79,28 @@ test("rebinds one semantic Plotje recipe when its telemetry changes", async ({pa
                                 :args [:p95 :average]}]
                 :limit 20}
         :select [:bucket-start-unix-nano :service-name :average :p95 :tail-gap]}
- :layers [{:mark :line :x :bucket-start-unix-nano
+  :layers [{:mark :line :x :bucket-start-unix-nano
            :y :average :color :service-name}
           {:mark :line :x :bucket-start-unix-nano
            :y :p95 :color :service-name}
           {:mark :line :x :bucket-start-unix-nano
            :y :tail-gap :color :service-name}]}`;
   await editor.fill(recipe);
+  await expect(editor).toHaveValue(recipe);
 
   await expect(page.locator("#plotje-preview")).toContainText("Queue depth over time");
   const previewLines = page.locator("#plotje-preview svg polyline");
   await expect(previewLines).toHaveCount(3);
   const firstPreview = await previewLines.evaluateAll((lines) =>
     lines.map((line) => line.getAttribute("points")));
-  const semanticText = await editor.inputValue();
+  expect(firstPreview.every((points) => points.trim().split(/\s+/).length >= 2)).toBe(true);
 
   await expect(editor).toHaveValue(/:bucket :5m/);
   await expect(editor).toHaveValue(/:group-by \[:service-name\]/);
   await expect(editor).toHaveValue(/:as :p95 :op :percentile/);
   await expect(editor).toHaveValue(/:as :tail-gap :op :subtract/);
   await expect(editor).toHaveValue(/:select \[:bucket-start-unix-nano :service-name :average :p95 :tail-gap\]/);
-  await expect(editor).not.toHaveValue(/\{:bucket-start-unix-nano|:average 3(?:\.0)?|:p95 4(?:\.0)?|:tail-gap 1(?:\.0)?/);
+  await expect(editor).not.toHaveValue(/:data\s+\[/);
 
   await emitGaugeBuckets(request, baseURL, {
     metricName,
@@ -108,8 +109,18 @@ test("rebinds one semantic Plotje recipe when its telemetry changes", async ({pa
   await editor.evaluate((input) =>
     input.dispatchEvent(new Event("input", {bubbles: true})));
 
+  await expect(editor).toHaveValue(recipe);
+  await expect(page.locator("#plotje-preview")).toContainText("Queue depth over time");
+  await expect(page.locator("#plotje-preview")).not.toContainText("Spec error");
+  await expect(previewLines).toHaveCount(3);
   await expect.poll(async () => previewLines.evaluateAll((lines) =>
     lines.map((line) => line.getAttribute("points")))).not.toEqual(firstPreview);
-  await expect(editor).toHaveValue(semanticText);
-  await expect(editor).not.toHaveValue(/\{:bucket-start-unix-nano|:average 56\.5|:p95 120(?:\.0)?|:tail-gap 63\.5/);
+  const reboundPreview = await previewLines.evaluateAll((lines) =>
+    lines.map((line) => line.getAttribute("points")));
+  expect(reboundPreview).toHaveLength(3);
+  expect(reboundPreview.every((points) =>
+    points.trim().split(/\s+/).length >= 2)).toBe(true);
+  expect(reboundPreview).not.toEqual(firstPreview);
+  await expect(editor).toHaveValue(recipe);
+  await expect(editor).not.toHaveValue(/:data\s+\[/);
 });
