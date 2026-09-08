@@ -62,7 +62,8 @@
                   (and (string? value) (<= (count value) max-text))
                   (and (keyword? value) (nil? (namespace value))
                        (<= (count (name value)) 64))
-                  (and (vector? value) (<= (count value) 64)
+                  (and (= :explicit-bounds key)
+                       (vector? value) (<= (count value) 64)
                        (every? finite? value)))
       (fail! (str "invalid bounded scalar in " (pr-str key)))))
   row)
@@ -113,9 +114,13 @@
                          (keys sources)))
     (fail! "data sources must be a bounded map with short keyword names"))
   (doseq [[source rows] sources]
-    (when-not (and (vector? rows) (<= 1 (count rows) max-rows))
+    (when-not (and (vector? rows)
+                   (<= (if (= :histogram-query source) 0 1)
+                       (count rows) max-rows))
       (fail! (str "data source " (pr-str source)
-                  " must contain from 1 to 512 rows")))
+                  (if (= :histogram-query source)
+                    " must contain from 0 to 512 rows"
+                    " must contain from 1 to 512 rows"))))
     (doseq [row rows] (row! row)))
   sources)
 (defn- source-rows! [sources {:keys [source select]}]
@@ -198,12 +203,21 @@
    (when-not (map? value) (fail! "the chart spec must be an EDN map"))
    (unknown! "chart spec" top-keys value)
    (let [sources (validate-data-sources sources)
-         rows (rows! (:data value) sources) layers (:layers value)]
-    (when-not (and (vector? rows) (<= 1 (count rows) max-rows))
-      (fail! "data must be a vector containing from 1 to 512 rows"))
+         data-reference (:data value)
+         histogram-query? (and (map? data-reference)
+                               (= :histogram-query (:source data-reference)))
+         rows (rows! data-reference sources) layers (:layers value)]
+    (when-not (and (vector? rows)
+                   (<= (if histogram-query? 0 1) (count rows) max-rows))
+      (fail! (if histogram-query?
+               "histogram query data must contain from 0 to 512 rows"
+               "data must be a vector containing from 1 to 512 rows")))
     (doseq [row rows] (row! row))
-    (when-not (and (vector? layers) (<= 1 (count layers) max-layers))
-      (fail! "layers must contain from 1 to 4 entries"))
+    (when-not (and (vector? layers)
+                   (<= (if histogram-query? 0 1) (count layers) max-layers))
+      (fail! (if histogram-query?
+               "histogram query layers must contain from 0 to 4 entries"
+               "layers must contain from 1 to 4 entries")))
     (cond-> {:data rows
              :layers (mapv #(layer! rows %) layers)
              :width (dim! :width (get value :width 760) 320 1200)

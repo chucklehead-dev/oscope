@@ -96,15 +96,21 @@
     document))
 
 (defn plotje-from-screen [screen]
-  (if-let [chart (:chart screen)]
+  (if (= :cumulative-histogram-series (get-in screen [:selection :mode]))
+    (let [chart (:chart screen)
+          rows (get-in screen [:table :rows])
+          selection (:selection screen)
+          fields (query/cumulative-histogram-series-output-fields selection)
+          template (assoc (or chart
+                              {:title (:title screen)
+                               :width 760 :height 420 :layers []})
+                          :data {:source histogram-query-source
+                                 :query selection :select fields})]
+      (prepare :plotje (pr-str template) {histogram-query-source rows}))
+    (if-let [chart (:chart screen)]
     (let [rows (:data chart)
           selection (:selection screen)]
-      (if (= :cumulative-histogram-series (:mode selection))
-        (let [fields (query/cumulative-histogram-series-output-fields selection)
-              template (assoc chart :data {:source histogram-query-source
-                                           :query selection :select fields})]
-          (prepare :plotje (pr-str template) {histogram-query-source rows}))
-        (if (= :counter-series (:mode selection))
+      (if (= :counter-series (:mode selection))
         (let [fields (query/counter-series-output-fields selection)
               template (assoc chart :data {:source counter-query-source
                                            :query selection :select fields})]
@@ -140,8 +146,8 @@
                                               (assoc :color group-field))
                                            layers))))]
           (prepare :plotje (pr-str template)
-                   {telemetry-query-source bound-rows}))))))
-    (prepare :plotje (pr-str empty-plotje-spec))))
+                   {telemetry-query-source bound-rows})))))
+      (prepare :plotje (pr-str empty-plotje-spec)))))
 
 (defn default-hiccup []
   (prepare :hiccup default-hiccup-text))

@@ -104,6 +104,12 @@ Implicit infinity-tail buckets have a null estimate and error instead of an
 invented scalar. Rows also retain explicit bounds, interval/reset counts,
 observed duration, kind, and temporality.
 
+When no interval rows exist, or the selected primary quantile has only null
+infinite-tail estimates, the editor retains the same `:histogram-query` recipe
+with zero chart layers. Its preview states that no finite estimate is available
+and leaves the bounded result table/recipe authoritative; it does not insert a
+zero, midpoint, placeholder observation, or returned telemetry into source.
+
 Gauge and sum point values provide `:count`, `:sum`, `:min`, `:max`, `:avg`,
 `:p50`, `:p95`, and `:p99`. Delta explicit histograms provide observation
 `:count`, `:sum`, and `:avg`. Cumulative explicit histograms use the separate
@@ -150,8 +156,9 @@ otherwise distinct SQL groups could be drawn as one line.
 
 Data references are deliberately small. A reference names one source and
 selects 1–48 distinct fields. The source is capped at 512 rows; projected values
-must be bounded Plotje scalars or a finite explicit-bound vector of at most 64
-values, and a missing source or field is a visible spec error. Unknown keys fail
+must be bounded Plotje scalars; only the `:explicit-bounds` column may contain a
+finite vector of at most 64 values. A missing source or field is a visible spec
+error. Unknown keys fail
 closed. Literal `:data` row vectors remain supported
 for examples, fixed thresholds, and hand-authored charts.
 
