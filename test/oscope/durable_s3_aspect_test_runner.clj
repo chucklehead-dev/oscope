@@ -21,7 +21,7 @@
                            :logs? false
                            :bridge-logging? false})
         private-values ["MINIOACCESS" "MINIOSECRET" "/oscope-durable"
-                        "/integration/" "telemetry" "head.json"
+                        "/integration/" "private-object-7f2c91" "head.json"
                         "wal/" "checkpoints/"]]
     (try
       (let [result

@@ -124,7 +124,7 @@
           :connect-timeout-ms 5000 :timeout-ms 30000})
         environment
         {"OSCOPE_DURABLE_BACKEND" "s3"
-         "OSCOPE_DURABLE_OBJECT_ID" "telemetry"
+         "OSCOPE_DURABLE_OBJECT_ID" "private-object-7f2c91"
          "OSCOPE_DURABLE_S3_ENDPOINT" endpoint
          "OSCOPE_DURABLE_S3_BUCKET" "oscope-durable"
          "OSCOPE_DURABLE_S3_PREFIX" "integration"
