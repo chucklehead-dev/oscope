@@ -13,5 +13,6 @@
  {:embed ["../../../jolt-chdb/resources"]
   :aspects
   [{:resource "META-INF/jolt/aspects/packs/chdb-durable-edc86af.edn"
-    :providers [jolt.aspect-packs.chdb-durable.provider/aspect-provider]}]
+    :providers [jolt.aspect-packs.chdb-durable.provider/aspect-provider
+                oscope.durable-observability/aspect-provider]}]
   :aspect-report "target/aspects.edn"}}
