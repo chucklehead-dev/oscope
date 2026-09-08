@@ -1,0 +1,7 @@
+{:paths [".."]
+ :deps
+ {io.github.chucklehead-dev/oscope {:local/root "../.."}
+  io.github.chucklehead-dev/jolt-chdb
+  {:local/root "../../.qualification/jolt-chdb"}}
+ :jolt/build
+ {:embed ["../../.qualification/jolt-chdb/resources"]}}

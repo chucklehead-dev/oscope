@@ -241,6 +241,17 @@ env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
     test/durable_crash_reopen.sh
 ```
 
+The hosted S3 variant starts the pinned MinIO image, uses the ordinary exact
+dependency pins, kills two distinct server processes after their HTTP 200/flush
+boundaries, and verifies exactly one copy of each trace through a fresh S3
+reader:
+
+```sh
+env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+    OSCOPE_DURABLE_CRASH_BUILD_ALIAS=test-durable-s3 \
+    test/durable_s3_crash_reopen.sh
+```
+
 Optional settings are `OSCOPE_DURABLE_OWNER`, `OSCOPE_DURABLE_INSTANCE`,
 `OSCOPE_DURABLE_DATABASE`, `OSCOPE_DURABLE_SCRATCH_PARENT`,
 `OSCOPE_DURABLE_LEASE_TTL_MS`, `OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS`, and
