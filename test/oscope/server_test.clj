@@ -21,7 +21,19 @@
     (is (str/includes? readme "**local path persistence**"))
     (is (str/includes? readme
                        "It is not object-backed Durable recovery."))
-    (is (= 2 (count (re-seq #"Proposed, not implemented" readme))))
+    (is (zero? (count (re-seq #"Proposed, not implemented" readme))))
+    (is (str/includes?
+         readme
+         "`OSCOPE_DURABLE_ROOT=/absolute/path jolt -M:durable-server-dev`"))
+    (is (str/includes?
+         readme
+         "Available with a qualified chDB Durable V1 native library."))
+    (is (str/includes?
+         readme
+         "Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend."))
+    (is (str/includes?
+         readme
+         "3ef8d97b62b467f1ad68f92b854498c124cb8811"))
     (is (str/includes?
          readme
          "docs/durable/protocol-v1.mdx"))
