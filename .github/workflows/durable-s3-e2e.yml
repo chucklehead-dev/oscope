@@ -1,0 +1,61 @@
+name: durable-s3-e2e
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/durable-s3-e2e.yml
+      - deps.edn
+      - src/oscope/durable_server_main.clj
+      - src/oscope/otlp.clj
+      - src/oscope/server.clj
+      - test/durable_s3_minio.sh
+      - test/oscope/durable_s3_integration_test.clj
+  pull_request:
+    paths:
+      - .github/workflows/durable-s3-e2e.yml
+      - deps.edn
+      - src/oscope/durable_server_main.clj
+      - src/oscope/otlp.clj
+      - src/oscope/server.clj
+      - test/durable_s3_minio.sh
+      - test/oscope/durable_s3_integration_test.clj
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x86-64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.3
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.3
+      MINIO_IMAGE: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout canonical chDB native qualification
+        uses: actions/checkout@v4
+        with:
+          repository: chucklehead-dev/jolt-chdb
+          ref: 3ef8d97b62b467f1ad68f92b854498c124cb8811
+          path: .qualification/jolt-chdb
+          persist-credentials: false
+      - name: Install Jolt v0.8.3
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/jolt-bin"
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.3/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.3
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Assert Jolt version
+        run: test "$(jolt --version)" = "jolt v0.8.3"
+      - name: Qualify pinned Durable native ABI and asset
+        working-directory: .qualification/jolt-chdb
+        run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb-durable"
+      - name: Recover oscope through pinned MinIO
+        env:
+          JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
+          OSCOPE_DURABLE_S3_TEST_ALIAS: test-durable-s3
+        run: test/durable_s3_minio.sh

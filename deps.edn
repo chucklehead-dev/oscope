@@ -1,6 +1,6 @@
 {:paths ["src"]
 
- :jolt/min-version "0.8.0"
+ :jolt/min-version "0.8.3"
 
  :deps {io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
@@ -10,7 +10,7 @@
          :git/sha "3ef8d97b62b467f1ad68f92b854498c124cb8811"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "a247f418a462357d0a114d5f51024d00bd38189f"}
+         :git/sha "ba86e190c906ee223be6c837fd6b135185620afc"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "9ae943fcaf7725b1b36e00bc216aef17405f295a"}
@@ -79,6 +79,10 @@
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:local/root "../jolt-otel-clickhouse"}}
    :extra-paths ["test"]
+   :main-opts ["-m" "oscope.durable-s3-test-runner"]}
+
+  :test-durable-s3
+  {:extra-paths ["test"]
    :main-opts ["-m" "oscope.durable-s3-test-runner"]}
 
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}

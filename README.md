@@ -560,6 +560,12 @@ env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
   test/durable_s3_minio.sh
 ```
 
+The `durable-s3-e2e` workflow runs the same script with the publishable
+`:test-durable-s3` alias. It qualifies the native library through jolt-chdb's
+pinned asset and upstream ABI oracle, then exercises oscope only through exact
+Git dependency pins. The script defaults to `:test-durable-s3-dev` locally so
+coordinated sibling changes remain testable before publication.
+
 The same service path can be compiled with the Durable aspect pack and checked
 against its Hegel transition model. This also proves the explicit libcurl
 transport entry point remains reachable in a standalone Jolt executable:
@@ -591,22 +597,22 @@ binary reads the same ABI descriptor used during compilation. The woven lane
 uses a release-mode build and the same real loopback transport as the unwoven
 integration.
 
-Self-contained receiver builds require Jolt v0.7.28 or newer. Jolt v0.7.27 can
-run `jolt -M:server` from source, but its app builder may incorrectly inherit
-`jolt.ffi` from the compiler image and produce a binary with an unbound
-`jolt.ffi/errno`. The standalone smoke builds and starts the real receiver long
-enough to reject that artifact class:
+oscope now requires Jolt v0.8.3 or newer, matching the pinned Durable control
+plane. Older app builders may incorrectly inherit `jolt.ffi` from the compiler
+image and produce a binary with an unbound `jolt.ffi/errno`. The standalone
+smoke builds and starts the real receiver long enough to reject that artifact
+class:
 
 ```sh
 env JOLT_CHDB_LIB=/path/to/libchdb.so \
-    JOLT_BIN=/path/to/jolt-v0.7.28-or-newer \
+    JOLT_BIN=/path/to/jolt-v0.8.3-or-newer \
     JOLT_TOOLCHAIN=/path/to/jolt-with-chez-10.4.1 \
     test/standalone_build_smoke.sh
 ```
 
 ## Exact dependency baselines
 
-- `chucklehead-dev/jolt-otel-clickhouse` `a247f418a462357d0a114d5f51024d00bd38189f`
+- `chucklehead-dev/jolt-otel-clickhouse` `ba86e190c906ee223be6c837fd6b135185620afc`
 - `chucklehead-dev/jolt-chdb` `3ef8d97b62b467f1ad68f92b854498c124cb8811`
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
