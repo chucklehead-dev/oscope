@@ -77,7 +77,19 @@ if [ "$backend" = s3 ]; then
     "OSCOPE_DURABLE_S3_ACCESS_KEY=$OSCOPE_DURABLE_S3_ACCESS_KEY"
     "OSCOPE_DURABLE_S3_SECRET_KEY=$OSCOPE_DURABLE_S3_SECRET_KEY"
   )
-  env "${durable_env[@]}" "$verify_binary" --create-s3-bucket
+  if [ -n "${OSCOPE_DURABLE_S3_SESSION_TOKEN:-}" ]; then
+    durable_env+=(
+      "OSCOPE_DURABLE_S3_SESSION_TOKEN=$OSCOPE_DURABLE_S3_SESSION_TOKEN"
+    )
+  fi
+  case "${OSCOPE_DURABLE_S3_CREATE_BUCKET:-true}" in
+    true) env "${durable_env[@]}" "$verify_binary" --create-s3-bucket ;;
+    false) ;;
+    *)
+      echo "OSCOPE_DURABLE_S3_CREATE_BUCKET must be true or false" >&2
+      exit 2
+      ;;
+  esac
 else
   durable_env+=("OSCOPE_DURABLE_ROOT=$tmp/store")
 fi

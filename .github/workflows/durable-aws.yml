@@ -1,0 +1,71 @@
+name: durable-aws-recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  crash-reopen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: aws-durable-ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout qualified jolt-chdb
+        uses: actions/checkout@v4
+        with:
+          repository: chucklehead-dev/jolt-chdb
+          ref: 6612fce1601672bd129dc6b65cdb68b93efb8c68
+          path: .qualification/jolt-chdb
+          persist-credentials: false
+      - name: Validate AWS recovery configuration
+        env:
+          ROLE_ARN: ${{ vars.AWS_DURABLE_ROLE_ARN }}
+          BUCKET: ${{ vars.AWS_DURABLE_BUCKET }}
+          REGION: ${{ vars.AWS_DURABLE_REGION }}
+        run: |
+          test -n "$ROLE_ARN"
+          test -n "$BUCKET"
+          test -n "$REGION"
+      - name: Install Jolt v0.8.3
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/jolt-bin"
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.3/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.3
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Assert Jolt version
+        run: test "$(jolt --version)" = "jolt v0.8.3"
+      - name: Qualify pinned Durable native ABI and asset
+        working-directory: .qualification/jolt-chdb
+        run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb-durable"
+      - name: Assume the oscope Durable CI role
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_DURABLE_ROLE_ARN }}
+          role-session-name: oscope-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ vars.AWS_DURABLE_REGION }}
+          mask-aws-account-id: true
+      - name: Crash and recover oscope through AWS S3
+        env:
+          JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
+          JOLT_BIN: jolt
+          OSCOPE_DURABLE_CRASH_BACKEND: s3
+          OSCOPE_DURABLE_CRASH_BUILD_ALIAS: test-durable-s3
+          OSCOPE_DURABLE_S3_BUCKET: ${{ vars.AWS_DURABLE_BUCKET }}
+          OSCOPE_DURABLE_S3_PREFIX: ci/oscope/${{ github.run_id }}-${{ github.run_attempt }}
+          OSCOPE_DURABLE_S3_CREATE_BUCKET: false
+        run: |
+          set -euo pipefail
+          test -n "$AWS_ACCESS_KEY_ID"
+          test -n "$AWS_SECRET_ACCESS_KEY"
+          test -n "$AWS_SESSION_TOKEN"
+          export OSCOPE_DURABLE_S3_ENDPOINT="https://s3.${AWS_REGION}.amazonaws.com"
+          export OSCOPE_DURABLE_S3_REGION="$AWS_REGION"
+          export OSCOPE_DURABLE_S3_ACCESS_KEY="$AWS_ACCESS_KEY_ID"
+          export OSCOPE_DURABLE_S3_SECRET_KEY="$AWS_SECRET_ACCESS_KEY"
+          export OSCOPE_DURABLE_S3_SESSION_TOKEN="$AWS_SESSION_TOKEN"
+          test/durable_crash_reopen.sh
