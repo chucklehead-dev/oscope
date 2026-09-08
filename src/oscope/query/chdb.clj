@@ -4,10 +4,22 @@
             [otel.exporter.chdb.explorer :as explorer]))
 
 (defn run [connection plan]
-  (when-not (= (query/supported-fields) (explorer/supported-fields))
-    (throw (ex-info "oscope query fields do not match the chDB explorer"
-                    {:oscope.query/error true
-                     :type ::incompatible-explorer-fields
-                     :oscope-fields (query/supported-fields)
-                     :explorer-fields (explorer/supported-fields)})))
-  (explorer/top-values connection (:request (query/validate-plan plan))))
+  (let [{:keys [selection request]} (query/validate-plan plan)]
+    (if (= :metric-series (:mode selection))
+      (do
+        (when-not (= query/metric-series-options
+                     (explorer/supported-metric-series))
+          (throw (ex-info "oscope metric series choices do not match the chDB explorer"
+                          {:oscope.query/error true
+                           :type ::incompatible-metric-series
+                           :oscope-options query/metric-series-options
+                           :explorer-options (explorer/supported-metric-series)})))
+        (explorer/metric-series connection request))
+      (do
+        (when-not (= (query/supported-fields) (explorer/supported-fields))
+          (throw (ex-info "oscope query fields do not match the chDB explorer"
+                          {:oscope.query/error true
+                           :type ::incompatible-explorer-fields
+                           :oscope-fields (query/supported-fields)
+                           :explorer-fields (explorer/supported-fields)})))
+        (explorer/top-values connection request)))))

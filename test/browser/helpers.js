@@ -66,7 +66,12 @@ async function emitCheckout(request, baseURL) {
   await postSignal(request, baseURL, "/v1/metrics", {
     resourceMetrics: [{resource, scopeMetrics: [{scope, metrics: [
       {name: "demo.checkout.queue.depth", unit: "{job}",
-       gauge: {dataPoints: [{timeUnixNano: at(8), asInt: "2"}]}},
+       gauge: {dataPoints: [
+         {timeUnixNano: at(660000), asInt: "2"},
+         {timeUnixNano: at(360000), asInt: "5"},
+         {timeUnixNano: at(60000), asInt: "3"},
+         {timeUnixNano: at(8), asInt: "7"},
+       ]}},
       {name: "demo.checkout.inflight", unit: "{request}",
        gauge: {dataPoints: [{timeUnixNano: at(7), asInt: "1"}]}},
     ]}]}],

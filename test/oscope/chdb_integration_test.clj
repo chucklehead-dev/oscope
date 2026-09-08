@@ -28,6 +28,27 @@
                     {:signal :spans :field :service-name :window :15m :limit 10})]
         (is (= [{:value "api" :count 2} {:value "worker" :count 1}]
                (get-in screen [:table :rows]))))
+      (doseq [[service value] [["api" 2.0] ["api" 4.0] ["worker" 10.0]]]
+        (jdbc/execute!
+         (:connection source)
+         ["INSERT INTO otel_metrics_gauge
+             (TimeUnix, ServiceName, MetricName, MetricUnit, ScopeName, Value)
+           VALUES (fromUnixTimestamp(?), ?, 'queue.depth', '{job}',
+                   'demo.metrics', ?)"
+          1700000000 service value]))
+      (let [screen ((:load-command source) :metric-series
+                    {:mode :metric-series :metric-kind :gauge
+                     :metric-name "queue.depth" :group-by [:service-name]
+                     :bucket :5m :aggregates [:count :sum :avg]
+                     :window :15m :limit 10})]
+        (is (= :telemetry-metric-series (:view screen)))
+        (is (= [{:bucket-start-unix-nano 1699999800000000000
+                 :service-name "api" :count 2 :sum 6.0 :avg 3.0}
+                {:bucket-start-unix-nano 1699999800000000000
+                 :service-name "worker" :count 1 :sum 10.0 :avg 10.0}]
+               (get-in screen [:table :rows])))
+        (is (= [:count]
+               (mapv :y (get-in screen [:chart :layers])))))
       (finally (live/close! source)))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source is closed"
                           ((:loader source) (:selection (:screen source)))))))

@@ -1,6 +1,7 @@
 (ns oscope.web-test
   (:require [clojure.test :refer [deftest is]]
             [jolt.http.body :as http-body]
+            [oscope.query :as query]
             [oscope.raw-export :as raw-export]
             [oscope.sample :as sample]
             [oscope.ui.web :as web]))
@@ -134,6 +135,69 @@
                     "window" "forever" "limit" "999999"})]
     (is (= {:signal :spans :field :service-name :window :1h :limit 12}
            selection))))
+
+(deftest default-distribution-selection-serializes-after-normalization
+  (is (= "?signal=spans&field=service-name&window=1h&limit=12"
+         (web/selection-query-string {}))))
+
+(deftest metric-series-query-round-trips-named-aggregate-fields
+  (let [selection {:mode :metric-series :metric-kind :gauge
+                   :metric-name "http.server.active requests"
+                   :group-by [:deployment-environment]
+                   :bucket :5m :aggregates [:sum :p95 :p99]
+                   :window :6h :limit 40}
+        query-string (web/selection-query-string selection)
+        parsed (web/selection-from-params
+                (web/parse-query-params (subs query-string 1)))
+        response ((web/sample-handler)
+                  {:request-method :get :uri "/oscope"
+                   :query-string (subs query-string 1)})]
+    (is (= selection parsed))
+    (is (= 200 (:status response)))
+    (is (re-find #"aria-label=\"Metric series query\"" (:body response)))
+    (is (re-find #"name=\"metric-name\"[^>]*value=\"http.server.active requests\""
+                 (:body response)))
+    (is (re-find #"name=\"aggregate-p95\"[^>]*checked" (:body response)))
+    (is (re-find #"<option value=\"deployment-environment\" selected>Deployment environment</option>"
+                 (:body response)))
+    (is (re-find #"Bucket Start Unix Nano" (:body response)))
+    (is (re-find #">P95<" (:body response)))
+    (is (re-find #"<polyline" (:body response)))
+    (is (not (re-find #":p95 5\.8" (:body response)))
+        "returned points render but are not serialized as editable Plotje text")))
+
+(deftest metric-series-empty-group-selection-round-trips
+  (let [selection (assoc query/default-metric-series-selection :group-by [])
+        query-string (web/selection-query-string selection)]
+    (is (= selection
+           (web/selection-from-params
+            (web/parse-query-params (subs query-string 1)))))))
+
+(deftest metric-series-aggregate-order-normalizes-before-url-round-trip
+  (let [selection (assoc query/default-metric-series-selection
+                         :aggregates [:p95 :avg])
+        normalized (query/normalize-selection selection)
+        query-string (web/selection-query-string selection)]
+    (is (= [:avg :p95] (:aggregates normalized)))
+    (is (= normalized
+           (web/selection-from-params
+            (web/parse-query-params (subs query-string 1)))))))
+
+(deftest metric-series-long-name-and-export-kind-round-trip
+  (let [metric-name (apply str (repeat 256 "m"))
+        selection (assoc query/default-metric-series-selection
+                         :metric-kind :sum :metric-name metric-name
+                         :aggregates [:avg :p95])
+        query-string (web/selection-query-string selection)
+        parsed (web/selection-from-params
+                (web/parse-query-params (subs query-string 1)))
+        body (:body ((web/sample-handler)
+                     {:request-method :get :uri "/oscope"
+                      :query-string (subs query-string 1)}))]
+    (is (= selection parsed))
+    (is (= 2 (count (re-seq #"<option value=\"sum\" selected>Sum</option>"
+                            body)))
+        "the series control and raw export both retain the physical sum kind")))
 
 (deftest live-screen-links-to-an-exact-current-chart-editor-selection
   (let [source {:load-command (fn [_ selection]

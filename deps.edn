@@ -10,7 +10,7 @@
          :git/sha "3ef8d97b62b467f1ad68f92b854498c124cb8811"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "ba86e190c906ee223be6c837fd6b135185620afc"}
+         :git/sha "d5c38ab51e2002cc3795b247638a4fa212982a42"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "9ae943fcaf7725b1b36e00bc216aef17405f295a"}
@@ -21,12 +21,19 @@
  :aliases
  {:test-headless
   {:extra-paths ["test"]
+   :extra-deps
+   {io.github.chucklehead-dev/jolt-hegel
+    {:git/url "https://github.com/chucklehead-dev/jolt-hegel.git"
+     :git/sha "b214f769983211431c74e427f0f35553cfba7b34"}}
    :main-opts ["-m" "oscope.headless-test-runner"]}
 
   :test
   {:extra-paths ["test"]
    :extra-deps
-   {io.github.casselc/glitter
+   {io.github.chucklehead-dev/jolt-hegel
+    {:git/url "https://github.com/chucklehead-dev/jolt-hegel.git"
+     :git/sha "b214f769983211431c74e427f0f35553cfba7b34"}
+    io.github.casselc/glitter
     {:git/url "https://github.com/casselc/glitter.git"
      :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}
     io.github.casselc/glimmer
