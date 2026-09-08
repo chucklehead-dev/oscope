@@ -26,7 +26,8 @@ the implementation tracked by oscope #4 has not landed.
 
 `typed/oscope/typed/contracts.clj` externally declares closed types for:
 
-- query signals, fields, windows, selections, requests, and versioned plans;
+- query signals, fields, windows, scalar/counter/cumulative-histogram
+  selections, requests, and versioned plans;
 - the five reusable telemetry-expression bucket presets and their optional
   integer widths;
 - the versioned query-command variant with the request-ID shapes used by the
@@ -68,7 +69,7 @@ unchecked namespace.
 
 ## Non-vacuous mutation controls
 
-`script/oscope/typed_check.clj` registers exactly seven controls and asserts that
+`script/oscope/typed_check.clj` registers exactly nine controls and asserts that
 count before checking anything:
 
 - `wrong-command-variant` assigns `:export` where the checked command variant
@@ -78,7 +79,11 @@ count before checking anything:
 - `wrong-limit` supplies a string limit;
 - `wrong-plan-time` supplies a string query end;
 - `wrong-bucket` supplies `:30s` where the reusable expression contract accepts
-  only `:none`, `:1m`, `:5m`, `:15m`, or `:1h`; and
+  only `:none`, `:1m`, `:5m`, `:15m`, or `:1h`;
+- `wrong-counter-provenance` supplies delta temporality for a cumulative
+  monotonic counter;
+- `wrong-histogram-temporality` supplies delta temporality for the cumulative
+  histogram recipe; and
 - `wrong-view-row` supplies a string distribution count.
 
 Each control must produce exactly one structured Typed Clojure type error whose

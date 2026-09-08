@@ -30,6 +30,23 @@
 (def counter-plan
   (query/compile-query counter-selection 2000000000000000000))
 
+(t/ann histogram-selection
+  oscope.typed.contracts/CumulativeHistogramSeriesSelection)
+(def histogram-selection
+  {:mode :cumulative-histogram-series
+   :metric-kind :histogram
+   :temporality :cumulative
+   :metric-name "request.duration"
+   :group-by [:service-name]
+   :bucket :none
+   :aggregates [:count :avg :p50 :p95 :p99]
+   :window :1h
+   :limit 100})
+
+(t/ann histogram-plan oscope.typed.contracts/QueryPlan)
+(def histogram-plan
+  (query/compile-query histogram-selection 2000000000000000000))
+
 (t/ann query-command oscope.typed.contracts/QueryCommand)
 (def query-command (command/query-command [:web-refresh 7] selection))
 

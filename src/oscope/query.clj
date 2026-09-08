@@ -44,6 +44,15 @@
    :buckets [:none :1m :5m :15m :1h]
    :aggregates [:increase :rate]})
 
+(def cumulative-histogram-series-options
+  {:metric-kinds [:histogram]
+   :temporalities [:cumulative]
+   :group-by [:service-name :metric-unit :scope-name
+              :deployment-environment]
+   :buckets [:none :1m :5m :15m :1h]
+   :aggregates [:count :sum :avg :p50 :p95 :p99]
+   :quantiles {:p50 0.5 :p95 0.95 :p99 0.99}})
+
 (def default-metric-series-selection
   {:mode :metric-series
    :metric-kind :gauge
@@ -66,6 +75,17 @@
    :window :1h
    :limit 100})
 
+(def default-cumulative-histogram-series-selection
+  {:mode :cumulative-histogram-series
+   :metric-kind :histogram
+   :temporality :cumulative
+   :metric-name "request.duration"
+   :group-by [:service-name]
+   :bucket :none
+   :aggregates [:count :avg :p95]
+   :window :1h
+   :limit 100})
+
 (def ^:private selection-keys #{:signal :field :window :limit})
 (def ^:private metric-series-selection-keys
   #{:mode :metric-kind :metric-name :group-by :bucket :aggregates
@@ -73,6 +93,11 @@
 (def ^:private counter-series-selection-keys
   #{:mode :metric-kind :temporality :monotonic? :metric-name :group-by
     :bucket :aggregates :window :limit})
+(def ^:private cumulative-histogram-series-selection-keys
+  #{:mode :metric-kind :temporality :metric-name :group-by :bucket
+    :aggregates :window :limit})
+
+(declare quantile-aggregate?)
 
 (defn- fail! [type message data]
   (throw (ex-info message (assoc data :oscope.query/error true :type type))))
@@ -224,6 +249,89 @@
                               (:aggregates counter-series-options)))
      :window window :limit limit}))
 
+(defn normalize-cumulative-histogram-series-selection [selection]
+  (when-not (map? selection)
+    (fail! ::invalid-selection
+           "oscope cumulative histogram selection must be a map"
+           {:reason :non-map-histogram-selection}))
+  (when-let [unknown (seq (remove cumulative-histogram-series-selection-keys
+                                  (keys selection)))]
+    (fail! ::unsupported-selection-key
+           "oscope cumulative histogram selection contains unsupported keys"
+           {:keys (error/sorted-keys unknown)}))
+  (let [{:keys [mode metric-kind temporality metric-name group-by bucket
+                aggregates window limit]}
+        (merge default-cumulative-histogram-series-selection selection)
+        options cumulative-histogram-series-options]
+    (when-not (= :cumulative-histogram-series mode)
+      (fail! ::unsupported-mode "oscope query mode is not supported"
+             {:mode mode :supported-modes [:cumulative-histogram-series]}))
+    (when-not (and (= :histogram metric-kind) (= :cumulative temporality))
+      (fail! ::unsupported-histogram-provenance
+             "oscope histogram series requires cumulative explicit-histogram provenance"
+             {:metric-kind metric-kind :temporality temporality}))
+    (when-not (and (string? metric-name) (not (str/blank? metric-name))
+                   (<= (count metric-name) max-value-length))
+      (fail! ::invalid-metric-name
+             "oscope metric name must contain from 1 to 256 characters"
+             {:reason :invalid-metric-name :maximum max-value-length}))
+    (when-not (valid-closed-vector? group-by (:group-by options) 1)
+      (fail! ::invalid-group-by
+             "oscope charts support zero or one histogram group dimension"
+             {:group-by group-by :supported (:group-by options)}))
+    (when-not (some #{bucket} (:buckets options))
+      (fail! ::unsupported-bucket "oscope histogram bucket is not supported"
+             {:bucket bucket :supported (:buckets options)}))
+    (when-not (and (valid-closed-vector? aggregates (:aggregates options) 6)
+                   (seq aggregates))
+      (fail! ::invalid-aggregates
+             "oscope cumulative histogram aggregates must select one to six fields"
+             {:aggregates aggregates :supported (:aggregates options)}))
+    (when (and (some #(or (= :avg %) (quantile-aggregate? %)) aggregates)
+               (not (some #{:count} aggregates)))
+      (fail! ::missing-histogram-count
+             "oscope histogram averages and quantiles require count for explicit empty semantics"
+             {:required :count}))
+    (when-not (contains? windows window)
+      (fail! ::unsupported-window "oscope query window is not supported"
+             {:window window :supported-windows (vec (keys windows))}))
+    (when-not (and (integer? limit) (<= 1 limit max-result-limit))
+      (fail! ::invalid-limit "oscope result limit is outside the explorer cap"
+             {:limit limit :minimum 1 :maximum max-result-limit}))
+    {:mode :cumulative-histogram-series
+     :metric-kind :histogram :temporality :cumulative
+     :metric-name metric-name
+     :group-by (vec (filter (set group-by) (:group-by options)))
+     :bucket bucket
+     :aggregates (vec (filter (set aggregates) (:aggregates options)))
+     :window window :limit limit}))
+
+(def ^:private quantile-descriptor-suffixes
+  [:estimate :lower-bound :upper-bound :rank-numerator :rank-denominator
+   :absolute-error-bound :interpolation :containing-bucket])
+
+(defn quantile-aggregate? [aggregate]
+  (contains? #{:p50 :p95 :p99} aggregate))
+
+(defn quantile-descriptor-fields [aggregate]
+  (when-not (quantile-aggregate? aggregate)
+    (fail! ::invalid-quantile "oscope histogram quantile is not supported"
+           {:aggregate aggregate :supported [:p50 :p95 :p99]}))
+  (mapv #(keyword (str (name aggregate) "-" (name %)))
+        quantile-descriptor-suffixes))
+
+(defn cumulative-histogram-series-output-fields [selection]
+  (let [{:keys [group-by bucket aggregates] :as selection}
+        (normalize-cumulative-histogram-series-selection selection)]
+    (vec (concat (when (and (= :none bucket) (empty? group-by))
+                   [:metric-name])
+                 (when (not= :none bucket) [:bucket-start-unix-nano])
+                 group-by
+                 (mapcat #(if (quantile-aggregate? %)
+                            (quantile-descriptor-fields %) [%]) aggregates)
+                 [:explicit-bounds :interval-count :reset-count
+                  :observed-duration-nanos :metric-kind :temporality]))))
+
 (defn counter-series-output-fields [selection]
   (let [{:keys [group-by bucket aggregates] :as selection}
         (normalize-counter-series-selection selection)]
@@ -238,6 +346,8 @@
   (case (:mode selection)
     :metric-series (normalize-metric-series-selection selection)
     :counter-series (normalize-counter-series-selection selection)
+    :cumulative-histogram-series
+    (normalize-cumulative-histogram-series-selection selection)
     (normalize-distribution-selection selection)))
 
 (defn compile-query [selection end-unix-nano]
@@ -249,6 +359,18 @@
         (normalize-selection selection)
         start (max 0 (- end-unix-nano (window-nanos window)))]
     (case (:mode selected)
+      :cumulative-histogram-series
+      {:oscope.query/version 1
+       :selection selected
+       :request {:metric-kind (:metric-kind selected)
+                 :temporality (:temporality selected)
+                 :metric-name (:metric-name selected)
+                 :group-by (:group-by selected)
+                 :bucket (:bucket selected)
+                 :aggregates (:aggregates selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
       :counter-series
       {:oscope.query/version 1
        :selection selected

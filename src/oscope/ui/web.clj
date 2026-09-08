@@ -44,12 +44,17 @@
   (let [mode (case (get params "mode")
                "metric-series" :metric-series
                "counter-series" :counter-series
+               "cumulative-histogram-series" :cumulative-histogram-series
                :distribution)
-        series? (contains? #{:metric-series :counter-series} mode)
+        series? (contains? #{:metric-series :counter-series
+                             :cumulative-histogram-series} mode)
         counter? (= :counter-series mode)
+        histogram? (= :cumulative-histogram-series mode)
         defaults (case mode
                    :metric-series query/default-metric-series-selection
                    :counter-series query/default-counter-series-selection
+                   :cumulative-histogram-series
+                   query/default-cumulative-histogram-series-selection
                    query/default-selection)
         window (keyword-param params "window" (keys query/windows) (:window defaults))
         raw-limit (get params "limit")
@@ -58,11 +63,12 @@
         limit (if (and parsed (<= 1 parsed query/max-result-limit))
                 parsed (:limit defaults))]
     (if series?
-      (let [options (if counter? query/counter-series-options
-                        query/metric-series-options)
+      (let [options (cond counter? query/counter-series-options
+                          histogram? query/cumulative-histogram-series-options
+                          :else query/metric-series-options)
             kind (keyword-param params "metric-kind" (:metric-kinds options)
                                 (:metric-kind defaults))
-            allowed-aggregates (if counter? (:aggregates options)
+            allowed-aggregates (if (or counter? histogram?) (:aggregates options)
                                    (get-in options [:aggregates kind]))
             selected-group
             (keyword-param params "group-by"
@@ -72,7 +78,20 @@
             (vec (filter #(= "1" (get params (str "aggregate-" (name %))))
                          allowed-aggregates))
             fallback-aggregates (vec (filter (set allowed-aggregates)
-                                             (:aggregates defaults)))]
+                                             (:aggregates defaults)))
+            requested-aggregates
+            (if (= "1" (get params "aggregates-present"))
+              (if (seq selected-aggregates)
+                selected-aggregates [(first allowed-aggregates)])
+              (if (seq fallback-aggregates)
+                fallback-aggregates [(first allowed-aggregates)]))
+            requested-aggregates
+            (if (and histogram?
+                     (some #(contains? #{:avg :p50 :p95 :p99} %)
+                           requested-aggregates))
+              (vec (filter (conj (set requested-aggregates) :count)
+                           allowed-aggregates))
+              requested-aggregates)]
         (query/normalize-selection
          (cond-> {:mode mode
           :metric-kind kind
@@ -81,13 +100,10 @@
           :group-by (if (= :none selected-group) [] [selected-group])
           :bucket (keyword-param params "bucket" (:buckets options)
                                  (:bucket defaults))
-          :aggregates (if (= "1" (get params "aggregates-present"))
-                        (if (seq selected-aggregates)
-                          selected-aggregates [(first allowed-aggregates)])
-                        (if (seq fallback-aggregates)
-                          fallback-aggregates [(first allowed-aggregates)]))
+          :aggregates requested-aggregates
           :window window :limit limit}
-           counter? (assoc :temporality :cumulative :monotonic? true))))
+           counter? (assoc :temporality :cumulative :monotonic? true)
+           histogram? (assoc :temporality :cumulative))))
       (let [supported (query/supported-fields)
             signal (keyword-param params "signal" (keys supported)
                                   (:signal defaults))
@@ -133,6 +149,7 @@
          (option :distribution "Distribution" true)
          (option :metric-series "Metric series" false)
          (option :counter-series "Counter increase/rate" false)
+         (option :cumulative-histogram-series "Cumulative histogram" false)
          "</select></label><label>Signal<select name=\"signal\">"
          (apply str (map #(option (:value %) (:label %) (:selected? %)) signals))
          "</select></label><label>Group by<select name=\"field\">"
@@ -150,6 +167,7 @@
   (let [{:keys [mode metric-kind metric-name group-by bucket aggregates window]}
         selection
         counter? (= :counter-series mode)
+        histogram? (= :cumulative-histogram-series mode)
         metric-kinds (:metric-kinds controls)
         available-groups (:group-by controls)
         buckets (:buckets controls)
@@ -162,12 +180,15 @@
          (option :distribution "Distribution" false)
          (option :metric-series "Metric series" (= :metric-series mode))
          (option :counter-series "Counter increase/rate" counter?)
+         (option :cumulative-histogram-series "Cumulative histogram" histogram?)
          "</select></label><label>Metric kind<select name=\"metric-kind\">"
          (apply str (map #(option % (str/capitalize (name %)) (= % metric-kind))
                          metric-kinds))
          "</select></label>"
          (when counter?
            "<input type=\"hidden\" name=\"temporality\" value=\"cumulative\"><input type=\"hidden\" name=\"monotonic\" value=\"true\"><p>Cumulative monotonic OTEL Sum · rate per second over exact observed intervals</p>")
+         (when histogram?
+           "<input type=\"hidden\" name=\"temporality\" value=\"cumulative\"><p>Cumulative OTEL explicit histogram · reset-aware bucket reconstruction · infinite tails have no numeric estimate</p>")
          "<label>Exact metric name<input required name=\"metric-name\" maxlength=\"256\" value=\""
          (esc metric-name) "\"></label><label>Time bucket<select name=\"bucket\">"
          (apply str (map #(option % (name %) (= % bucket)) buckets))
@@ -190,16 +211,20 @@
          (checkbox "live" "Live refresh" live?)
          "<button type=\"submit\">Run query</button></div></form>")))
 (defn- render-controls [controls selection action live?]
-  (if (contains? #{:metric-series :counter-series} (:mode selection))
+  (if (contains? #{:metric-series :counter-series
+                   :cumulative-histogram-series} (:mode selection))
     (render-series-controls controls selection action live?)
     (render-distribution-controls controls selection action live?)))
 (defn selection-query-string [selection]
   (let [selection (query/normalize-selection selection)]
-    (if (contains? #{:metric-series :counter-series} (:mode selection))
+    (if (contains? #{:metric-series :counter-series
+                     :cumulative-histogram-series} (:mode selection))
       (str "?mode=" (name (:mode selection))
            "&metric-kind=" (name (:metric-kind selection))
            (when (= :counter-series (:mode selection))
              "&temporality=cumulative&monotonic=true")
+           (when (= :cumulative-histogram-series (:mode selection))
+             "&temporality=cumulative")
            "&metric-name=" (URLEncoder/encode (:metric-name selection) "UTF-8")
            "&bucket=" (name (:bucket selection))
            "&group-by=" (name (or (first (:group-by selection)) :none))
@@ -214,7 +239,8 @@
            "&limit=" (:limit selection)))))
 (defn- render-export-controls [screen action enabled?]
   (let [{:keys [signal mode metric-kind]} (:selection screen)
-        series? (contains? #{:metric-series :counter-series} mode)
+        series? (contains? #{:metric-series :counter-series
+                             :cumulative-histogram-series} mode)
         signal (if series? :metrics signal)
         metric-kind (if series? metric-kind :gauge)
         {:keys [start-unix-nano end-unix-nano]}
@@ -308,7 +334,9 @@
           "</div>"
           (if chart
             (str "<div class=\"grid"
-                 (when (= :telemetry-metric-series view)
+                 (when (contains? #{:telemetry-metric-series
+                                    :telemetry-cumulative-histogram-series}
+                                  view)
                    " metric-series-grid")
                  "\"><section class=\"panel\">"
                  (plotje/spec->svg chart) "</section><section class=\"panel\">"

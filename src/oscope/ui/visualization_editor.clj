@@ -102,7 +102,9 @@
 
 (defn- render-value [{:keys [kind value]}]
   (case kind
-    :plotje (plotje-svg/spec->svg value)
+    :plotje (if (empty? (:layers value))
+              "<p role=\"status\">No finite histogram estimate is available; the bounded query recipe remains editable.</p>"
+              (plotje-svg/spec->svg value))
     :hiccup (hiccup/spec->html value)))
 
 (defn render-preview [raw-document]
@@ -264,6 +266,20 @@
                       query)]
           {:data-sources
            {document/counter-query-source (get-in screen [:chart :data])}})
+        (let [{:keys [document] :as context} (plotje-context source request)
+              seeded (referenced-data (:text document))]
+          (if (= query (:query seeded)) context {:data-sources {}})))
+
+      :histogram-query
+      (if-let [load-command (:load-command source)]
+        (let [screen (load-command
+                      [:visualization-editor-histogram-query (System/nanoTime)]
+                      query)]
+          {:data-sources
+           {document/histogram-query-source
+            (if (:chart screen)
+              (get-in screen [:chart :data])
+              (get-in screen [:table :rows]))}})
         (let [{:keys [document] :as context} (plotje-context source request)
               seeded (referenced-data (:text document))]
           (if (= query (:query seeded)) context {:data-sources {}})))

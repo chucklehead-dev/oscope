@@ -88,7 +88,7 @@
         metric-maximum (max 1 (- max-plotje-text (count suffix)))]
     (str (bounded-display metric-name metric-maximum) suffix)))
 
-(defn- normalize-series-rows [selection request rows]
+(defn- normalize-scalar-series-rows [selection request rows]
   (when-not (vector? rows)
     (fail! ::invalid-rows "oscope metric series rows must be a vector"
            (if (= :counter-series (:mode selection))
@@ -156,13 +156,191 @@
          (assoc :metric-name (bounded-display metric-name max-plotje-text))))
      rows)))
 
+(def ^:private max-histogram-bounds 64)
+(def ^:private quantile-fractions
+  {:p50 {:value 0.5 :numerator 1 :denominator 2}
+   :p95 {:value 0.95 :numerator 19 :denominator 20}
+   :p99 {:value 0.99 :numerator 99 :denominator 100}})
+(def ^:private quantile-row-keys
+  #{:quantile :rank :rank-numerator :rank-denominator :estimate
+    :lower-bound :upper-bound :lower-inclusive? :upper-inclusive?
+    :lower-unbounded? :upper-unbounded? :bucket-observation-count
+    :absolute-error-bound :interpolation})
+
+(defn- valid-bounds? [bounds]
+  (and (vector? bounds) (<= (count bounds) max-histogram-bounds)
+       (every? finite-number? bounds)
+       (every? (fn [[left right]] (< (double left) (double right)))
+               (partition 2 1 bounds))))
+
+(defn- containing-bucket [lower upper]
+  (str "(" (if (nil? lower) "-Inf" lower) ", "
+       (if (nil? upper) "+Inf" upper)
+       (if (nil? upper) ")" "]")))
+
+(defn- schema-bucket? [explicit-bounds lower upper]
+  (cond
+    (and (nil? lower) (nil? upper)) (empty? explicit-bounds)
+    (nil? lower) (= upper (first explicit-bounds))
+    (nil? upper) (= lower (last explicit-bounds))
+    :else (boolean (some #(= [lower upper] %)
+                         (partition 2 1 explicit-bounds)))))
+
+(defn- normalize-quantile! [aggregate observation-count explicit-bounds value]
+  (when (nil? value)
+    (when-not (zero? observation-count)
+      (fail! ::invalid-histogram-quantile
+             "nonempty cumulative histogram omitted a quantile descriptor"
+             {:aggregate aggregate :reason :missing-nonempty-quantile}))
+    nil)
+  (when value
+    (let [{expected-value :value expected-numerator :numerator
+           expected-denominator :denominator}
+          (get quantile-fractions aggregate)
+          {:keys [quantile rank rank-numerator rank-denominator estimate
+                  lower-bound upper-bound lower-inclusive? upper-inclusive?
+                  lower-unbounded? upper-unbounded? bucket-observation-count
+                  absolute-error-bound interpolation]} value
+          finite-bucket? (and (some? lower-bound) (some? upper-bound))]
+      (when-not (and (map? value) (= quantile-row-keys (set (keys value)))
+                     (= expected-value quantile) (finite-number? rank)
+                     (integer? rank-numerator) (pos? rank-numerator)
+                     (= expected-denominator rank-denominator)
+                     (= (* expected-numerator observation-count) rank-numerator)
+                     ;; The exact numerator/denominator are authoritative.
+                     ;; :rank is the explorer's documented display double and
+                     ;; intentionally follows its multiplication order.
+                     (= (double rank)
+                        (* expected-value (double observation-count)))
+                     (or (nil? lower-bound) (finite-number? lower-bound))
+                     (or (nil? upper-bound) (finite-number? upper-bound))
+                     (schema-bucket? explicit-bounds lower-bound upper-bound)
+                     (= (nil? lower-bound) lower-unbounded?)
+                     (= (nil? upper-bound) upper-unbounded?)
+                     (false? lower-inclusive?)
+                     (= (some? upper-bound) upper-inclusive?)
+                     (integer? bucket-observation-count)
+                     (pos? bucket-observation-count)
+                     (<= bucket-observation-count observation-count)
+                     (= :uniform-within-explicit-bucket interpolation)
+                     (if finite-bucket?
+                       (and (finite-number? estimate)
+                            (<= (double lower-bound) (double estimate)
+                                (double upper-bound))
+                            (finite-number? absolute-error-bound)
+                            (= (double absolute-error-bound)
+                               (double (max (- estimate lower-bound)
+                                            (- upper-bound estimate)))))
+                       (and (nil? estimate) (nil? absolute-error-bound))))
+        (fail! ::invalid-histogram-quantile
+               "cumulative histogram quantile descriptor is invalid"
+               {:aggregate aggregate :reason :invalid-quantile-descriptor}))
+      (let [fields (query/quantile-descriptor-fields aggregate)
+            values [estimate lower-bound upper-bound rank-numerator
+                    rank-denominator absolute-error-bound interpolation
+                    (containing-bucket lower-bound upper-bound)]]
+        (zipmap fields values)))))
+
+(defn- normalize-histogram-rows [selection request rows]
+  (when-not (vector? rows)
+    (fail! ::invalid-rows "oscope cumulative histogram rows must be a vector"
+           {:reason :non-vector-histogram-result}))
+  (when (> (count rows) (:limit selection))
+    (fail! ::too-many-rows "oscope cumulative histogram exceeded its query limit"
+           {:actual (count rows) :maximum (:limit selection)}))
+  (let [{:keys [group-by bucket aggregates metric-name]} selection
+        bucket? (not= :none bucket)
+        expected-keys (into (set aggregates)
+                            (concat group-by
+                                    (when bucket? [:bucket-start-unix-nano])
+                                    [:metric-kind :temporality :explicit-bounds
+                                     :interval-count :reset-count
+                                     :observed-duration-nanos]))
+        end-unix-nano (:end-unix-nano request)]
+    (mapv
+     (fn [row]
+       (when-not (and (map? row) (= expected-keys (set (keys row))))
+         (fail! ::invalid-row "oscope cumulative histogram row has unexpected fields"
+                {:actual-fields (when (map? row) (set (keys row)))
+                 :expected-fields expected-keys}))
+       (doseq [field group-by]
+         (when-not (and (string? (get row field))
+                        (<= (count (get row field)) max-plotje-text))
+           (fail! ::invalid-row "oscope cumulative histogram group is invalid"
+                  {:field field})))
+       (when (and bucket?
+                  (not (and (integer? (:bucket-start-unix-nano row))
+                            (<= 0 (:bucket-start-unix-nano row))
+                            (< (:bucket-start-unix-nano row) end-unix-nano))))
+         (fail! ::invalid-row "oscope cumulative histogram bucket is invalid"
+                {:field :bucket-start-unix-nano}))
+       (when-not (and (= :histogram (:metric-kind row))
+                      (= :cumulative (:temporality row))
+                      (valid-bounds? (:explicit-bounds row))
+                      (integer? (:interval-count row))
+                      (pos? (:interval-count row))
+                      (integer? (:reset-count row))
+                      (<= 0 (:reset-count row) (:interval-count row))
+                      (integer? (:observed-duration-nanos row))
+                      (pos? (:observed-duration-nanos row)))
+         (fail! ::invalid-row
+                "oscope cumulative histogram provenance or interval evidence is invalid"
+                {:reason :invalid-histogram-evidence}))
+       (let [observation-count (:count row)]
+         (when (and (some #{:count} aggregates)
+                    (not (and (integer? observation-count)
+                              (<= 0 observation-count))))
+           (fail! ::invalid-row "oscope cumulative histogram count is invalid"
+                  {:aggregate :count}))
+         (let [aggregate-values
+               (reduce
+                (fn [result aggregate]
+                  (if (query/quantile-aggregate? aggregate)
+                    (merge result
+                           (normalize-quantile! aggregate observation-count
+                                                (:explicit-bounds row)
+                                                (get row aggregate)))
+                    (let [value (get row aggregate)]
+                      (when-not
+                       (case aggregate
+                         :count (and (integer? value) (<= 0 value))
+                         :sum (finite-number? value)
+                         :avg (if (zero? observation-count)
+                                (nil? value) (finite-number? value))
+                         false)
+                        (fail! ::invalid-row
+                               "oscope cumulative histogram aggregate is invalid"
+                               {:aggregate aggregate}))
+                      (assoc result aggregate value))))
+                {} aggregates)]
+           (cond-> (merge (select-keys row
+                                       (concat group-by
+                                               (when bucket?
+                                                 [:bucket-start-unix-nano])))
+                          aggregate-values
+                          (select-keys row [:metric-kind :temporality
+                                            :explicit-bounds :interval-count
+                                            :reset-count
+                                            :observed-duration-nanos]))
+             (and (not bucket?) (empty? group-by))
+             (assoc :metric-name
+                    (bounded-display metric-name max-plotje-text))))))
+     rows)))
+
+(defn- normalize-series-rows [selection request rows]
+  (if (= :cumulative-histogram-series (:mode selection))
+    (normalize-histogram-rows selection request rows)
+    (normalize-scalar-series-rows selection request rows)))
+
 (defn- metric-series-screen [plan rows]
   (let [plan (query/validate-plan plan)
         {:keys [mode metric-kind metric-name group-by bucket aggregates window limit]
          :as selection} (:selection plan)
         counter? (= :counter-series mode)
-        options (if counter? query/counter-series-options
-                    query/metric-series-options)
+        histogram? (= :cumulative-histogram-series mode)
+        options (cond counter? query/counter-series-options
+                      histogram? query/cumulative-histogram-series-options
+                      :else query/metric-series-options)
         data (normalize-series-rows selection (:request plan) rows)
         bucket? (not= :none bucket)
         x (cond bucket? :bucket-start-unix-nano
@@ -172,26 +350,37 @@
                     (> (count group-by) 1) (second group-by)
                     :else nil)
         mark (if bucket? :line :bar)
-        primary-aggregate (first aggregates)
-        layers [(cond-> {:mark mark :x x :y primary-aggregate}
+        primary-aggregate (if histogram?
+                            (or (first (remove #{:count} aggregates)) :count)
+                            (first aggregates))
+        primary-field (if (query/quantile-aggregate? primary-aggregate)
+                        (first (query/quantile-descriptor-fields
+                                primary-aggregate))
+                        primary-aggregate)
+        layers [(cond-> {:mark mark :x x :y primary-field}
                   color (assoc :color color))]
         title (metric-title metric-name aggregates)
-        chart (when (seq data)
+        chart (when (and (seq data)
+                         (some #(finite-number? (get % primary-field)) data))
                 (plotje/validate-spec
                  {:title (metric-title metric-name [primary-aggregate])
                   :x-label (title-case x)
-                  :y-label (title-case primary-aggregate)
+                  :y-label (title-case primary-field)
                   :width 760 :height 420 :data data :layers layers}))
-        table-fields (vec (concat (when (and (not bucket?) (empty? group-by))
-                                    [:metric-name])
-                                  (when bucket? [:bucket-start-unix-nano])
-                                  group-by aggregates
-                                  (when counter?
-                                    [:interval-count :reset-count
-                                     :observed-duration-nanos :metric-kind
-                                     :temporality :monotonic?])))]
+        table-fields
+        (if histogram?
+          (query/cumulative-histogram-series-output-fields selection)
+          (vec (concat (when (and (not bucket?) (empty? group-by))
+                         [:metric-name])
+                       (when bucket? [:bucket-start-unix-nano])
+                       group-by aggregates
+                       (when counter?
+                         [:interval-count :reset-count
+                          :observed-duration-nanos :metric-kind
+                          :temporality :monotonic?]))))]
     {:oscope.view/version 1
-     :view :telemetry-metric-series
+     :view (if histogram? :telemetry-cumulative-histogram-series
+               :telemetry-metric-series)
      :status (if (seq data) :ready :empty)
      :title title
      :selection selection
@@ -201,7 +390,7 @@
       :metric-kinds (:metric-kinds options)
       :group-by (:group-by options)
       :buckets (:buckets options)
-      :aggregates (if counter? (:aggregates options)
+      :aggregates (if (or counter? histogram?) (:aggregates options)
                       (get-in options [:aggregates metric-kind]))
       :windows (keys query/windows)
       :limit {:value limit :minimum 1 :maximum query/max-result-limit}}
@@ -210,13 +399,23 @@
                               {:key field :label (title-case field)})
                             table-fields)
              :rows data}
-     :empty-message (when (empty? data)
-                      (if counter?
-                        "No exact counter intervals matched this bounded recipe."
-                        "No metric points matched this bounded series recipe."))}))
+     :empty-message
+     (cond
+       (empty? data)
+       (cond
+         counter? "No exact counter intervals matched this bounded recipe."
+         histogram?
+         "No reconstructable cumulative histogram intervals matched this bounded recipe."
+         :else "No metric points matched this bounded series recipe.")
+
+       (and histogram? (nil? chart))
+       "The selected histogram estimate is null (empty or in an infinite-tail bucket); exact rank and containing bounds remain in the table."
+
+       :else nil)}))
 
 (defn screen [plan rows]
-  (if (contains? #{:metric-series :counter-series}
+  (if (contains? #{:metric-series :counter-series
+                   :cumulative-histogram-series}
                  (get-in plan [:selection :mode]))
     (metric-series-screen plan rows)
     (distribution-screen plan rows)))

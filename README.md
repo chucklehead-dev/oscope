@@ -544,7 +544,8 @@ jolt -M:test-headless
 ```
 
 The optional JVM-only Typed Clojure pilot checks a deliberately small subset
-of the pure command/query/view-model contracts and six named mutation controls:
+of the pure command/query/view-model contracts and nine named mutation controls,
+including cumulative-histogram temporality provenance:
 
 ```sh
 clojure -M:typed-check

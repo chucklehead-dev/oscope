@@ -6,6 +6,7 @@
             [oscope.query :as query]
             [oscope.sample :as sample]
             [oscope.ui.visualization-editor :as editor]
+            [oscope.view-model :as view-model]
             [oscope.visualization.document :as document]))
 
 (defn- thrown-data [f]
@@ -14,6 +15,29 @@
 (defn- form [value]
   (str "spec="
        (java.net.URLEncoder/encode value "UTF-8")))
+
+(defn- no-estimate-histogram-screen [rows]
+  (let [selection {:mode :cumulative-histogram-series
+                   :metric-kind :histogram :temporality :cumulative
+                   :metric-name "review.duration" :group-by [] :bucket :none
+                   :aggregates [:count :p95] :window :1h :limit 10}]
+    (view-model/screen (query/compile-query selection sample/sample-time) rows)))
+
+(def empty-histogram-screen (no-estimate-histogram-screen []))
+
+(def nil-tail-histogram-screen
+  (no-estimate-histogram-screen
+   [{:count 3
+     :p95 {:quantile 0.95 :rank (* 0.95 (double 3))
+           :rank-numerator 57 :rank-denominator 20 :estimate nil
+           :lower-bound 10.0 :upper-bound nil
+           :lower-inclusive? false :upper-inclusive? false
+           :lower-unbounded? false :upper-unbounded? true
+           :bucket-observation-count 1 :absolute-error-bound nil
+           :interpolation :uniform-within-explicit-bucket}
+     :metric-kind :histogram :temporality :cumulative
+     :explicit-bounds [0.0 10.0] :interval-count 1 :reset-count 1
+     :observed-duration-nanos 1000000000}]))
 
 (deftest visualization-documents-are-versioned-bounded-and-self-validating
   (let [plotje (document/plotje-from-screen sample/default-screen)
@@ -35,6 +59,12 @@
          (thrown-data #(document/validate-document
                         (assoc plotje :status :invalid)))))
     (is (= :invalid (:status (document/prepare :plotje "{:layers :wrong}"))))
+    (is (= :invalid
+           (:status
+            (document/prepare
+             :plotje
+             "{:data [{:x [1.0 2.0], :y 1.0}], :layers [{:mark :bar, :x :x, :y :y}]}")))
+        "vector-valued rows are reserved for explicit histogram bounds")
     (is (= :invalid (:status (document/prepare :hiccup "[:script \"no\"]"))))
     (is (= 413
            (:status
@@ -77,6 +107,55 @@
     (is (not (str/includes? text ":increase 42.0")))
     (is (not (str/includes? text "checkout")))
     (is (= (:chart screen) (:value document)))))
+
+(deftest cumulative-histogram-editor-retains-descriptors-without-returned-points
+  (let [screen (sample/screen-for-selection
+                query/default-cumulative-histogram-series-selection)
+        document (document/plotje-from-screen screen)
+        text (:text document)]
+    (is (str/includes? text ":source :histogram-query"))
+    (is (str/includes? text ":mode :cumulative-histogram-series"))
+    (is (str/includes? text ":metric-kind :histogram"))
+    (is (str/includes? text ":temporality :cumulative"))
+    (is (str/includes? text ":p95-estimate :p95-lower-bound :p95-upper-bound"))
+    (is (str/includes? text ":explicit-bounds"))
+    (is (str/includes? text ":interval-count :reset-count :observed-duration-nanos"))
+    (is (not (str/includes? text ":sum -83.0")))
+    (is (not (str/includes? text "checkout")))
+    (is (not (str/includes? text "(10.0, +Inf)")))
+    (is (= (:chart screen) (:value document)))))
+
+(deftest no-estimate-histogram-editors-retain-and-reload-the-query-recipe
+  (doseq [[label screen forbidden]
+          [["empty" empty-histogram-screen ":data []"]
+           ["infinite tail" nil-tail-histogram-screen "(10.0, +Inf)"]]]
+    (let [edit-document (document/plotje-from-screen screen)
+          text (:text edit-document)
+          loads (atom [])
+          handler (editor/handler
+                   {:screen screen
+                    :load-command
+                    (fn [_ selection]
+                      (swap! loads conj selection)
+                      screen)})
+          preview (handler {:request-method :post
+                            :uri "/oscope/edit/plotje/preview"
+                            :body (form text)})]
+      (is (= :ready (:status edit-document)) label)
+      (is (= [] (get-in edit-document [:value :layers])) label)
+      (is (str/includes? text ":source :histogram-query") label)
+      (is (str/includes? text ":mode :cumulative-histogram-series") label)
+      (is (str/includes? text ":metric-kind :histogram") label)
+      (is (str/includes? text ":temporality :cumulative") label)
+      (is (str/includes? text ":metric-name \"review.duration\"") label)
+      (is (str/includes? text
+                         ":select [:metric-name :count :p95-estimate") label)
+      (is (not (str/includes? text forbidden)) label)
+      (is (= 200 (:status preview)) label)
+      (is (str/includes? (:body preview)
+                         "No finite histogram estimate is available") label)
+      (is (not (str/includes? (:body preview) "Spec error")) label)
+      (is (= [(:selection screen)] @loads) label))))
 
 (deftest metric-distribution-editor-preserves-its-kind-union-query
   (let [screen (sample/screen-for-selection
