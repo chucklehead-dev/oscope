@@ -50,3 +50,36 @@ jobs:
         run: jolt -Srepro -A:test-headless -m hegel.install
       - name: Headless tests
         run: jolt -Srepro -M:test-headless
+
+  browser:
+    name: Chromium acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.3
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Jolt v0.8.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/jolt-bin"
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.3/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.3
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Assert Jolt version
+        shell: bash
+        run: test "$(jolt --version)" = "jolt v0.8.3"
+      - name: Install checksum-pinned chDB asset
+        run: jolt -Srepro -M -m jdbc.chdb.install
+      - name: Install browser test dependencies
+        run: npm ci
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Browser acceptance tests
+        run: npm run test:browser
