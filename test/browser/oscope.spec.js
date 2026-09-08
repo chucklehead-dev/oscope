@@ -1,5 +1,5 @@
 const {test, expect} = require("@playwright/test");
-const {emitCheckout, openCheckoutTrace} = require("./helpers");
+const {emitCheckout, emitGaugeBuckets, openCheckoutTrace} = require("./helpers");
 
 test("investigates checkout telemetry and changes its visual grammar", async ({page, request, baseURL}) => {
   await emitCheckout(request, baseURL);
@@ -56,29 +56,60 @@ test("investigates checkout telemetry and changes its visual grammar", async ({p
   await expect(page.locator("#plotje-preview")).toContainText("Latency band");
 });
 
-test("runs one reusable Plotje expression across fixed telemetry buckets", async ({page, request, baseURL}) => {
-  await emitCheckout(request, baseURL);
+test("rebinds one semantic Plotje recipe when its telemetry changes", async ({page, request, baseURL}) => {
+  const metricName = "demo.dynamic.queue.depth";
+  await emitGaugeBuckets(request, baseURL, {
+    metricName,
+    buckets: [[2, 4], [6, 8]],
+  });
   await page.goto("/oscope?signal=metrics&field=metric-name&window=15m&limit=10");
   await page.getByRole("link", {name: "Edit this chart"}).click();
 
   const editor = page.getByLabel("Chart specification");
-  await editor.fill(`{:title "Queue depth over time"
+  const recipe = `{:title "Queue depth over time"
  :data {:source :telemetry-query
         :query {:signal :metrics :window :15m :bucket :5m
                 :group-by [:service-name]
                 :filters [{:field :metric-name :op :eq
-                           :value "demo.checkout.queue.depth"}]
+                           :value "${metricName}"}]
                 :series [{:as :average :op :avg :field :value}
                          {:as :p95 :op :percentile :field :value
                           :percentile 95}]
+                :calculations [{:as :tail-gap :op :subtract
+                                :args [:p95 :average]}]
                 :limit 20}
-        :select [:bucket-start-unix-nano :service-name :average :p95]}
+        :select [:bucket-start-unix-nano :service-name :average :p95 :tail-gap]}
  :layers [{:mark :line :x :bucket-start-unix-nano
-           :y :p95 :color :service-name}]}`);
+           :y :average :color :service-name}
+          {:mark :line :x :bucket-start-unix-nano
+           :y :p95 :color :service-name}
+          {:mark :line :x :bucket-start-unix-nano
+           :y :tail-gap :color :service-name}]}`;
+  await editor.fill(recipe);
 
   await expect(page.locator("#plotje-preview")).toContainText("Queue depth over time");
-  await expect(page.locator("#plotje-preview svg polyline")).toBeVisible();
+  const previewLines = page.locator("#plotje-preview svg polyline");
+  await expect(previewLines).toHaveCount(3);
+  const firstPreview = await previewLines.evaluateAll((lines) =>
+    lines.map((line) => line.getAttribute("points")));
+  const semanticText = await editor.inputValue();
+
   await expect(editor).toHaveValue(/:bucket :5m/);
-  await expect(editor).toHaveValue(/:select \[:bucket-start-unix-nano :service-name :average :p95\]/);
-  await expect(editor).not.toHaveValue(/:average 4\.25|:p95 7/);
+  await expect(editor).toHaveValue(/:group-by \[:service-name\]/);
+  await expect(editor).toHaveValue(/:as :p95 :op :percentile/);
+  await expect(editor).toHaveValue(/:as :tail-gap :op :subtract/);
+  await expect(editor).toHaveValue(/:select \[:bucket-start-unix-nano :service-name :average :p95 :tail-gap\]/);
+  await expect(editor).not.toHaveValue(/\{:bucket-start-unix-nano|:average 3(?:\.0)?|:p95 4(?:\.0)?|:tail-gap 1(?:\.0)?/);
+
+  await emitGaugeBuckets(request, baseURL, {
+    metricName,
+    buckets: [[100, 120], [1, 2]],
+  });
+  await editor.evaluate((input) =>
+    input.dispatchEvent(new Event("input", {bubbles: true})));
+
+  await expect.poll(async () => previewLines.evaluateAll((lines) =>
+    lines.map((line) => line.getAttribute("points")))).not.toEqual(firstPreview);
+  await expect(editor).toHaveValue(semanticText);
+  await expect(editor).not.toHaveValue(/\{:bucket-start-unix-nano|:average 56\.5|:p95 120(?:\.0)?|:tail-gap 63\.5/);
 });
