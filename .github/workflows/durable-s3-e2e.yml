@@ -8,6 +8,7 @@ on:
       - .github/workflows/durable-s3-e2e.yml
       - deps.edn
       - src/oscope/durable_server_main.clj
+      - src/oscope/durable_observability.clj
       - src/oscope/otlp.clj
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
@@ -24,15 +25,19 @@ on:
       - test/oscope/durable_fault_server_main.clj
       - test/oscope/durable_fault_verify.clj
       - test/oscope/durable_aspect_test_runner.clj
+      - test/oscope/durable_aspect_report_test.clj
       - test/oscope/durable_history_assertions.clj
       - test/oscope/durable_history_assertions_test.clj
       - test/oscope/durable_s3_aspect_test_runner.clj
+      - test/oscope/durable_telemetry_assertions.clj
+      - test/oscope/durable_observability_test.clj
       - test/oscope/durable_s3_integration_test.clj
   pull_request:
     paths:
       - .github/workflows/durable-s3-e2e.yml
       - deps.edn
       - src/oscope/durable_server_main.clj
+      - src/oscope/durable_observability.clj
       - src/oscope/otlp.clj
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
@@ -49,9 +54,12 @@ on:
       - test/oscope/durable_fault_server_main.clj
       - test/oscope/durable_fault_verify.clj
       - test/oscope/durable_aspect_test_runner.clj
+      - test/oscope/durable_aspect_report_test.clj
       - test/oscope/durable_history_assertions.clj
       - test/oscope/durable_history_assertions_test.clj
       - test/oscope/durable_s3_aspect_test_runner.clj
+      - test/oscope/durable_telemetry_assertions.clj
+      - test/oscope/durable_observability_test.clj
       - test/oscope/durable_s3_integration_test.clj
 
 permissions:

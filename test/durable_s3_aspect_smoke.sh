@@ -78,11 +78,12 @@ env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
   "$binary"
 
 (
-  cd "$aspect_repo"
-  sh test/assert-effect-report.sh "$JOLT_ASPECT_JOLT" "$effects" woven "$report"
+  cd "$repo_root"
+  sh "$aspect_repo/test/assert-effect-report.sh" \
+    "$JOLT_ASPECT_JOLT" "$effects" woven "$report"
   "${jolt_command[@]}" -Srepro \
-    -Sdeps '{:paths ["test" "src"]}' \
-    -m jolt.aspect-packs.chdb-durable.report-test "$report"
+    -Sdeps '{:paths ["test"]}' \
+    -m oscope.durable-aspect-report-test "$report"
 )
 
 echo "oscope Durable S3 aspect smoke passed"

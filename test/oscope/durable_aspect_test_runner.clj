@@ -4,40 +4,9 @@
             [oscope.durable-history-assertions :as assertions]
             [oscope.durable-history-assertions-test]
             [oscope.durable-integration-test]
+            [oscope.durable-telemetry-assertions :as telemetry]
             [otel.exporter.memory :as memory]
             [otel.sdk :as sdk]))
-
-(def ^:private telemetry-attribute-keys
-  #{"jolt.durable.operation.name"
-    "jolt.durable.operation.outcome"
-    "jolt.durable.failure.category"
-    "error.type"})
-
-(defn- validate-telemetry! [exporter handle]
-  (when-not (sdk/force-flush! handle)
-    (throw (ex-info "Durable telemetry did not flush" {})))
-  (let [spans (filter #(= "io.github.chucklehead-dev/oscope.durable"
-                          (get-in % [:scope :name]))
-                      (memory/spans exporter))
-        durations (filter #(= "jolt.durable.operation.duration" (:name %))
-                          (memory/metrics exporter))
-        points (mapcat :data-points durations)
-        operation-values
-        (set (map #(get (:attributes %) "jolt.durable.operation.name") spans))]
-    (when (empty? spans)
-      (throw (ex-info "woven Durable telemetry emitted no spans" {})))
-    (when (empty? points)
-      (throw (ex-info "woven Durable telemetry emitted no durations" {})))
-    (when-not (every? #(every? telemetry-attribute-keys
-                               (keys (:attributes %)))
-                      (concat spans points))
-      (throw (ex-info "woven Durable telemetry used an unbounded attribute" {})))
-    (when-not (every? operation-values
-                      ["acquire" "checkpoint-publish" "publish"
-                       "commit-attempt" "release-attempt"])
-      (throw (ex-info "woven Durable telemetry omitted a control boundary"
-                      {:operations operation-values})))
-    [spans durations]))
 
 (defn -main [& _]
   (let [journal (history/journal)
@@ -65,7 +34,8 @@
                 :events events
                 :context-id :oscope-durable-integration
                 :private-values private-values})
-              [spans durations] (validate-telemetry! exporter handle)
+              [spans durations] (telemetry/validate!
+                                 exporter handle private-values)
               printed (pr-str [events spans durations])]
           (doseq [private-value private-values]
             (when (.contains printed private-value)
