@@ -4,6 +4,12 @@
             [oscope.query :as query]))
 
 (def percentile-presets #{50 75 90 95 99})
+(def bucket-presets
+  {:none nil
+   :1m (* 60 1000000000)
+   :5m (* 5 60 1000000000)
+   :15m (* 15 60 1000000000)
+   :1h (* 60 60 1000000000)})
 (def aggregate-ops #{:count :sum :avg :min :max :percentile})
 (def calculation-ops #{:add :subtract :multiply :divide})
 (def max-groups 2)
@@ -52,7 +58,7 @@
     :numbers {:value "Value"}}})
 
 (def ^:private expression-keys
-  #{:signal :window :group-by :filters :series :calculations :limit})
+  #{:signal :window :bucket :group-by :filters :series :calculations :limit})
 (def ^:private filter-keys #{:field :op :value})
 (def ^:private series-keys #{:as :op :field :percentile :filters})
 (def ^:private calculation-keys #{:as :op :args})
@@ -148,7 +154,7 @@
                "calculation aliases must be unique" {:aliases aliases}))
       (when-let [collision (some occupied-aliases aliases)]
         (fail! ::alias-collision
-               "calculation aliases must not replace group-by fields or aggregate series"
+               "calculation aliases must not replace grouping, bucket, or aggregate series fields"
                {:alias collision :occupied-aliases (vec occupied-aliases)}))
       calculations)))
 
@@ -157,10 +163,15 @@
     (fail! ::invalid-expression "telemetry query must be a map" {:query value}))
   (unknown! "telemetry query" expression-keys value)
   (let [{:keys [signal window group-by filters series limit]} value
+        bucket (get value :bucket :none)
         config (config! signal)]
     (when-not (contains? query/windows window)
       (fail! ::unsupported-window "telemetry query window is unsupported"
              {:window window :supported-windows (vec (keys query/windows))}))
+    (when-not (contains? bucket-presets bucket)
+      (fail! ::unsupported-bucket
+             "telemetry query bucket must be :none, :1m, :5m, :15m, or :1h"
+             {:bucket bucket :supported-buckets (vec (keys bucket-presets))}))
     (when-not (and (vector? group-by) (<= 0 (count group-by) max-groups)
                    (= (count group-by) (count (distinct group-by))))
       (fail! ::invalid-grouping "group-by must contain up to 2 distinct fields"
@@ -223,25 +234,37 @@
                  {:maximum max-total-series-filters}))
         (when-not (= (count aliases) (count (distinct aliases)))
           (fail! ::duplicate-alias "series aliases must be unique" {:aliases aliases}))
-        (when (some (set group-by) aliases)
-          (fail! ::alias-collision "series aliases must not replace group-by fields"
-                 {:group-by group-by :aliases aliases}))
+        (when-let [collision (some (set (cond-> group-by
+                                          (not= :none bucket)
+                                          (conj :bucket-start-unix-nano)))
+                                   aliases)]
+          (fail! ::alias-collision
+                 "series aliases must not replace grouping or bucket fields"
+                 {:alias collision :group-by group-by :bucket bucket
+                  :aliases aliases}))
         (let [calculations (validate-calculations
-                            value aliases (set (concat group-by aliases)))]
+                            value aliases
+                            (set (concat group-by
+                                         (when (not= :none bucket)
+                                           [:bucket-start-unix-nano])
+                                         aliases)))]
           (when-not (and (integer? limit) (<= 1 limit query/max-result-limit))
             (fail! ::invalid-limit "telemetry query limit is outside the explorer cap"
                    {:limit limit :minimum 1 :maximum query/max-result-limit}))
-          {:signal signal :window window :group-by group-by :filters filters
+          {:signal signal :window window :bucket bucket
+           :group-by group-by :filters filters
            :series series :calculations calculations :limit limit})))))
 
 (defn from-selection [{:keys [signal field window limit]}]
   (validate-expression
-   {:signal signal :window window :group-by [field] :filters []
+   {:signal signal :window window :bucket :none :group-by [field] :filters []
     :series [{:as :count :op :count}] :limit limit}))
 
 (defn output-fields [expression]
-  (let [{:keys [group-by series calculations]} (validate-expression expression)]
-    (vec (concat group-by (map :as series) (map :as calculations)))))
+  (let [{:keys [bucket group-by series calculations]}
+        (validate-expression expression)]
+    (vec (concat (when (not= :none bucket) [:bucket-start-unix-nano])
+                 group-by (map :as series) (map :as calculations)))))
 
 (defn- operand-value [row operand]
   (if (keyword? operand)
@@ -299,11 +322,16 @@
   (when-not (and (integer? now-unix-nano) (<= 1 now-unix-nano 9223372036854775807))
     (fail! ::invalid-time "telemetry query end must be epoch nanoseconds"
            {:end-unix-nano now-unix-nano}))
-  (let [{:keys [signal window group-by filters series calculations limit]
+  (let [{:keys [signal window bucket group-by filters series calculations limit]
          :as expression}
         (validate-expression expression)
         config (config! signal)
+        bucket-nanos (get bucket-presets bucket)
         start (max 0 (- now-unix-nano (get query/windows window)))
+        bucket-pair (when bucket-nanos
+                      [(str "intDiv(" (:time config)
+                            ", ?) * ? AS bucket0")
+                       :bucket-start-unix-nano])
         group-pairs (map-indexed
                      (fn [index field]
                        [(str "leftUTF8(toString(" (get-in config [:dimensions field])
@@ -313,18 +341,26 @@
                       (fn [index item]
                         [(str (aggregate-sql config item) " AS series" index)
                          (:as item)]) series)
-        selections (concat (map first group-pairs) (map first series-pairs))
+        selections (concat (when bucket-pair [(first bucket-pair)])
+                           (map first group-pairs) (map first series-pairs))
         global-filter-sql (mapv #(filter-sql config %) filters)
         where (concat [(str (:time config) " >= ?")
                        (str (:time config) " < ?")] global-filter-sql)
-        groups (mapv #(str "toString(" (get-in config [:dimensions %]) ")")
-                     group-by)
+        groups (concat (when bucket-pair ["bucket0"])
+                       (map #(str "toString(" (get-in config [:dimensions %]) ")")
+                            group-by))
         order-alias "series0"
         sql (str "SELECT " (str/join ", " selections) "\nFROM " (:source config)
                  "\nWHERE " (str/join " AND " where)
                  (when (seq groups) (str "\nGROUP BY " (str/join ", " groups)))
-                 "\nORDER BY " order-alias " DESC"
-                 (when (seq groups) (str ", " (str/join ", " groups) " ASC"))
+                 "\nORDER BY "
+                 (if bucket-pair
+                   (str "bucket0 ASC"
+                        (when (seq group-by)
+                          (str ", " (str/join ", " (rest groups)) " ASC")))
+                   (str order-alias " DESC"
+                        (when (seq groups)
+                          (str ", " (str/join ", " groups) " ASC"))))
                  "\nLIMIT ?"
                  "\nSETTINGS max_rows_to_read = " max-source-rows
                  ", max_bytes_to_read = " max-source-bytes
@@ -332,12 +368,14 @@
                  ", timeout_overflow_mode = 'throw'"
                  ", max_memory_usage = " max-query-memory-bytes
                  ", max_threads = 1")
-        params (vec (concat (repeat (count group-by) max-group-text-length)
+        params (vec (concat (when bucket-nanos [bucket-nanos bucket-nanos])
+                            (repeat (count group-by) max-group-text-length)
                             (mapcat #(map :value (:filters %)) series)
                             [start now-unix-nano]
                             (map :value filters) [limit]))]
     {:expression expression :sqlvec (into [sql] params)
-     :columns (vec (concat (map-indexed (fn [i field] [(keyword (str "dimension" i)) field]) group-by)
+     :columns (vec (concat (when bucket-pair [[:bucket0 :bucket-start-unix-nano]])
+                           (map-indexed (fn [i field] [(keyword (str "dimension" i)) field]) group-by)
                            (map-indexed (fn [i item] [(keyword (str "series" i)) (:as item)]) series)))
      :calculations calculations
      :limit limit}))

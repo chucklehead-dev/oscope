@@ -206,7 +206,8 @@
 
 (deftest plotje-editor-round-trips-a-custom-aggregate-expression
   (let [seen (atom nil)
-        query {:signal :spans :window :15m :group-by [:service-name]
+        query {:signal :spans :window :15m :bucket :none
+               :group-by [:service-name]
                :filters [{:field :span-name :op :eq :value "request"}]
                :series [{:as :requests :op :count}
                         {:as :errors :op :count
@@ -238,6 +239,49 @@
     (is (not (str/includes? text "0.08")))
     (is (str/includes? (:body page) "checkout"))
     (is (str/includes? (:body page) "Request error rate"))))
+
+(deftest plotje-editor-runs-a-reusable-bucketed-series-without-copying-points
+  (let [seen (atom nil)
+        query {:signal :spans :window :1h :bucket :5m
+               :group-by [:service-name]
+               :filters [{:field :span-name :op :eq :value "request"}]
+               :series [{:as :requests :op :count}
+                        {:as :errors :op :count
+                         :filters [{:field :status-code :op :eq
+                                    :value "ERROR"}]}]
+               :calculations [{:as :error-ratio :op :divide
+                               :args [:errors :requests]}]
+               :limit 20}
+        rows [{:bucket-start-unix-nano 1999999800000000000
+               :service-name "checkout" :requests 20 :errors 1
+               :error-ratio 0.05}
+              {:bucket-start-unix-nano 2000000100000000000
+               :service-name "checkout" :requests 25 :errors 2
+               :error-ratio 0.08}]
+        text (pr-str
+              {:title "Request errors over time"
+               :data {:source :telemetry-query :query query
+                      :select [:bucket-start-unix-nano :service-name
+                               :requests :errors :error-ratio]}
+               :layers [{:mark :line :x :bucket-start-unix-nano
+                         :y :error-ratio :color :service-name}]})
+        handler (editor/handler
+                 {:screen sample/default-screen
+                  :plotje-query-command
+                  (fn [_ expression]
+                    (reset! seen expression)
+                    rows)})
+        preview (handler {:request-method :post
+                          :uri "/oscope/edit/plotje/preview"
+                          :body (form text)})]
+    (is (= query @seen))
+    (is (= 200 (:status preview)))
+    (is (str/includes? (:body preview) "<polyline"))
+    (is (str/includes? (:body preview) "Request errors over time"))
+    (is (str/includes? text ":bucket :5m"))
+    (is (str/includes? text ":bucket-start-unix-nano"))
+    (is (not (str/includes? text "1999999800000000000")))
+    (is (not (str/includes? text "0.05")))))
 
 (deftest editor-request-bodies-are-bounded-before-decode
   (let [handler (editor/handler {:screen sample/default-screen})

@@ -138,7 +138,8 @@
     (is (false? (:flaky? result)))))
 
 (deftest invalid-expression-mutants-fail-closed-before-query-execution
-  (let [valid {:signal :spans :window :15m :group-by [:service-name]
+  (let [valid {:signal :spans :window :15m :bucket :none
+               :group-by [:service-name]
                :filters [{:field :status-code :op :eq :value "private-global"}]
                :series [{:as :requests :op :count}
                         {:as :errors :op :count

@@ -55,3 +55,30 @@ test("investigates checkout telemetry and changes its visual grammar", async ({p
   await expect(page.locator("#plotje-preview svg polyline")).toBeVisible();
   await expect(page.locator("#plotje-preview")).toContainText("Latency band");
 });
+
+test("runs one reusable Plotje expression across fixed telemetry buckets", async ({page, request, baseURL}) => {
+  await emitCheckout(request, baseURL);
+  await page.goto("/oscope?signal=metrics&field=metric-name&window=15m&limit=10");
+  await page.getByRole("link", {name: "Edit this chart"}).click();
+
+  const editor = page.getByLabel("Chart specification");
+  await editor.fill(`{:title "Queue depth over time"
+ :data {:source :telemetry-query
+        :query {:signal :metrics :window :15m :bucket :5m
+                :group-by [:service-name]
+                :filters [{:field :metric-name :op :eq
+                           :value "demo.checkout.queue.depth"}]
+                :series [{:as :average :op :avg :field :value}
+                         {:as :p95 :op :percentile :field :value
+                          :percentile 95}]
+                :limit 20}
+        :select [:bucket-start-unix-nano :service-name :average :p95]}
+ :layers [{:mark :line :x :bucket-start-unix-nano
+           :y :p95 :color :service-name}]}`);
+
+  await expect(page.locator("#plotje-preview")).toContainText("Queue depth over time");
+  await expect(page.locator("#plotje-preview svg polyline")).toBeVisible();
+  await expect(editor).toHaveValue(/:bucket :5m/);
+  await expect(editor).toHaveValue(/:select \[:bucket-start-unix-nano :service-name :average :p95\]/);
+  await expect(editor).not.toHaveValue(/:average 4\.25|:p95 7/);
+});

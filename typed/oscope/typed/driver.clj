@@ -22,3 +22,10 @@
 
 (t/ann rows (t/Vec oscope.typed.contracts/DistributionRow))
 (def rows (view-model/normalize-rows selection raw-rows))
+
+(t/ann bucketed-expression oscope.typed.contracts/BucketedTelemetryExpression)
+(def bucketed-expression
+  {:signal :metrics :window :15m :bucket :5m
+   :group-by [:service-name] :filters []
+   :series [{:as :average :op :avg :field :value}]
+   :limit 20})

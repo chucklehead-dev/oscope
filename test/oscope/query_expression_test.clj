@@ -45,6 +45,9 @@
    :calculations [{:as :error-rate :op :divide :args [:errors :requests]}]
    :limit 20})
 
+(def bucketed-aggregates
+  (assoc filtered-aggregates :bucket :5m))
+
 (deftest expression-is-a-closed-typed-aggregate-contract
   (is (= [:service-name :requests :total-ns :average-ns :minimum-ns
           :maximum-ns :p95-ns]
@@ -65,7 +68,39 @@
                            (assoc-in all-aggregates [:series 1 :field] :sql))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"filter op must be :eq"
                           (expression/validate-expression
-                           (assoc-in all-aggregates [:filters 0 :op] :regex))))))
+                           (assoc-in all-aggregates [:filters 0 :op] :regex))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"bucket must be"
+                          (expression/validate-expression
+                           (assoc all-aggregates :bucket :30s))))))
+
+(deftest fixed-buckets-are-closed-output-dimensions
+  (is (= [:bucket-start-unix-nano :service-name :requests :errors
+          :error-total :error-avg :error-min :error-max :error-p95
+          :error-rate]
+         (expression/output-fields bucketed-aggregates)))
+  (is (= :none (:bucket (expression/validate-expression all-aggregates))))
+  (doseq [[bucket nanos] expression/bucket-presets]
+    (let [[sql & params]
+          (:sqlvec (expression/compile-query
+                    (assoc all-aggregates :bucket bucket) now))]
+      (is (= bucket
+             (:bucket (expression/validate-expression
+                       (assoc all-aggregates :bucket bucket)))))
+      (if nanos
+        (do (is (str/includes? sql " AS bucket0"))
+            (is (= [nanos nanos] (subvec (vec params) 0 2))))
+        (is (not (str/includes? sql " AS bucket0"))))))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"grouping or bucket fields"
+       (expression/validate-expression
+        (assoc bucketed-aggregates
+               :series [{:as :bucket-start-unix-nano :op :count}]))))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"must not replace"
+       (expression/validate-expression
+        (assoc bucketed-aggregates
+               :calculations [{:as :bucket-start-unix-nano
+                               :op :add :args [:requests 1]}])))))
 
 (deftest calculations-are-a-closed-typed-series-contract
   (is (= [:service-name :requests :total-ns :average-ns :minimum-ns
@@ -90,7 +125,7 @@
             #"aggregate series aliases or finite numbers"]
            [(assoc calculated-aggregates :calculations
                    [{:as :requests :op :divide :args [:total-ns :requests]}])
-            #"must not replace group-by fields or aggregate series"]
+            #"must not replace"]
            [(assoc calculated-aggregates :calculations
                    [{:as :same :op :add :args [:requests 1]}
                     {:as :same :op :subtract :args [:requests 1]}])
@@ -207,6 +242,40 @@
     (is (= (vec (concat [160] (repeat 6 "ERROR")
                         [(- now (* 15 60 1000000000)) now "aggregate.work" 20]))
            params))))
+
+(deftest compiler-uses-parameterized-epoch-aligned-time-buckets
+  (let [{:keys [sqlvec columns]} (expression/compile-query bucketed-aggregates now)
+        [sql & params] sqlvec
+        bucket-nanos (get expression/bucket-presets :5m)]
+    (is (str/includes?
+         sql
+         "intDiv(toUnixTimestamp64Nano(Timestamp), ?) * ? AS bucket0"))
+    (is (str/includes?
+         sql "GROUP BY bucket0, toString(ServiceName)"))
+    (is (str/includes?
+         sql "ORDER BY bucket0 ASC, toString(ServiceName) ASC"))
+    (is (= [[:bucket0 :bucket-start-unix-nano]
+            [:dimension0 :service-name]
+            [:series0 :requests] [:series1 :errors]
+            [:series2 :error-total] [:series3 :error-avg]
+            [:series4 :error-min] [:series5 :error-max]
+            [:series6 :error-p95]]
+           columns))
+    (is (= (vec (concat [bucket-nanos bucket-nanos 160]
+                        (repeat 6 "ERROR")
+                        [(- now (* 15 60 1000000000)) now
+                         "aggregate.work" 20]))
+           params))
+    (testing ":none keeps the original aggregate ordering and parameter shape"
+      (let [[plain-sql & plain-params]
+            (:sqlvec (expression/compile-query
+                      (assoc bucketed-aggregates :bucket :none) now))]
+        (is (not (str/includes? plain-sql "intDiv(")))
+        (is (str/includes? plain-sql "ORDER BY series0 DESC"))
+        (is (= (vec (concat [160] (repeat 6 "ERROR")
+                            [(- now (* 15 60 1000000000)) now
+                             "aggregate.work" 20]))
+               plain-params))))))
 
 (deftest reusable-metric-expressions-retain-gauge-provenance
   (let [expression {:signal :metrics :window :15m
