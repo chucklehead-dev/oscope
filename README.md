@@ -551,9 +551,11 @@ filesystem root before read-only reopen, so recovery does not rely on the
 in-memory backend oracle.
 
 The opt-in S3 app gate starts a pinned MinIO container, launches the real oscope
-collector over the S3 namespace configuration above, crosses one HTTP 200/WAL
-flush boundary, performs a clean release, reconstructs the backend, and proves
-read-only recovery through a fresh native connection:
+collector over the S3 namespace configuration above, crosses three HTTP
+200/WAL flush boundaries for a trace, correlated log, and gauge/sum/histogram
+batch, performs a clean release, and reconstructs the backend. A fresh native
+connection proves exact per-table counts and valid Arrow/Parquet exports for
+every recovered signal shape:
 
 ```sh
 env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
