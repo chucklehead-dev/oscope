@@ -87,6 +87,11 @@ The reusable grammar also supports bounded server-side `:add`, `:subtract`,
 explicit null and division-by-zero behavior. Per-series equality filters allow
 ratios such as error count divided by total request count while global filters
 continue to constrain every series.
+Plotje compile and execution can also emit an opt-in, privacy-shaped semantic
+lifecycle to a caller-owned sink for offline Hegel validation. The bounded
+events contain closed grammar metadata and outcomes, never filter values, SQL,
+result rows, credentials, user aliases, or exception details; see
+[Reusable Plotje charts](docs/PLOTJE.md#redacted-query-validation-events).
 
 Override the port or database without shell-specific `export` syntax:
 
