@@ -138,6 +138,50 @@
             "display truncation must not merge distinct group identities")
         (is (= [1 1] (sort (map :n rows))))))))
 
+(deftest per-series-filters-produce-an-error-rate-in-real-chdb
+  (with-open [connection (jdbc/connection "chdb::memory:")]
+    (schema/migrate! connection)
+    (doseq [[service status duration]
+            [["api" "OK" 10] ["api" "ERROR" 20] ["api" "ERROR" 40]
+             ["worker" "OK" 5]]]
+      (jdbc/execute!
+       connection
+       ["INSERT INTO otel_traces
+           (Timestamp, ServiceName, SpanName, StatusCode, Duration)
+           VALUES (fromUnixTimestamp64Nano(?), ?, 'request', ?, ?)"
+        (- test-now 1000000) service status duration]))
+    (let [rows
+          (query-expression-chdb/execute!
+           connection
+           {:signal :spans :window :15m :group-by [:service-name]
+            :filters [{:field :span-name :op :eq :value "request"}]
+            :series [{:as :requests :op :count}
+                     {:as :errors :op :count
+                      :filters [{:field :status-code :op :eq :value "ERROR"}]}
+                     {:as :error-total :op :sum :field :duration-ns
+                      :filters [{:field :status-code :op :eq :value "ERROR"}]}
+                     {:as :error-avg :op :avg :field :duration-ns
+                      :filters [{:field :status-code :op :eq :value "ERROR"}]}
+                     {:as :error-min :op :min :field :duration-ns
+                      :filters [{:field :status-code :op :eq :value "ERROR"}]}
+                     {:as :error-max :op :max :field :duration-ns
+                      :filters [{:field :status-code :op :eq :value "ERROR"}]}
+                     {:as :error-p95 :op :percentile :field :duration-ns
+                      :percentile 95
+                      :filters [{:field :status-code :op :eq :value "ERROR"}]}]
+            :calculations [{:as :error-rate :op :divide
+                            :args [:errors :requests]}]
+            :limit 10}
+           test-now)]
+      (is (= {:service-name "api" :requests 3 :errors 2
+              :error-total 60 :error-avg 30 :error-min 20 :error-max 40
+              :error-p95 40 :error-rate (/ 2.0 3.0)}
+             (first rows)))
+      (is (= {:service-name "worker" :requests 1 :errors 0
+              :error-total nil :error-avg nil :error-min nil :error-max nil
+              :error-p95 nil :error-rate 0.0}
+             (second rows))))))
+
 (deftest native-adapter-renders-a-real-chdb-query-as-canonical-svg
   (let [source (live/open! {:db-spec "chdb::memory:"
                             :now-fn (constantly test-now)})

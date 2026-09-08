@@ -81,7 +81,9 @@ See [Reusable Plotje charts](docs/PLOTJE.md) for the current contract and the
 bounded aggregate/query grammar.
 The reusable grammar also supports bounded server-side `:add`, `:subtract`,
 `:multiply`, and `:divide` calculations over named aggregate series, with
-explicit null and division-by-zero behavior.
+explicit null and division-by-zero behavior. Per-series equality filters allow
+ratios such as error count divided by total request count while global filters
+continue to constrain every series.
 
 Override the port or database without shell-specific `export` syntax:
 

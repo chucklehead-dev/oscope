@@ -207,34 +207,37 @@
 (deftest plotje-editor-round-trips-a-custom-aggregate-expression
   (let [seen (atom nil)
         query {:signal :spans :window :15m :group-by [:service-name]
-               :filters [{:field :status-code :op :eq :value "ERROR"}]
-               :series [{:as :average-ns :op :avg :field :duration-ns}
-                        {:as :p95-ns :op :percentile :field :duration-ns
-                         :percentile 95}]
-               :calculations [{:as :tail-ratio :op :divide
-                               :args [:p95-ns :average-ns]}]
+               :filters [{:field :span-name :op :eq :value "request"}]
+               :series [{:as :requests :op :count}
+                        {:as :errors :op :count
+                         :filters [{:field :status-code :op :eq
+                                    :value "ERROR"}]}]
+               :calculations [{:as :error-rate :op :divide
+                               :args [:errors :requests]}]
                :limit 10}
-        text (pr-str {:title "Error latency"
+        text (pr-str {:title "Request error rate"
                       :data {:source :telemetry-query :query query
-                             :select [:service-name :average-ns :p95-ns
-                                      :tail-ratio]}
-                      :layers [{:mark :bar :x :service-name :y :tail-ratio}]})
+                             :select [:service-name :requests :errors
+                                      :error-rate]}
+                      :layers [{:mark :bar :x :service-name :y :error-rate}]})
         handler (editor/handler
                  {:screen sample/default-screen
                   :plotje-query-command
                   (fn [_ expression]
                     (reset! seen expression)
-                    [{:service-name "checkout" :average-ns 25.0 :p95-ns 47.0
-                      :tail-ratio 1.88}])})
+                    [{:service-name "checkout" :requests 25 :errors 2
+                      :error-rate 0.08}])})
         page (handler {:request-method :post :uri "/oscope/edit/plotje"
                        :body (form text)})]
     (is (= query @seen))
-    (is (str/includes? (:body page) ":as :average-ns"))
-    (is (str/includes? (:body page) ":percentile 95"))
+    (is (str/includes? (:body page) ":as :errors"))
+    (is (str/includes? (:body page) ":field :status-code"))
     (is (str/includes? (:body page) ":op :divide"))
-    (is (str/includes? (:body page) ":tail-ratio"))
+    (is (str/includes? (:body page) ":error-rate"))
+    (is (not (str/includes? text "checkout")))
+    (is (not (str/includes? text "0.08")))
     (is (str/includes? (:body page) "checkout"))
-    (is (str/includes? (:body page) "Error latency"))))
+    (is (str/includes? (:body page) "Request error rate"))))
 
 (deftest editor-request-bodies-are-bounded-before-decode
   (let [handler (editor/handler {:screen sample/default-screen})
