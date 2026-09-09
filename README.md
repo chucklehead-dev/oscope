@@ -258,14 +258,18 @@ database identity; it is deliberately separate from the per-process UUIDv4
 lease instance. Optional transport controls are
 `OSCOPE_DURABLE_S3_MAX_ATTEMPTS` (default 3, maximum 8),
 `OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS` (default 10000), and
-`OSCOPE_DURABLE_S3_TIMEOUT_MS` (default 300000). Credentials are passed only to
-the backend and are not copied into bounded operator diagnostics.
+`OSCOPE_DURABLE_S3_TIMEOUT_MS` (default 300000). Its retry budget is configured
+separately with `OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS` (default 300000),
+`OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS` (default 25), and
+`OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS` (default 1000). Credentials are passed
+only to the backend and are not copied into bounded operator diagnostics.
 
 Startup and terminal failures print a bounded operator category before exiting
 nonzero. Recognized categories include `lease-held`, `lease-fenced`,
-`corrupt-head`, `engine-incompatible`, and bounded object-store authentication,
-permission, throttling, transport, provider, response, and configuration
-failures; each includes a fixed recovery action. Exception messages,
+`storage-timeout`, `commit-ambiguous`, `corrupt-head`, `engine-incompatible`,
+and bounded object-store authentication, permission, throttling, transport,
+provider, response, and configuration failures; each includes a fixed recovery
+action. Exception messages,
 credentials, backend paths, owner names, and instance IDs are not copied into
 this diagnostic.
 
@@ -303,8 +307,13 @@ lifecycle rule.
 Optional settings are `OSCOPE_DURABLE_OWNER`, `OSCOPE_DURABLE_INSTANCE`,
 `OSCOPE_DURABLE_DATABASE`, `OSCOPE_DURABLE_SCRATCH_PARENT`,
 `OSCOPE_DURABLE_LEASE_TTL_MS`, `OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS`, and
-`OSCOPE_DURABLE_CLOCK_SKEW_MS`. Invalid settings fail before the backend root is
-created. The server remains loopback-only.
+`OSCOPE_DURABLE_CLOCK_SKEW_MS`. Writer control retries use
+`OSCOPE_DURABLE_MAX_ATTEMPTS` (default 4),
+`OSCOPE_DURABLE_RETRY_DEADLINE_MS` (default 5000),
+`OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS` (default 10), and
+`OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS` (default 250). These are distinct from
+the S3 transport settings above. Invalid settings fail before the backend root
+is created. The server remains loopback-only.
 
 This development alias intentionally uses sibling-local library roots. The
 ordinary dependency is pinned to the reviewed control-plane commit. Both paths
@@ -768,7 +777,8 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `chucklehead-dev/jolt-otel-clickhouse` `cd78aa5766775f7e9caea2722d0b33b039745946`
-- `chucklehead-dev/jolt-chdb` `5d17703098a73675ade8cc94aff721b6bce61e14`
+- `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
+- `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`

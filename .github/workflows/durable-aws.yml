@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: chucklehead-dev/jolt-chdb
-          ref: 5d17703098a73675ade8cc94aff721b6bce61e14
+          ref: dbc2db22130c7e783739c79bc24691dcbba21906
           path: .qualification/jolt-chdb
           persist-credentials: false
       - name: Validate AWS recovery configuration

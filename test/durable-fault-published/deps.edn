@@ -9,6 +9,6 @@
  {:embed ["../../.qualification/jolt-chdb/resources"]
   :allow-control-aspects true
   :aspects
-  [{:resource "META-INF/jolt/aspects/packs/chdb-durable-edc86af.edn"
+  [{:resource "META-INF/jolt/aspects/packs/chdb-durable-4a0b821.edn"
     :providers [jolt.aspect-packs.chdb-durable.faults/aspect-provider]}]
   :aspect-report "target/aspects.edn"}}

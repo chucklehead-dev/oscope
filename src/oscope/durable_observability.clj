@@ -12,7 +12,7 @@
             [otel.trace :as trace]))
 
 (def durable-seam-revision
-  "edc86af07d5982a185c4ef953c19c848a719da0e")
+  "4a0b82119a09fdadb08442cb5d189bdc0474ed86")
 
 (def ^:private instrumentation-version "0.1.0")
 (def ^:private scope-name "io.github.chucklehead-dev/oscope.durable")

@@ -2,16 +2,16 @@
   (:require [clojure.edn :as edn]))
 
 (def ^:private durable-seam-revision
-  "edc86af07d5982a185c4ef953c19c848a719da0e")
+  "4a0b82119a09fdadb08442cb5d189bdc0474ed86")
 
 (def ^:private expected
   [[:durable/acquire 'jdbc.chdb.durable.control/acquire! 2]
-   [:durable/publish-wal 'jdbc.chdb.durable.control/publish-wal-bytes! 3]
+   [:durable/publish-wal 'jdbc.chdb.durable.control/publish-wal-bytes! 4]
    [:durable/publish-checkpoint
-    'jdbc.chdb.durable.control/publish-checkpoint-file! 3]
+    'jdbc.chdb.durable.control/publish-checkpoint-file! 4]
    [:durable/commit-reference 'jdbc.chdb.durable.control/commit-reference! 3]
-   [:durable/renew 'jdbc.chdb.durable.control/renew! 3]
-   [:durable/release 'jdbc.chdb.durable.control/release! 2]])
+   [:durable/renew 'jdbc.chdb.durable.control/renew! 4]
+   [:durable/release 'jdbc.chdb.durable.control/release! 3]])
 
 (def ^:private expected-consumers
   ['jolt.aspect-packs.chdb-durable.provider/aspect-provider

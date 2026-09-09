@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Pin the bounded jolt-chdb Durable retry implementation in the application and
+  native qualification workflows, and expose separate writer-control and
+  S3-transport deadline/backoff settings through the standalone collector
+  environment.
+- Follow the retry-aware Durable aspect epoch and terminal operation arities so
+  hosted history validation observes each writer operation exactly once.
 - Bound long-running standalone Durable recovery chains by checkpointing every
   configured number of acknowledged OTLP batches; failed checkpoints remain
   due and cannot be silently replaced by another WAL flush. Deterministic

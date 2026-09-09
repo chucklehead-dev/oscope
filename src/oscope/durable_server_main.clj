@@ -19,6 +19,14 @@
    {:category :lease-fenced
     :message "this process no longer owns the Durable lease"
     :action "stop this instance and investigate the active writer before retrying"}
+   ::control/timeout
+   {:category :storage-timeout
+    :message "a Durable control operation exceeded its retry bounds"
+    :action "inspect object-store latency and retry policy before restarting"}
+   ::control/commit-ambiguous
+   {:category :commit-ambiguous
+    :message "a Durable write could not be proved committed or uncommitted"
+    :action "stop this instance and preserve the store for reconciliation"}
    ::head/corrupt
    {:category :corrupt-head
     :message "the Durable head is corrupt"
@@ -43,6 +51,10 @@
    {:category :storage-transport
     :message "the Durable object store could not be reached reliably"
     :action "inspect endpoint, TLS, DNS, and network health before retrying"}
+   ::durable-s3/timeout
+   {:category :storage-timeout
+    :message "the Durable object-store request exceeded its retry deadline"
+    :action "inspect provider latency and object-store timeout settings"}
    ::durable-s3/provider
    {:category :storage-provider
     :message "the Durable object store rejected a protocol operation"
@@ -186,6 +198,20 @@
                  value)))
            force? (boolean-option (get environment "OSCOPE_DURABLE_FORCE")
                                   "OSCOPE_DURABLE_FORCE")
+           max-attempts
+           (positive-long (get environment "OSCOPE_DURABLE_MAX_ATTEMPTS")
+                          "OSCOPE_DURABLE_MAX_ATTEMPTS" 4)
+           retry-deadline-ms
+           (positive-long (get environment "OSCOPE_DURABLE_RETRY_DEADLINE_MS")
+                          "OSCOPE_DURABLE_RETRY_DEADLINE_MS" 5000)
+           retry-initial-backoff-ms
+           (positive-long
+            (get environment "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS")
+            "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS" 10)
+           retry-max-backoff-ms
+           (positive-long
+            (get environment "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS")
+            "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS" 250)
            checkpoint-every
            (positive-long
             (get environment "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES")
@@ -214,6 +240,11 @@
                  "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS exceeds one third of the lease TTL"
                  {:oscope.durable-server/error true
                   :option "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS"})))
+       (when (> retry-initial-backoff-ms retry-max-backoff-ms)
+         (throw (ex-info
+                 "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS exceeds its maximum"
+                 {:oscope.durable-server/error true
+                  :option "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS"})))
        (let [storage
              (case backend-kind
                "local"
@@ -225,8 +256,26 @@
                (let [object-id
                      (object-id!
                       (or (not-empty
-                           (get environment "OSCOPE_DURABLE_OBJECT_ID"))
+                          (get environment "OSCOPE_DURABLE_OBJECT_ID"))
                           "oscope"))
+                     s3-retry-initial-backoff-ms
+                     (positive-long
+                      (get environment
+                           "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS")
+                      "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS" 25)
+                     s3-retry-max-backoff-ms
+                     (positive-long
+                      (get environment
+                           "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS")
+                      "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS" 1000)
+                     _ (when (> s3-retry-initial-backoff-ms
+                                s3-retry-max-backoff-ms)
+                         (throw
+                          (ex-info
+                           "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS exceeds its maximum"
+                           {:oscope.durable-server/error true
+                            :option
+                            "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"})))
                      options
                      {:endpoint (required-option
                                  environment "OSCOPE_DURABLE_S3_ENDPOINT")
@@ -253,7 +302,15 @@
                       :timeout-ms
                       (positive-long
                        (get environment "OSCOPE_DURABLE_S3_TIMEOUT_MS")
-                       "OSCOPE_DURABLE_S3_TIMEOUT_MS" 300000)}]
+                       "OSCOPE_DURABLE_S3_TIMEOUT_MS" 300000)
+                      :retry-deadline-ms
+                      (positive-long
+                       (get environment
+                            "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS")
+                       "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS" 300000)
+                      :retry-initial-backoff-ms
+                      s3-retry-initial-backoff-ms
+                      :retry-max-backoff-ms s3-retry-max-backoff-ms}]
                  {:namespace-backend (s3-backend-fn options)
                   :object-id object-id}))]
          {:host host
@@ -271,6 +328,10 @@
              :lease-ttl-ms ttl
              :heartbeat-interval-ms heartbeat
              :clock-skew-ms skew
+             :max-attempts max-attempts
+             :retry-deadline-ms retry-deadline-ms
+             :retry-initial-backoff-ms retry-initial-backoff-ms
+             :retry-max-backoff-ms retry-max-backoff-ms
              :force? force?}
             storage))})))))
 
@@ -287,11 +348,18 @@
           "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"
           "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS"
           "OSCOPE_DURABLE_S3_TIMEOUT_MS"
+          "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS"
+          "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"
+          "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS"
           "OSCOPE_DURABLE_OWNER" "OSCOPE_DURABLE_INSTANCE"
           "OSCOPE_DURABLE_DATABASE" "OSCOPE_DURABLE_SCRATCH_PARENT"
           "OSCOPE_DURABLE_LEASE_TTL_MS"
           "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS"
           "OSCOPE_DURABLE_CLOCK_SKEW_MS" "OSCOPE_DURABLE_FORCE"
+          "OSCOPE_DURABLE_MAX_ATTEMPTS"
+          "OSCOPE_DURABLE_RETRY_DEADLINE_MS"
+          "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS"
+          "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS"
           "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES"])))
 
 (defn -main [& _]
