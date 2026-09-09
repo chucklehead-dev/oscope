@@ -2,9 +2,14 @@
   (:require [jolt.aspect-packs.chdb-durable.model :as durable-model]
             [jolt.aspect-packs.history :as history]))
 
+(defn- publication-kinds [expected]
+  (if (integer? expected)
+    (into [:checkpoint] (repeat expected :wal))
+    expected))
+
 (defn assert-publication-order!
-  "Require one checkpoint publication/commit before `expected-wal-count` WALs."
-  [commands expected-wal-count]
+  "Require the expected checkpoint/WAL publication and exact-commit order."
+  [commands expected]
   (let [publication-commands
         (filterv #(contains? #{:checkpoint-publish :publish :commit-attempt}
                              (:command %))
@@ -34,30 +39,34 @@
                    {:publication publication :commit commit})))
                {:kind kind :reference reference}))
            (partition 2 publication-commands))]
-      (when-not (= (into [:checkpoint] (repeat expected-wal-count :wal))
-                   (mapv :kind pairs))
+      (when-not (= (publication-kinds expected) (mapv :kind pairs))
         (throw
-         (ex-info "oscope Durable history did not checkpoint before ingest WALs"
+         (ex-info "oscope Durable history has the wrong publication cadence"
                   {:publication-kinds (mapv :kind pairs)
-                   :expected-wal-count expected-wal-count})))
+                   :expected-publication-kinds
+                   (publication-kinds expected)})))
       pairs)))
 
 (defn select-ingest-commands!
-  "Select the one Durable object with a checkpoint and the expected WAL count."
-  [commands expected-wal-count]
-  (let [candidates
+  "Select the one Durable object with the expected publication frequencies."
+  [commands expected]
+  (let [expected-kinds (publication-kinds expected)
+        expected-checkpoints (get (frequencies expected-kinds) :checkpoint 0)
+        expected-wals (get (frequencies expected-kinds) :wal 0)
+        candidates
         (filterv
          (fn [object-commands]
            (let [frequencies (frequencies (map :command object-commands))]
-             (and (= 1 (get frequencies :checkpoint-publish 0))
-                  (= expected-wal-count (get frequencies :publish 0))
-                  (= (inc expected-wal-count)
+             (and (= expected-checkpoints
+                     (get frequencies :checkpoint-publish 0))
+                  (= expected-wals (get frequencies :publish 0))
+                  (= (count expected-kinds)
                      (get frequencies :commit-attempt 0)))))
          (vals (group-by :durable-object commands)))]
     (when-not (= 1 (count candidates))
       (throw (ex-info "oscope Durable history did not identify one ingest lifecycle"
                       {:candidate-count (count candidates)
-                       :expected-wal-count expected-wal-count})))
+                       :expected-publication-kinds expected-kinds})))
     (first candidates)))
 
 (defn assert-renewal-before-release!
@@ -101,13 +110,14 @@
 (defn assert-ingest-history!
   "Validate one woven oscope lifecycle without retaining private Durable data.
 
-  The startup checkpoint must publish and commit before the parameterized OTLP
-  requests publish and commit one WAL apiece. Returns the checked commands."
+  The startup checkpoint and request persistence operations must follow the
+  parameterized publication cadence. Returns the checked commands."
   [{:keys [journal events context-id private-values expected-wal-count
-           require-renewal?]
+           expected-publication-kinds require-renewal?]
     :or {expected-wal-count 3 require-renewal? false}}]
-  (let [all-commands (durable-model/commands events)
-        commands (select-ingest-commands! all-commands expected-wal-count)
+  (let [expected (or expected-publication-kinds expected-wal-count)
+        all-commands (durable-model/commands events)
+        commands (select-ingest-commands! all-commands expected)
         durable-object (:durable-object (first commands))
         writer (:writer (some #(when (= :checkpoint-publish (:command %)) %)
                               commands))
@@ -119,7 +129,7 @@
                         require-renewal? (conj :renew-attempt)))
       (throw (ex-info "oscope Durable history omitted a control boundary"
                       {:commands (mapv :command commands)})))
-    (assert-publication-order! commands expected-wal-count)
+    (assert-publication-order! commands expected)
     (when require-renewal?
       (assert-renewal-before-release! events durable-object writer))
     (when-not (every? #(= context-id (:context-id %))

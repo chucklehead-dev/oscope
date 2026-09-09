@@ -29,6 +29,7 @@ done
 curl -fsS "$endpoint/minio/health/live" >/dev/null
 
 env OSCOPE_DURABLE_CRASH_BACKEND=s3 \
+    OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES=1 \
     OSCOPE_DURABLE_S3_ENDPOINT="$endpoint" \
     OSCOPE_DURABLE_S3_BUCKET=oscope-durable-crash \
     OSCOPE_DURABLE_S3_PREFIX=process-crash \
