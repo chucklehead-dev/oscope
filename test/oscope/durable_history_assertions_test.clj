@@ -44,3 +44,33 @@
                  (assertions/assert-publication-order!
                   (assoc-in commands [0 :command] :publish)
                   3)))))
+
+(deftest successful-renewal-must-precede-a-release
+  (let [identity {:durable-object "opaque-1"
+                  :writer {:writer "opaque-2" :generation 1}}
+        renew-invoke {:seq 1 :phase :invoke :operation :durable/renew
+                      :operation-id 10 :input identity}
+        renew-return {:seq 2 :phase :return :operation-id 10
+                      :value {:outcome :committed}}
+        release (fn [seq identity]
+                  {:seq seq :phase :invoke :operation :durable/release
+                   :operation-id 11 :input identity})]
+    (is (nil? (assertions/assert-renewal-before-release!
+               [renew-invoke renew-return (release 3 identity)])))
+    (is (thrown? Exception
+                 (assertions/assert-renewal-before-release!
+                  [renew-invoke (release 2 identity)
+                   (assoc renew-return :seq 3)])))
+    (is (thrown? Exception
+                 (assertions/assert-renewal-before-release!
+                  [renew-invoke
+                   (assoc-in renew-return [:value :outcome] :error)
+                   (release 3 identity)])))
+    (is (thrown? Exception
+                 (assertions/assert-renewal-before-release!
+                  [renew-invoke renew-return
+                   (release 3 (assoc-in identity [:writer :generation] 2))])))
+    (is (thrown? Exception
+                 (assertions/assert-renewal-before-release!
+                  [renew-invoke renew-return
+                   (release 3 (assoc identity :durable-object "opaque-9"))])))))
