@@ -40,6 +40,10 @@
                  "OSCOPE_DURABLE_LEASE_TTL_MS" "60000"
                  "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS" "15000"
                  "OSCOPE_DURABLE_CLOCK_SKEW_MS" "250"
+                 "OSCOPE_DURABLE_MAX_ATTEMPTS" "7"
+                 "OSCOPE_DURABLE_RETRY_DEADLINE_MS" "8000"
+                 "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS" "30"
+                 "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS" "400"
                  "OSCOPE_DURABLE_FORCE" "true"
                  "OSCOPE_PORT" "14318"}
                 calls)]
@@ -59,6 +63,10 @@
             :lease-ttl-ms 60000
             :heartbeat-interval-ms 15000
             :clock-skew-ms 250
+            :max-attempts 7
+            :retry-deadline-ms 8000
+            :retry-initial-backoff-ms 30
+            :retry-max-backoff-ms 400
             :force? true}
            (:db-spec result)))))
 
@@ -79,6 +87,10 @@
                 :lease-ttl-ms 30000
                 :heartbeat-interval-ms nil
                 :clock-skew-ms 0
+                :max-attempts 4
+                :retry-deadline-ms 5000
+                :retry-initial-backoff-ms 10
+                :retry-max-backoff-ms 250
                 :force? false}
                @seen))))))
 
@@ -89,6 +101,10 @@
     (is (= "generated-instance" (get-in result [:db-spec :instance])))
     (is (= "default" (get-in result [:db-spec :database])))
     (is (= 30000 (get-in result [:db-spec :lease-ttl-ms])))
+    (is (= [4 5000 10 250]
+           (mapv #(get-in result [:db-spec %])
+                 [:max-attempts :retry-deadline-ms
+                  :retry-initial-backoff-ms :retry-max-backoff-ms])))
     (is (nil? (get-in result [:db-spec :heartbeat-interval-ms])))
     (is (false? (get-in result [:db-spec :force?])))
     (is (= 1000 (get-in result [:durability
@@ -115,7 +131,10 @@
          "OSCOPE_DURABLE_S3_SESSION_TOKEN" "PRIVATE-SESSION"
          "OSCOPE_DURABLE_S3_MAX_ATTEMPTS" "4"
          "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS" "2500"
-         "OSCOPE_DURABLE_S3_TIMEOUT_MS" "45000"}
+         "OSCOPE_DURABLE_S3_TIMEOUT_MS" "45000"
+         "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS" "60000"
+         "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS" "50"
+         "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS" "500"}
         result (s3-options environment calls)]
     (is (= {:vendor "chdb-durable"
             :namespace-backend test-s3-backend
@@ -132,7 +151,10 @@
               :session-token "PRIVATE-SESSION"
               :max-attempts 4
               :connect-timeout-ms 2500
-              :timeout-ms 45000}]]
+              :timeout-ms 45000
+              :retry-deadline-ms 60000
+              :retry-initial-backoff-ms 50
+              :retry-max-backoff-ms 500}]]
            @calls))))
 
 (deftest durable-s3-environment-defaults-object-and-transport-policy
@@ -148,10 +170,15 @@
          calls)]
     (is (= "oscope" (get-in result [:db-spec :object-id])))
     (is (= {:prefix "" :session-token nil :max-attempts 3
-            :connect-timeout-ms 10000 :timeout-ms 300000}
+            :connect-timeout-ms 10000 :timeout-ms 300000
+            :retry-deadline-ms 300000
+            :retry-initial-backoff-ms 25
+            :retry-max-backoff-ms 1000}
            (select-keys (second (first @calls))
                         [:prefix :session-token :max-attempts
-                         :connect-timeout-ms :timeout-ms])))))
+                         :connect-timeout-ms :timeout-ms :retry-deadline-ms
+                         :retry-initial-backoff-ms
+                         :retry-max-backoff-ms])))))
 
 (deftest invalid-configuration-fails-before-backend-creation
   (doseq [[label environment]
@@ -182,7 +209,15 @@
              "OSCOPE_DURABLE_OBJECT_ID" "../other"}]
            ["too many S3 attempts"
             {"OSCOPE_DURABLE_BACKEND" "s3"
-             "OSCOPE_DURABLE_S3_MAX_ATTEMPTS" "9"}]]]
+             "OSCOPE_DURABLE_S3_MAX_ATTEMPTS" "9"}]
+           ["inverted writer retry backoff"
+            {"OSCOPE_DURABLE_ROOT" "/d"
+             "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS" "20"
+             "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS" "10"}]
+           ["inverted S3 retry backoff"
+            {"OSCOPE_DURABLE_BACKEND" "s3"
+             "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS" "20"
+             "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS" "10"}]]]
     (testing label
       (let [calls (atom [])]
         (is (thrown? Exception (options environment calls)))
@@ -198,6 +233,9 @@
            [::durable-s3/permission :storage-permission]
            [::durable-s3/throttled :storage-throttled]
            [::durable-s3/transport :storage-transport]
+           [::durable-s3/timeout :storage-timeout]
+           [::control/timeout :storage-timeout]
+           [::control/commit-ambiguous :commit-ambiguous]
            [::durable-s3/provider :storage-provider]
            [::durable-s3/invalid-response :storage-response]
            [::durable-s3/invalid-options :storage-configuration]
