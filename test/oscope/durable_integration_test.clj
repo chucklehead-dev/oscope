@@ -134,6 +134,18 @@
               (recur (ex-cause current) (dec remaining)))
           nil)))))
 
+(defn- await-lease-renewal!
+  [store initial-expiry timeout-ms]
+  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+    (loop []
+      (let [expiry (get-in (control/read-head! store)
+                           [:head "lease" "expires_at"])]
+        (cond
+          (and (integer? expiry) (> expiry initial-expiry)) true
+          (< (System/currentTimeMillis) deadline)
+          (do (Thread/sleep 10) (recur))
+          :else false)))))
+
 (defn- durable-server-options [store instance force?]
   {:port 0
    :durability {:checkpoint! jdbc.chdb.durable/checkpoint!
@@ -216,9 +228,16 @@
                         :owner "oscope-test"
                         :instance "oscope-test-instance"
                         :database "default"
-                        :lease-ttl-ms 30000}})]
+                        :lease-ttl-ms 30000
+                        :heartbeat-interval-ms 50}})]
         (try
           (is (pos? (:port lifecycle)))
+          (let [initial-expiry
+                (get-in (control/read-head! store)
+                        [:head "lease" "expires_at"])]
+            (is (integer? initial-expiry))
+            (is (await-lease-renewal! store initial-expiry 2000)
+                "the app's real Durable writer renews its lease while open"))
           (let [now (* (System/currentTimeMillis) 1000000)]
             (doseq [[path payload]
                     [["/v1/traces" (trace-wire now)]

@@ -7,7 +7,7 @@
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "58f090caa31445bcf9403a15bdd01b1901a4e860"}
+         :git/sha "b5a8ce43942a6b5fdf6994d369938242d79997e6"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
          :git/sha "cd78aa5766775f7e9caea2722d0b33b039745946"}

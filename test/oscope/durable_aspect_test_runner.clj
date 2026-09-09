@@ -33,7 +33,8 @@
                {:journal journal
                 :events events
                 :context-id :oscope-durable-integration
-                :private-values private-values})
+                :private-values private-values
+                :require-renewal? true})
               [spans durations] (telemetry/validate!
                                  exporter handle private-values)
               printed (pr-str [events spans durations])]
