@@ -4,7 +4,9 @@
 
 - Bound long-running standalone Durable recovery chains by checkpointing every
   configured number of acknowledged OTLP batches; failed checkpoints remain
-  due and cannot be silently replaced by another WAL flush.
+  due and cannot be silently replaced by another WAL flush. Deterministic
+  two-worker coverage proves cadence selection cannot double-checkpoint a
+  shared boundary.
 - Build standalone Durable writer configuration through jolt-chdb's validated
   dbspec constructor, so role and storage mistakes fail before collection starts.
 - Qualify the Durable collector against jolt-chdb's owned worker and heartbeat

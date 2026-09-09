@@ -264,6 +264,76 @@
         (is (= [:flush :checkpoint-failed :checkpoint-retried] @events))
         (server/stop! lifecycle)))))
 
+(deftest concurrent-durability-boundaries-select-one-checkpoint
+  (let [events (atom [])
+        checkpoint-calls (atom 0)
+        checkpoint-entered (promise)
+        release-checkpoint (promise)
+        second-started (promise)
+        first-result (promise)
+        second-result (promise)
+        conn (reify java.io.Closeable (close [_] nil))
+        exporter (fake-exporter events)
+        source {:close! (fn [] nil)}
+        received-otlp-options (atom nil)]
+    (with-redefs [jdbc/connection (constantly conn)
+                  chdb-export/exporter (constantly exporter)
+                  live/open! (constantly source)
+                  otlp/handler (fn [_ options]
+                                 (reset! received-otlp-options options)
+                                 (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _] {:port 9197})
+                  http/stop-server (fn [_] nil)]
+      (let [lifecycle
+            (server/start!
+             {:port 0
+              :durability
+              {:checkpoint!
+               (fn [_]
+                 (when (> (swap! checkpoint-calls inc) 1)
+                   (swap! events conj :checkpoint-entered)
+                   (deliver checkpoint-entered true)
+                   @release-checkpoint
+                   (swap! events conj :checkpoint-finished))
+                 {:status :committed})
+               :flush! (fn [_]
+                         (swap! events conj :flush)
+                         {:status :committed})
+               :checkpoint-every-batches 2}})
+            after-success! (:after-success! @received-otlp-options)
+            first-worker (Thread. #(deliver first-result (after-success!)))
+            second-worker
+            (Thread. #(do (deliver second-started true)
+                          (deliver second-result (after-success!))))]
+        (try
+          (is (true? (after-success!)))
+          (.start first-worker)
+          (is (= true (deref checkpoint-entered 1000 ::timeout)))
+          (.start second-worker)
+          (is (= true (deref second-started 1000 ::timeout)))
+          (.join second-worker 50)
+          (is (.isAlive second-worker)
+              "the second worker cannot finish while the boundary is owned")
+          (is (= [:flush :checkpoint-entered] @events)
+              "the blocked worker cannot double-select the checkpoint")
+          (deliver release-checkpoint true)
+          (.join first-worker 1000)
+          (.join second-worker 1000)
+          (is (not (.isAlive first-worker)))
+          (is (not (.isAlive second-worker)))
+          (is (true? (deref first-result 1000 ::timeout)))
+          (is (true? (deref second-result 1000 ::timeout)))
+          (is (= [:flush :checkpoint-entered :checkpoint-finished :flush]
+                 @events))
+          (is (= 2 @checkpoint-calls)
+              "startup plus exactly one periodic checkpoint")
+          (finally
+            (deliver release-checkpoint true)
+            (.join first-worker 1000)
+            (.join second-worker 1000)
+            (server/stop! lifecycle)))))))
+
 (deftest invalid-checkpoint-cadence-opens-no-connection
   (let [opened (atom 0)]
     (with-redefs [jdbc/connection (fn [_] (swap! opened inc))]
