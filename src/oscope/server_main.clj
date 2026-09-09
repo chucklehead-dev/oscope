@@ -1,5 +1,6 @@
 (ns oscope.server-main
-  (:require [oscope.server :as server]))
+  (:require [oscope.config-cli :as config-cli]
+            [oscope.server :as server]))
 
 (def max-stop-attempts 3)
 
@@ -38,5 +39,14 @@
         (stop-until-closed! lifecycle)
         (System/exit 0)))))
 
-(defn -main [& _]
-  (run! (server/env-options)))
+(defn execute!
+  "Print a checked diagnostic or start the already resolved configuration."
+  [resolved]
+  (if (:check-config? resolved)
+    (print (config-cli/check-output resolved))
+    (run! (config-cli/server-options resolved))))
+
+(defn -main [& arguments]
+  (let [resolved (config-cli/load-config arguments
+                                         (config-cli/system-environment))]
+    (execute! resolved)))

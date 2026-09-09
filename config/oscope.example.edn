@@ -1,0 +1,4 @@
+{:ingest {:type :otlp-http-json}
+ :server {:host "127.0.0.1" :http-queue-capacity 8 :http-workers 2 :port 4318}
+ :storage {:path "./oscope-data" :type :local-path}
+ :version 1}

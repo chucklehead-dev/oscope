@@ -1,5 +1,7 @@
 (ns oscope.test-runner
   (:require [clojure.test :as test]
+            [oscope.config-property-test]
+            [oscope.config-test]
             [oscope.core-test]
             [oscope.embedded-query-test]
             [oscope.events-test]
@@ -22,7 +24,8 @@
             [oscope.workbench-test]))
 (defn -main [& _]
   (let [{:keys [fail error]}
-        (test/run-tests 'oscope.core-test 'oscope.embedded-query-test
+        (test/run-tests 'oscope.config-property-test 'oscope.config-test
+                        'oscope.core-test 'oscope.embedded-query-test
                         'oscope.events-test 'oscope.live-test
                         'oscope.http-executor-test
                         'oscope.native-test 'oscope.native-server-test

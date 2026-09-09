@@ -1,6 +1,7 @@
 (ns oscope.native-server-main
   "Standalone OTLP/HTTP collector with the shared Glitter oscope viewer."
   (:require [clojure.string :as str]
+            [oscope.config-cli :as config-cli]
             [oscope.server :as server]
             [oscope.server-main :as server-main]
             [oscope.ui.native :as native]))
@@ -28,5 +29,9 @@
        (finally
          (server-main/stop-until-closed! lifecycle))))))
 
-(defn -main [& _]
-  (run! (server/env-options) (ui-options)))
+(defn -main [& arguments]
+  (let [resolved (config-cli/load-config arguments
+                                         (config-cli/system-environment))]
+    (if (:check-config? resolved)
+      (print (config-cli/check-output resolved))
+      (run! (config-cli/server-options resolved) (ui-options)))))

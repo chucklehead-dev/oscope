@@ -4,6 +4,7 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
+            [oscope.config :as config]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
@@ -296,26 +297,23 @@
     {:status :closed :phase :closed}))
 
 (defn http-executor-env-options [environment]
-  (let [raw-workers (get environment "OSCOPE_HTTP_WORKERS")
-        raw-queue-capacity (get environment "OSCOPE_HTTP_QUEUE_CAPACITY")
-        workers (if (str/blank? raw-workers)
-                  default-http-workers
-                  (parse-long raw-workers))
-        queue-capacity (if (str/blank? raw-queue-capacity)
-                         default-http-queue-capacity
-                         (parse-long raw-queue-capacity))]
-    (validate-http-executor-options! workers queue-capacity)
-    {:http-workers workers :http-queue-capacity queue-capacity}))
+  (let [resolved (config/resolve-config
+                  [[:environment (config/environment-layer environment)]])
+        server (:server (:config resolved))]
+    {:http-workers (:http-workers server)
+     :http-queue-capacity (:http-queue-capacity server)}))
 
 (defn env-options []
-  (let [raw-port (System/getenv "OSCOPE_PORT")
-        port (if (str/blank? raw-port) default-port (parse-long raw-port))]
-    (merge
-     {:host (or (not-empty (System/getenv "OSCOPE_HOST")) default-host)
-      :port port
-      :db-spec (or (not-empty (System/getenv "OSCOPE_CHDB_SPEC"))
-                   default-db-spec)}
-     (http-executor-env-options
-      {"OSCOPE_HTTP_WORKERS" (System/getenv "OSCOPE_HTTP_WORKERS")
-       "OSCOPE_HTTP_QUEUE_CAPACITY"
-       (System/getenv "OSCOPE_HTTP_QUEUE_CAPACITY")}))))
+  (let [names ["OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_CHDB_SPEC"
+               "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"]
+        environment (into {}
+                          (map (fn [name] [name (System/getenv name)]))
+                          names)
+        resolved (config/resolve-config
+                  [[:environment (config/environment-layer environment)]])
+        document (:config resolved)]
+    {:host (get-in document [:server :host])
+     :port (get-in document [:server :port])
+     :http-workers (get-in document [:server :http-workers])
+     :http-queue-capacity (get-in document [:server :http-queue-capacity])
+     :db-spec (config/storage->db-spec (:storage document))}))
