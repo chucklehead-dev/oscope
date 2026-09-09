@@ -40,6 +40,7 @@ on:
       - test/oscope/embedded_durable_integration_test.clj
       - test/oscope/embedded_query_test.clj
       - test/oscope/embedded_test.clj
+      - test/oscope/server_test.clj
   pull_request:
     paths:
       - .github/workflows/durable-s3-e2e.yml
@@ -77,6 +78,7 @@ on:
       - test/oscope/embedded_durable_integration_test.clj
       - test/oscope/embedded_query_test.clj
       - test/oscope/embedded_test.clj
+      - test/oscope/server_test.clj
 
 permissions:
   contents: read
