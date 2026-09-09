@@ -133,6 +133,7 @@
          "OSCOPE_DURABLE_S3_SECRET_KEY" (:secret-key auth)
          "OSCOPE_DURABLE_INSTANCE" "s3-writer"
          "OSCOPE_DURABLE_LEASE_TTL_MS" "30000"
+         "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES" "2"
          "OSCOPE_PORT" "0"}
         options (durable-main/durable-options environment)]
     (is (= 200 (:status bucket-result)))
@@ -156,7 +157,7 @@
       (is (nil? (get-in head ["lease" "owner"])))
       (is (= 4 (get-in head ["manifest" "seq"])))
       (is (some? (get-in head ["manifest" "base"])))
-      (is (= 3 (count (get-in head ["manifest" "wal"]))))
+      (is (= 1 (count (get-in head ["manifest" "wal"]))))
       (with-open [reader
                   (jdbc/connection
                    (jdbc.chdb.durable/snapshot-dbspec

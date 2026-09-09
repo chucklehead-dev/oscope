@@ -33,6 +33,19 @@
          (mapv :kind
                (assertions/assert-publication-order! (valid-commands) 3)))))
 
+(deftest periodic-checkpoint-cadence-is-checked-exactly
+  (let [commands (valid-commands)
+        periodic (-> commands
+                     (assoc-in [4 :command] :checkpoint-publish)
+                     (assoc-in [5 :kind] :checkpoint))]
+    (is (= [:checkpoint :wal :checkpoint :wal]
+           (mapv :kind
+                 (assertions/assert-publication-order!
+                  periodic [:checkpoint :wal :checkpoint :wal]))))
+    (is (thrown? Exception
+                 (assertions/assert-publication-order!
+                  periodic [:checkpoint :wal :wal :checkpoint])))))
+
 (deftest ingest-lifecycle-is-selected-by-durable-object
   (let [ingest (valid-commands)
         other-object
