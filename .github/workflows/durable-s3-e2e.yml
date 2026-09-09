@@ -17,6 +17,7 @@ on:
       - test/durable_crash_reopen.sh
       - test/durable_s3_crash_reopen.sh
       - test/durable_fault_acceptance.sh
+      - test/durable_aspect_smoke.sh
       - test/durable_s3_aspect_smoke.sh
       - test/durable-aspect-published/deps.edn
       - test/durable-fault/deps.edn
@@ -30,6 +31,7 @@ on:
       - test/oscope/durable_aspect_report_test.clj
       - test/oscope/durable_history_assertions.clj
       - test/oscope/durable_history_assertions_test.clj
+      - test/oscope/durable_integration_test.clj
       - test/oscope/durable_s3_aspect_test_runner.clj
       - test/oscope/durable_telemetry_assertions.clj
       - test/oscope/durable_observability_test.clj
@@ -52,6 +54,7 @@ on:
       - test/durable_crash_reopen.sh
       - test/durable_s3_crash_reopen.sh
       - test/durable_fault_acceptance.sh
+      - test/durable_aspect_smoke.sh
       - test/durable_s3_aspect_smoke.sh
       - test/durable-aspect-published/deps.edn
       - test/durable-fault/deps.edn
@@ -65,6 +68,7 @@ on:
       - test/oscope/durable_aspect_report_test.clj
       - test/oscope/durable_history_assertions.clj
       - test/oscope/durable_history_assertions_test.clj
+      - test/oscope/durable_integration_test.clj
       - test/oscope/durable_s3_aspect_test_runner.clj
       - test/oscope/durable_telemetry_assertions.clj
       - test/oscope/durable_observability_test.clj
@@ -136,6 +140,13 @@ jobs:
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
         run: jolt -M:test-durable
+      - name: Validate renewal-before-release through local woven history
+        env:
+          JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
+          JOLT_ASPECT_JOLT: ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          JOLT_BIN: ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          OSCOPE_DURABLE_ASPECT_BUILD_ALIAS: published
+        run: test/durable_aspect_smoke.sh
       - name: Recover oscope through pinned MinIO
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
