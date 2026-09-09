@@ -17,7 +17,8 @@
 
 (deftest storage-documentation-pins-the-current-recovery-boundary
   (let [readme (str/replace (slurp "README.md") #"\s+" " ")
-        durable-sha "15940bb83ed76e1144d26dab4b3e21f32b12181e"
+        durable-sha "f506842a05bcbb399ea4dcaec2d4ffdebbd70fad"
+        aspect-sha "e951e33e4843e83f0e72ed368457f240d76a741c"
         s3-workflow (slurp ".github/workflows/durable-s3-e2e.yml")
         aws-workflow (slurp ".github/workflows/durable-aws.yml")]
     (is (= "chdb:./oscope-data" server/default-db-spec))
@@ -37,6 +38,8 @@
     (is (str/includes? readme durable-sha))
     (is (str/includes? s3-workflow durable-sha))
     (is (str/includes? aws-workflow durable-sha))
+    (is (str/includes? readme aspect-sha))
+    (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes?
          readme
          "docs/durable/protocol-v1.mdx"))
