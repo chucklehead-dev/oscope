@@ -33,7 +33,7 @@
          "Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend."))
     (is (str/includes?
          readme
-         "b5a8ce43942a6b5fdf6994d369938242d79997e6"))
+         "5d17703098a73675ade8cc94aff721b6bce61e14"))
     (is (str/includes?
          readme
          "docs/durable/protocol-v1.mdx"))

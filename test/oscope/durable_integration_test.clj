@@ -150,13 +150,13 @@
   {:port 0
    :durability {:checkpoint! jdbc.chdb.durable/checkpoint!
                 :flush! jdbc.chdb.durable/flush!}
-   :db-spec {:vendor "chdb-durable"
-             :backend store
-             :owner "oscope-test"
-             :instance instance
-             :database "default"
-             :lease-ttl-ms 30000
-             :force? force?}})
+   :db-spec (jdbc.chdb.durable/writer-dbspec
+             {:backend store
+              :owner "oscope-test"
+              :instance instance
+              :database "default"
+              :lease-ttl-ms 30000
+              :force? force?})})
 
 (defn- startup-error-type [options]
   (error-type
@@ -223,13 +223,13 @@
              {:port 0
               :durability {:checkpoint! jdbc.chdb.durable/checkpoint!
                            :flush! jdbc.chdb.durable/flush!}
-              :db-spec {:vendor "chdb-durable"
-                        :backend store
-                        :owner "oscope-test"
-                        :instance "oscope-test-instance"
-                        :database "default"
-                        :lease-ttl-ms 30000
-                        :heartbeat-interval-ms 50}})]
+              :db-spec (jdbc.chdb.durable/writer-dbspec
+                        {:backend store
+                         :owner "oscope-test"
+                         :instance "oscope-test-instance"
+                         :database "default"
+                         :lease-ttl-ms 30000
+                         :heartbeat-interval-ms 50})})]
         (try
           (is (pos? (:port lifecycle)))
           (let [initial-expiry
@@ -288,9 +288,8 @@
         ;; backend boundary rather than through an in-process oracle atom.
         (with-open [reader
                     (jdbc/connection
-                     {:vendor "chdb-durable"
-                      :backend (local-posix/local-backend root)
-                      :read-only? true})]
+                     (jdbc.chdb.durable/snapshot-dbspec
+                      {:backend (local-posix/local-backend root)}))]
           (is (= 4 (:n (jdbc/fetch-one
                         reader
                         "select count() as n from otel_schema_migrations"))))

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Build standalone Durable writer configuration through jolt-chdb's validated
+  dbspec constructor, so role and storage mistakes fail before collection starts.
 - Qualify the Durable collector against jolt-chdb's owned worker and heartbeat
   threads, and require its woven lifecycle trace to renew before release.
 - Add `oscope.embedded.query`, a bounded background query facade that keeps

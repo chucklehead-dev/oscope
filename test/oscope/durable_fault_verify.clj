@@ -31,9 +31,7 @@
                        :actual-wal-count (count (get manifest "wal"))})))
     (with-open [connection
                 (jdbc/connection
-                 {:vendor "chdb-durable"
-                  :backend backend
-                  :read-only? true})]
+                 (jdbc.chdb.durable/snapshot-dbspec {:backend backend}))]
       (let [{:keys [n selected]}
             (jdbc/fetch-one
              connection

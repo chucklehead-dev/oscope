@@ -466,17 +466,17 @@ owned embedded native windows should treat that runner enhancement as a gate.
 `oscope.embedded` packages the direct in-process path behind one lifecycle:
 
 ```clojure
-(require '[oscope.embedded :as embedded]
+(require '[jdbc.chdb.durable :as durable]
+         '[oscope.embedded :as embedded]
          '[otel.sdk :as sdk]
          '[otel.trace :as trace])
 
 (def runtime
   (embedded/start!
-   {:db-spec {:vendor "chdb-durable"
-              :backend durable-object-backend
-              :owner "checkout"
-              :instance "checkout-1"
-              :database "default"}
+   {:db-spec (durable/writer-dbspec
+              {:backend durable-object-backend
+               :owner "checkout"
+               :database "default"})
     :sdk-options {:service-name "checkout"
                   :processor :batch
                   :metrics? true
@@ -764,7 +764,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `chucklehead-dev/jolt-otel-clickhouse` `cd78aa5766775f7e9caea2722d0b33b039745946`
-- `chucklehead-dev/jolt-chdb` `b5a8ce43942a6b5fdf6994d369938242d79997e6`
+- `chucklehead-dev/jolt-chdb` `5d17703098a73675ade8cc94aff721b6bce61e14`
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
