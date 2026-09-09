@@ -5,6 +5,7 @@
   independent-reader, and standalone receiver gates retain their dedicated
   runners. This runner must not load GTK-facing namespaces."
   (:require [clojure.test :as test]
+            [oscope.async-selection-test]
             [oscope.core-test]
             [oscope.config-test]
             [oscope.config-property-test]
@@ -31,7 +32,8 @@
 
 (defn -main [& _]
   (let [{:keys [fail error]}
-        (test/run-tests 'oscope.core-test
+        (test/run-tests 'oscope.async-selection-test
+                        'oscope.core-test
                         'oscope.config-test
                         'oscope.config-property-test
                         'oscope.durable-cadence-property-test

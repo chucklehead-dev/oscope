@@ -5,10 +5,9 @@
             [glitter.gtk :as gtk]
             [glitter.widget :as widget]
             [jolt.ffi :as ffi]
-            [oscope.command :as command]
-            [oscope.effect :as effect]
             [oscope.plotje.svg :as plotje-svg]
             [oscope.sample :as sample]
+            [oscope.ui.async-selection :as async-selection]
             [oscope.ui.selection :as selection]))
 
 (defn- delete-chart-store! [{:keys [directory paths closed?]}]
@@ -119,22 +118,21 @@
 (defn create-instance [{initial-screen :screen source-loader :loader}]
   (let [chart-store (create-chart-store)
         state (atom initial-screen)
-        closed? (atom false)
-        select! (fn [selected]
-                  (when @closed?
-                    (throw (ex-info "oscope native adapter is closed"
-                                    {:oscope.ui/error true :type ::closed})))
-                  (effect/apply-command!
-                   state source-loader
-                   (command/query-command [:native selected] selected)))
+        selection-owner (async-selection/start!
+                         {:model state :loader source-loader
+                          :id-prefix :native})
+        closed? (:closed? selection-owner)
+        select! (:select! selection-owner)
         close! (fn []
-                 (when (compare-and-set! closed? false true)
-                   (delete-chart-store! chart-store)))]
+                 ((:close! selection-owner))
+                 (delete-chart-store! chart-store)
+                 {:status :closed})]
     {:model state :loader source-loader :select! select!
      :view (fn [screen]
              (overview screen select!
                        (render-chart! chart-store (:chart screen))))
-     :closed? closed? :close! close! :chart-store chart-store}))
+     :closed? closed? :close! close! :chart-store chart-store
+     :selection-owner selection-owner}))
 
 (defn run!
   ([source] (run! source {}))

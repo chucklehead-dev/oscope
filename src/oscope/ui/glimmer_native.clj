@@ -2,9 +2,8 @@
   "Glimmer adapter for the canonical oscope screen and effect contract."
   (:require [glimmer.core :as ui]
             [glimmer.ratom :as ratom]
-            [oscope.command :as command]
-            [oscope.effect :as effect]
             [oscope.sample :as sample]
+            [oscope.ui.async-selection :as async-selection]
             [oscope.ui.selection :as selection]))
 
 (defn- selected-signal [screen]
@@ -43,20 +42,16 @@
 
 (defn create-instance [{initial-screen :screen source-loader :loader}]
   (let [model (ratom/atom initial-screen)
-        closed? (atom false)
-        select! (fn [selected]
-                  (when @closed?
-                    (throw (ex-info "oscope Glimmer adapter is closed"
-                                    {:oscope.ui/error true :type ::closed})))
-                  (ratom/reset!
-                   model
-                   (effect/run-command
-                    source-loader
-                    (command/query-command [:glimmer selected] selected))))
-        close! (fn [] (compare-and-set! closed? false true))]
+        selection-owner (async-selection/start!
+                         {:model model :loader source-loader
+                          :id-prefix :glimmer})
+        closed? (:closed? selection-owner)
+        select! (:select! selection-owner)
+        close! (:close! selection-owner)]
     {:model model :loader source-loader :select! select!
      :view (fn [] (overview model select!))
-     :closed? closed? :close! close!}))
+     :closed? closed? :close! close!
+     :selection-owner selection-owner}))
 
 (defn run! [source]
   (require 'glimmer-gtk.core)
