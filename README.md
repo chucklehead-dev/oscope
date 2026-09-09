@@ -104,6 +104,14 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
     jolt -M:server
 ```
 
+The standalone server also accepts a versioned EDN file and command-line
+overrides. See [Configuration](docs/configuration.md). Validate the resolved,
+redacted configuration without opening storage or a listener:
+
+```sh
+jolt -M:server --config config/oscope.example.edn --check-config
+```
+
 `OSCOPE_HOST` is accepted only as `127.0.0.1`; jolt-http's current transport
 bind is intentionally loopback-only. The receiver accepts uncompressed
 `application/json`, caps the consumed request body at 1 MiB, and admits one

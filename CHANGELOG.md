@@ -6,6 +6,11 @@
   capacity despite Jolt 0.8.3's advisory ThreadPoolExecutor queue model; excess
   connections are closed before handler execution, and ordered shutdown drains
   admitted work before terminating the owned pool.
+- Add the first versioned file-backed configuration slice for the standalone
+  server, with closed EDN validation, CLI/environment/file/default precedence,
+  field provenance, path redaction, credential references, compatibility
+  environment aliases including the bounded HTTP dispatcher, and a
+  side-effect-free `--check-config` command.
 - Render singleton and extreme finite numeric chart domains without NaN or
   Infinity coordinates. One-sample lines now receive a visible point fallback,
   while one-sample areas explicitly collapse to a baseline-to-value segment.
