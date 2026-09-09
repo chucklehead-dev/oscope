@@ -42,9 +42,27 @@
                    :expected-wal-count expected-wal-count})))
       pairs)))
 
+(defn select-ingest-commands!
+  "Select the one Durable object with a checkpoint and the expected WAL count."
+  [commands expected-wal-count]
+  (let [candidates
+        (filterv
+         (fn [object-commands]
+           (let [frequencies (frequencies (map :command object-commands))]
+             (and (= 1 (get frequencies :checkpoint-publish 0))
+                  (= expected-wal-count (get frequencies :publish 0))
+                  (= (inc expected-wal-count)
+                     (get frequencies :commit-attempt 0)))))
+         (vals (group-by :durable-object commands)))]
+    (when-not (= 1 (count candidates))
+      (throw (ex-info "oscope Durable history did not identify one ingest lifecycle"
+                      {:candidate-count (count candidates)
+                       :expected-wal-count expected-wal-count})))
+    (first candidates)))
+
 (defn assert-renewal-before-release!
   "Require a successful heartbeat renewal before the owning writer releases."
-  [events]
+  [events durable-object writer]
   (let [invocations
         (into {} (map (juxt :operation-id identity))
               (filter #(= :invoke (:phase %)) events))
@@ -54,6 +72,9 @@
            (let [invoke (get invocations (:operation-id event))]
              (when (and (= :return (:phase event))
                         (= :durable/renew (:operation invoke))
+                        (= durable-object
+                           (get-in invoke [:input :durable-object]))
+                        (= writer (get-in invoke [:input :writer]))
                         (contains? #{:committed :reconciled}
                                    (get-in event [:value :outcome])))
                [(:seq event) (:input invoke)])))
@@ -70,6 +91,7 @@
                               (and (< renew-seq release-seq)
                                    (= (:durable-object renewal)
                                       (:durable-object release))
+                                   (= writer (:writer release))
                                    (= (:writer renewal) (:writer release))))
                             releases))
                     renewals)
@@ -84,7 +106,11 @@
   [{:keys [journal events context-id private-values expected-wal-count
            require-renewal?]
     :or {expected-wal-count 3 require-renewal? false}}]
-  (let [commands (durable-model/commands events)
+  (let [all-commands (durable-model/commands events)
+        commands (select-ingest-commands! all-commands expected-wal-count)
+        durable-object (:durable-object (first commands))
+        writer (:writer (some #(when (= :checkpoint-publish (:command %)) %)
+                              commands))
         command-set (set (map :command commands))
         printed (pr-str events)]
     (when-not (every? command-set
@@ -95,7 +121,7 @@
                       {:commands (mapv :command commands)})))
     (assert-publication-order! commands expected-wal-count)
     (when require-renewal?
-      (assert-renewal-before-release! events))
+      (assert-renewal-before-release! events durable-object writer))
     (when-not (every? #(= context-id (:context-id %))
                       (filter #(= :invoke (:phase %)) events))
       (throw (ex-info "oscope Durable history lost its test context"
