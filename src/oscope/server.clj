@@ -110,6 +110,28 @@
                        :status status})))
     true))
 
+(defn- complete-durability-boundary!
+  [durability connection batches-since-checkpoint lock]
+  (locking lock
+    (let [checkpoint-every (:checkpoint-every-batches durability)
+          next-count (inc @batches-since-checkpoint)
+          checkpoint? (and checkpoint-every
+                           (= checkpoint-every next-count))
+          operation (if checkpoint? :checkpoint :flush)
+          allowed (if checkpoint?
+                    #{:committed :reconciled}
+                    #{:empty :committed :reconciled})
+          result ((get durability (if checkpoint?
+                                    :checkpoint!
+                                    :flush!))
+                  connection)]
+      ;; Advance cadence only after the selected persistence operation is
+      ;; confirmed. A thrown or unconfirmed checkpoint remains due, so the
+      ;; next admitted batch cannot silently fall back to another WAL flush.
+      (require-durability-status! operation allowed result)
+      (reset! batches-since-checkpoint (if checkpoint? 0 next-count))
+      true)))
+
 (defn- stop-lifecycle! [{:keys [server source exporter connection state lock]}]
   (locking lock
     (if (= :closed (:phase @state))
@@ -152,13 +174,20 @@
    (when (and durability
               (not (and (map? durability)
                         (ifn? (:checkpoint! durability))
-                        (ifn? (:flush! durability)))))
+                        (ifn? (:flush! durability))
+                        (or (nil? (:checkpoint-every-batches durability))
+                            (and (integer?
+                                  (:checkpoint-every-batches durability))
+                                 (pos?
+                                  (:checkpoint-every-batches durability)))))))
      (throw (ex-info "oscope durability requires checkpoint! and flush! functions"
                      {:oscope.server/error true :type ::invalid-durability})))
    (let [conn (jdbc/connection db-spec)
          exporter* (atom nil)
          source* (atom nil)
          server* (atom nil)
+         batches-since-checkpoint (atom 0)
+         durability-lock (Object.)
          authority* (atom (when (pos? port) (str host ":" port)))]
      (try
        ;; This is the sole schema owner. The shared oscope source below skips
@@ -181,9 +210,10 @@
                                      (otlp/handler
                                       exporter
                                       {:after-success!
-                                       #(require-durability-status!
-                                         :flush #{:empty :committed :reconciled}
-                                         ((:flush! durability) conn))})
+                                       #(complete-durability-boundary!
+                                         durability conn
+                                         batches-since-checkpoint
+                                         durability-lock)})
                                      (otlp/handler exporter))
                                    :workbench-handler
                                    (workbench/handler conn)

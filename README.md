@@ -222,8 +222,12 @@ head. Native chDB recovery uses a private scratch directory and never opens that
 root as a database directory. The default owner is `oscope`; every process start
 gets a UUIDv4 instance identity. Startup checkpoints schema migrations before
 the listener is bound. Each successful OTLP export flushes its statement WAL
-before the server returns 2xx. Durable admission spans export through flush, so
-a concurrent request receives 429 and cannot cross an earlier request's
+before the server returns 2xx. Every 1,000 acknowledged batches, the standalone
+collector checkpoints the full database instead, replacing the preceding WAL
+chain; set `OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES` to another positive count.
+This bounds the number of WAL objects between checkpoints, not the byte size of
+the database or checkpoint. Durable admission spans export through persistence,
+so a concurrent request receives 429 and cannot cross an earlier request's
 persistence boundary; a failed durability boundary returns 503. Both failures
 close the HTTP connection because the rejected streaming body may be unread. A
 clean shutdown flushes WAL and releases the lease. After an unclean stop, a new

@@ -185,7 +185,11 @@
                             :option "OSCOPE_DURABLE_CLOCK_SKEW_MS"})))
                  value)))
            force? (boolean-option (get environment "OSCOPE_DURABLE_FORCE")
-                                  "OSCOPE_DURABLE_FORCE")]
+                                  "OSCOPE_DURABLE_FORCE")
+           checkpoint-every
+           (positive-long
+            (get environment "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES")
+            "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES" 1000)]
        (when-not (= server/default-host host)
          (throw (ex-info "OSCOPE_HOST must be 127.0.0.1"
                          {:oscope.durable-server/error true
@@ -255,7 +259,8 @@
          {:host host
           :port port
           :durability {:checkpoint! durable/checkpoint!
-                       :flush! durable/flush!}
+                       :flush! durable/flush!
+                       :checkpoint-every-batches checkpoint-every}
           :db-spec
           (durable/writer-dbspec
            (merge
@@ -286,7 +291,8 @@
           "OSCOPE_DURABLE_DATABASE" "OSCOPE_DURABLE_SCRATCH_PARENT"
           "OSCOPE_DURABLE_LEASE_TTL_MS"
           "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS"
-          "OSCOPE_DURABLE_CLOCK_SKEW_MS" "OSCOPE_DURABLE_FORCE"])))
+          "OSCOPE_DURABLE_CLOCK_SKEW_MS" "OSCOPE_DURABLE_FORCE"
+          "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES"])))
 
 (defn -main [& _]
   (try

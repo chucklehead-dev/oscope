@@ -48,6 +48,8 @@
            (select-keys result [:host :port])))
     (is (ifn? (get-in result [:durability :checkpoint!])))
     (is (ifn? (get-in result [:durability :flush!])))
+    (is (= 1000 (get-in result [:durability
+                                :checkpoint-every-batches])))
     (is (= {:vendor "chdb-durable"
             :backend test-local-backend
             :owner "collector"
@@ -88,7 +90,16 @@
     (is (= "default" (get-in result [:db-spec :database])))
     (is (= 30000 (get-in result [:db-spec :lease-ttl-ms])))
     (is (nil? (get-in result [:db-spec :heartbeat-interval-ms])))
-    (is (false? (get-in result [:db-spec :force?])))))
+    (is (false? (get-in result [:db-spec :force?])))
+    (is (= 1000 (get-in result [:durability
+                                :checkpoint-every-batches])))))
+
+(deftest durable-environment-configures-checkpoint-cadence
+  (let [result (options {"OSCOPE_DURABLE_ROOT" "/durable"
+                         "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES" "17"}
+                        (atom []))]
+    (is (= 17 (get-in result [:durability
+                              :checkpoint-every-batches])))))
 
 (deftest durable-s3-environment-builds-a-namespaced-backend-dbspec
   (let [calls (atom [])
@@ -158,6 +169,9 @@
                               "OSCOPE_DURABLE_CLOCK_SKEW_MS" "-1"}]
            ["invalid force" {"OSCOPE_DURABLE_ROOT" "/d"
                               "OSCOPE_DURABLE_FORCE" "sometimes"}]
+           ["zero checkpoint cadence"
+            {"OSCOPE_DURABLE_ROOT" "/d"
+             "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES" "0"}]
            ["invalid database" {"OSCOPE_DURABLE_ROOT" "/d"
                                  "OSCOPE_DURABLE_DATABASE" "bad-name"}]
            ["invalid backend" {"OSCOPE_DURABLE_BACKEND" "ftp"}]

@@ -2,6 +2,8 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [db.jdbc]
+            [hegel.core :as h]
+            [hegel.generator :as g]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
             [oscope.live :as live]
@@ -183,7 +185,7 @@
                 :oscope :spans :logs :metrics :connection]
                @events))))))
 
-(deftest durable-startup-checkpoints-before-ingress-and-wires-request-flush
+(deftest durable-startup-checkpoints-before-ingress-and-bounds-request-wal
   (let [events (atom [])
         conn (reify java.io.Closeable
                (close [_] (swap! events conj :connection)))
@@ -214,13 +216,121 @@
                :flush! (fn [actual]
                          (is (= conn actual))
                          (swap! events conj :flush)
-                         {:status :committed})}})]
+                         {:status :committed})
+               :checkpoint-every-batches 2}})]
         (is (= [:connection-open :schema-ready :checkpoint :source-open
                 :ingress-started]
                @events))
         ((:after-success! @received-otlp-options))
-        (is (= :flush (last @events)))
+        ((:after-success! @received-otlp-options))
+        ((:after-success! @received-otlp-options))
+        (is (= [:flush :checkpoint :flush] (subvec @events 5)))
         (server/stop! lifecycle)))))
+
+(deftest failed-periodic-checkpoint-remains-due
+  (let [events (atom [])
+        checkpoint-attempt (atom 0)
+        conn (reify java.io.Closeable (close [_] nil))
+        exporter (fake-exporter events)
+        source {:close! (fn [] nil)}
+        received-otlp-options (atom nil)]
+    (with-redefs [jdbc/connection (constantly conn)
+                  chdb-export/exporter (constantly exporter)
+                  live/open! (constantly source)
+                  otlp/handler (fn [_ options]
+                                 (reset! received-otlp-options options)
+                                 (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _] {:port 9195})
+                  http/stop-server (fn [_] nil)]
+      (let [lifecycle
+            (server/start!
+             {:port 0
+              :durability
+              {:checkpoint!
+               (fn [_]
+                 (case (swap! checkpoint-attempt inc)
+                   1 {:status :committed}
+                   2 (do (swap! events conj :checkpoint-failed)
+                         {:status :unexpected})
+                   (do (swap! events conj :checkpoint-retried)
+                       {:status :reconciled})))
+               :flush! (fn [_]
+                         (swap! events conj :flush)
+                         {:status :committed})
+               :checkpoint-every-batches 2}})
+            after-success! (:after-success! @received-otlp-options)]
+        (is (true? (after-success!)))
+        (is (thrown? Exception (after-success!)))
+        (is (true? (after-success!)))
+        (is (= [:flush :checkpoint-failed :checkpoint-retried] @events))
+        (server/stop! lifecycle)))))
+
+(deftest invalid-checkpoint-cadence-opens-no-connection
+  (let [opened (atom 0)]
+    (with-redefs [jdbc/connection (fn [_] (swap! opened inc))]
+      (is (thrown? Exception
+                   (server/start!
+                    {:durability
+                     {:checkpoint! (constantly {:status :committed})
+                      :flush! (constantly {:status :committed})
+                      :checkpoint-every-batches 0}}))))
+    (is (zero? @opened))))
+
+(deftest generated-checkpoint-cadence-matches-the-configured-bound
+  (let [conn (reify java.io.Closeable (close [_] nil))
+        received-otlp-options (atom nil)]
+    (with-redefs [jdbc/connection (constantly conn)
+                  chdb-export/exporter (constantly (fake-exporter (atom [])))
+                  live/open! (constantly {:close! (fn [] nil)})
+                  otlp/handler (fn [_ options]
+                                 (reset! received-otlp-options options)
+                                 (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _] {:port 9196})
+                  http/stop-server (fn [_] nil)]
+      (let [result
+            (h/run-test!
+             {:name "oscope Durable checkpoint cadence"
+              :database "" :verbosity :quiet :derandomize? true
+              :test-cases 60}
+             (fn [_]
+               (let [every (h/draw! (g/integer 1 8))
+                     steps (h/draw! (g/integer 1 32))
+                     operations (atom [])
+                     checkpoint-calls (atom 0)
+                     lifecycle
+                     (server/start!
+                      {:port 0
+                       :durability
+                       {:checkpoint!
+                        (fn [_]
+                          (when (> (swap! checkpoint-calls inc) 1)
+                            (swap! operations conj :checkpoint))
+                          {:status :committed})
+                        :flush! (fn [_]
+                                  (swap! operations conj :flush)
+                                  {:status :committed})
+                        :checkpoint-every-batches every}})
+                     after-success! (:after-success!
+                                     @received-otlp-options)]
+                 (try
+                   (dotimes [_ steps] (after-success!))
+                   (let [expected
+                         (mapv #(if (zero? (mod % every))
+                                  :checkpoint
+                                  :flush)
+                               (range 1 (inc steps)))]
+                     (when-not (= expected @operations)
+                       (throw
+                        (ex-info "Durable checkpoint cadence drifted"
+                                 {:hegel/origin
+                                  "oscope/durable-checkpoint-cadence"}))))
+                   (finally
+                     (server/stop! lifecycle))))))]
+        (is (:passed? result)
+            (pr-str (select-keys result [:status :seed :failures :error])))
+        (is (false? (:flaky? result)))))))
 
 (deftest durable-startup-rejects-an-unconfirmed-checkpoint-before-ingress
   (let [opened (atom 0)
