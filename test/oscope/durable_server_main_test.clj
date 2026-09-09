@@ -45,11 +45,15 @@
                  "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS" "30"
                  "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS" "400"
                  "OSCOPE_DURABLE_FORCE" "true"
+                 "OSCOPE_HTTP_WORKERS" "3"
+                 "OSCOPE_HTTP_QUEUE_CAPACITY" "11"
                  "OSCOPE_PORT" "14318"}
                 calls)]
     (is (= ["/private/durable"] @calls))
-    (is (= {:host "127.0.0.1" :port 14318}
-           (select-keys result [:host :port])))
+    (is (= {:host "127.0.0.1" :port 14318
+            :http-workers 3 :http-queue-capacity 11}
+           (select-keys result [:host :port :http-workers
+                                :http-queue-capacity])))
     (is (ifn? (get-in result [:durability :checkpoint!])))
     (is (ifn? (get-in result [:durability :flush!])))
     (is (= 1000 (get-in result [:durability
@@ -184,6 +188,11 @@
   (doseq [[label environment]
           [["missing root" {}]
            ["invalid port" {"OSCOPE_DURABLE_ROOT" "/d" "OSCOPE_PORT" "x"}]
+           ["invalid HTTP workers"
+            {"OSCOPE_DURABLE_ROOT" "/d" "OSCOPE_HTTP_WORKERS" "0"}]
+           ["invalid HTTP queue"
+            {"OSCOPE_DURABLE_ROOT" "/d"
+             "OSCOPE_HTTP_QUEUE_CAPACITY" "many"}]
            ["remote host" {"OSCOPE_DURABLE_ROOT" "/d"
                             "OSCOPE_HOST" "0.0.0.0"}]
            ["zero ttl" {"OSCOPE_DURABLE_ROOT" "/d"

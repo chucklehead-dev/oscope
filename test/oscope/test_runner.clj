@@ -3,6 +3,7 @@
             [oscope.core-test]
             [oscope.embedded-query-test]
             [oscope.events-test]
+            [oscope.http-executor-test]
             [oscope.live-test]
             [oscope.native-test]
             [oscope.native-server-test]
@@ -23,6 +24,7 @@
   (let [{:keys [fail error]}
         (test/run-tests 'oscope.core-test 'oscope.embedded-query-test
                         'oscope.events-test 'oscope.live-test
+                        'oscope.http-executor-test
                         'oscope.native-test 'oscope.native-server-test
                         'oscope.otlp-test 'oscope.plotje-property-test
                         'oscope.plotje-test

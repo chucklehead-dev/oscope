@@ -4,6 +4,7 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
+            [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
             [oscope.server :as server]
@@ -165,7 +166,8 @@
         exporter (fake-exporter events)
         source {:close! #(swap! events conj :oscope)}
         seen-exporter-options (atom nil)
-        seen-source-options (atom nil)]
+        seen-source-options (atom nil)
+        seen-server-options (atom nil)]
     (with-redefs [jdbc/connection (fn [spec]
                                     (swap! events conj [:connection spec]) conn)
                   chdb-export/exporter (fn [opts]
@@ -174,7 +176,9 @@
                   live/open! (fn [opts] (reset! seen-source-options opts) source)
                   otlp/handler (fn [_] (constantly {:status 200}))
                   web/handler (fn [& _] (constantly {:status 200}))
-                  http/run-server (fn [_ & _]
+                  http/run-server (fn [_ & options]
+                                    (reset! seen-server-options
+                                            (apply hash-map options))
                                     (swap! events conj :ingress-started)
                                     {:port 9191})
                   http/stop-server (fn [_] (swap! events conj :ingress-stopped))]
@@ -183,11 +187,38 @@
         (is (= {:connection conn :signals #{:spans :logs :metrics}}
                @seen-exporter-options))
         (is (= {:connection conn :ensure-schema? false} @seen-source-options))
+        (is (= #{:port :server-name :reuse-address? :executor}
+               (set (keys @seen-server-options))))
+        (is (= 2 (get-in lifecycle [:http-executor :workers])))
+        (is (= 8 (get-in lifecycle [:http-executor :queue-capacity])))
+        (is (identical? (get-in lifecycle [:http-executor :executor])
+                        (:executor @seen-server-options)))
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))
+        (is (http-executor/terminated? (:http-executor lifecycle)))
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))
         (is (= [[:connection "chdb:test"] :ingress-started :ingress-stopped
                 :oscope :spans :logs :metrics :connection]
                @events))))))
+
+(deftest standalone-http-executor-configuration-is-bounded-and-validated
+  (is (= {:http-workers 2 :http-queue-capacity 8}
+         (server/http-executor-env-options {})))
+  (is (= {:http-workers 3 :http-queue-capacity 11}
+         (server/http-executor-env-options
+          {"OSCOPE_HTTP_WORKERS" "3"
+           "OSCOPE_HTTP_QUEUE_CAPACITY" "11"})))
+  (doseq [environment [{"OSCOPE_HTTP_WORKERS" "0"}
+                       {"OSCOPE_HTTP_WORKERS" "many"}
+                       {"OSCOPE_HTTP_QUEUE_CAPACITY" "0"}
+                       {"OSCOPE_HTTP_QUEUE_CAPACITY" "many"}]]
+    (is (thrown? Exception
+                 (server/http-executor-env-options environment))))
+  (let [opened (atom 0)]
+    (with-redefs [jdbc/connection (fn [_] (swap! opened inc))]
+      (doseq [options [{:http-workers 0}
+                       {:http-queue-capacity 0}]]
+        (is (thrown? Exception (server/start! options)))))
+    (is (zero? @opened))))
 
 (deftest durable-startup-checkpoints-before-ingress-and-bounds-request-wal
   (let [events (atom [])

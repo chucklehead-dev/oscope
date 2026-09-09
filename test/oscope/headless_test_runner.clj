@@ -10,6 +10,7 @@
             [oscope.durable-observability-test]
             [oscope.embedded-query-test]
             [oscope.events-test]
+            [oscope.http-executor-test]
             [oscope.live-test]
             [oscope.otlp-test]
             [oscope.plotje-property-test]
@@ -33,6 +34,7 @@
                         'oscope.durable-observability-test
                         'oscope.embedded-query-test
                         'oscope.events-test
+                        'oscope.http-executor-test
                         'oscope.live-test
                         'oscope.otlp-test
                         'oscope.plotje-property-test

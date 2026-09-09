@@ -172,7 +172,8 @@
        (throw (ex-info "OSCOPE_DURABLE_BACKEND must be local or s3"
                        {:oscope.durable-server/error true
                         :option "OSCOPE_DURABLE_BACKEND"})))
-     (let [host (or (not-empty (get environment "OSCOPE_HOST"))
+     (let [http-options (server/http-executor-env-options environment)
+           host (or (not-empty (get environment "OSCOPE_HOST"))
                     server/default-host)
            raw-port (get environment "OSCOPE_PORT")
            port (if (str/blank? raw-port)
@@ -315,6 +316,8 @@
                   :object-id object-id}))]
          {:host host
           :port port
+          :http-workers (:http-workers http-options)
+          :http-queue-capacity (:http-queue-capacity http-options)
           :durability {:checkpoint! durable/checkpoint!
                        :flush! durable/flush!
                        :checkpoint-every-batches checkpoint-every}
@@ -339,7 +342,8 @@
   (durable-options
    (into {}
          (map (fn [name] [name (System/getenv name)]))
-         ["OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_DURABLE_ROOT"
+         ["OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_HTTP_WORKERS"
+          "OSCOPE_HTTP_QUEUE_CAPACITY" "OSCOPE_DURABLE_ROOT"
           "OSCOPE_DURABLE_BACKEND" "OSCOPE_DURABLE_OBJECT_ID"
           "OSCOPE_DURABLE_S3_ENDPOINT" "OSCOPE_DURABLE_S3_BUCKET"
           "OSCOPE_DURABLE_S3_PREFIX" "OSCOPE_DURABLE_S3_REGION"
