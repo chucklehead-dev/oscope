@@ -7,6 +7,7 @@
   (:require [clojure.test :as test]
             [oscope.core-test]
             [oscope.durable-observability-test]
+            [oscope.embedded-query-test]
             [oscope.events-test]
             [oscope.live-test]
             [oscope.otlp-test]
@@ -27,6 +28,7 @@
   (let [{:keys [fail error]}
         (test/run-tests 'oscope.core-test
                         'oscope.durable-observability-test
+                        'oscope.embedded-query-test
                         'oscope.events-test
                         'oscope.live-test
                         'oscope.otlp-test

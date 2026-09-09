@@ -502,6 +502,47 @@ gRPC would not remove that in-process storage encoding. Export acknowledgement
 is at-least-once: an ambiguous failed attempt followed by an SDK retry can
 produce a duplicate.
 
+Embedded render loops and other UI fibers must not call the source's JDBC-backed
+load commands directly. Use `oscope.embedded.query` to move that blocking work
+onto one owned OS thread and publish a small immutable cache:
+
+```clojure
+(require '[oscope.embedded.query :as embedded-query])
+
+(def sampler
+  (embedded-query/start!
+   {:load! #(get-in ((:load-command (:source runtime))
+                     :recent-spans
+                     {:signal :spans :field :span-name
+                      :window :15m :limit 20})
+                    [:table :rows])
+    :interval-ms 1000
+    :timeout-ms 2000
+    :max-rows 20}))
+
+;; Rendering only dereferences the cached value; it never queries chDB.
+(def display-model (embedded-query/snapshot sampler))
+
+;; Retry a bounded stop until the native query has really completed and joined.
+(loop []
+  (when-not (= :closed (:status (embedded-query/stop! sampler)))
+    (Thread/sleep 50)
+    (recur)))
+;; Only now may the shared source be retired.
+(embedded/stop! runtime)
+```
+
+The load function must use a backend-bounded selection; `:max-rows` separately
+bounds retained display data. A timeout publishes `:error` before the first
+good sample or `:stale` while retaining the last good rows. It does not interrupt
+native JDBC work. The cadence fiber notices stop without waiting for the query
+timeout, but the owned query thread is joined rather than interrupted. If a
+native call is still running, `stop!` returns `:stopping`/`:joining-query` after
+the configured stop bound; retry it and keep the source open until it returns
+`:closed`. Total shutdown latency can therefore include the native operation's
+actual completion time. Failure snapshots retain only bounded class/message
+strings and never retain a Throwable or an invalid query result.
+
 An out-of-process viewer opens a read-only Durable connection after a published
 flush or checkpoint. It restores the immutable head selected at open time into
 private scratch storage; it does not need the writer's local state and does not
