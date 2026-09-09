@@ -16,7 +16,10 @@
             [otel.sdk.logs :as logs]))
 
 (deftest storage-documentation-pins-the-current-recovery-boundary
-  (let [readme (str/replace (slurp "README.md") #"\s+" " ")]
+  (let [readme (str/replace (slurp "README.md") #"\s+" " ")
+        durable-sha "15940bb83ed76e1144d26dab4b3e21f32b12181e"
+        s3-workflow (slurp ".github/workflows/durable-s3-e2e.yml")
+        aws-workflow (slurp ".github/workflows/durable-aws.yml")]
     (is (= "chdb:./oscope-data" server/default-db-spec))
     (is (str/includes? readme "**local path persistence**"))
     (is (str/includes? readme
@@ -31,9 +34,9 @@
     (is (str/includes?
          readme
          "Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend."))
-    (is (str/includes?
-         readme
-         "15940bb83ed76e1144d26dab4b3e21f32b12181e"))
+    (is (str/includes? readme durable-sha))
+    (is (str/includes? s3-workflow durable-sha))
+    (is (str/includes? aws-workflow durable-sha))
     (is (str/includes?
          readme
          "docs/durable/protocol-v1.mdx"))
