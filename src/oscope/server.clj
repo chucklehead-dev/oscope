@@ -4,6 +4,7 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
+            [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
             [oscope.ui.events :as events]
@@ -18,6 +19,21 @@
 (def default-host "127.0.0.1")
 (def default-port 4318)
 (def default-db-spec "chdb:./oscope-data")
+(def default-http-workers 2)
+(def default-http-queue-capacity 8)
+
+(defn- validate-http-executor-options!
+  [http-workers http-queue-capacity]
+  (when-not (and (integer? http-workers) (pos? http-workers))
+    (throw (ex-info "oscope HTTP workers must be positive"
+                    {:oscope.server/error true
+                     :http-workers http-workers})))
+  (when-not (and (integer? http-queue-capacity)
+                 (pos? http-queue-capacity))
+    (throw (ex-info "oscope HTTP queue capacity must be positive"
+                    {:oscope.server/error true
+                     :http-queue-capacity http-queue-capacity})))
+  true)
 
 (def ^:private text-headers
   {"Content-Type" "text/plain; charset=UTF-8"
@@ -132,14 +148,20 @@
       (reset! batches-since-checkpoint (if checkpoint? 0 next-count))
       true)))
 
-(defn- stop-lifecycle! [{:keys [server source exporter connection state lock]}]
+(defn- stop-lifecycle!
+  [{:keys [server http-executor source exporter connection state lock]}]
   (locking lock
     (if (= :closed (:phase @state))
       (stop-result @state nil)
       (try
         (when-not (:ingress-stopped? @state)
           (http/stop-server server)
-          (swap! state assoc :ingress-stopped? true :phase :retiring-oscope))
+          (swap! state assoc :ingress-stopped? true
+                 :phase :stopping-http-executor))
+        (when-not (:http-executor-stopped? @state)
+          (http-executor/stop! http-executor)
+          (swap! state assoc :http-executor-stopped? true
+                 :phase :retiring-oscope))
         (when-not (:oscope-retired? @state)
           (live/close! source)
           (swap! state assoc :oscope-retired? true :phase :closing-exporters))
@@ -163,14 +185,17 @@
   127.0.0.1. The returned `:stop!` is idempotent and retries the first
   incomplete ownership boundary on each call."
   ([] (start! {}))
-  ([{:keys [host port db-spec durability]
-     :or {host default-host port default-port db-spec default-db-spec}}]
+  ([{:keys [host port db-spec durability http-workers http-queue-capacity]
+     :or {host default-host port default-port db-spec default-db-spec
+          http-workers default-http-workers
+          http-queue-capacity default-http-queue-capacity}}]
    (when-not (= default-host host)
      (throw (ex-info "oscope standalone receiver must bind to 127.0.0.1"
                      {:oscope.server/error true :host host})))
    (when-not (and (integer? port) (<= 0 port 65535))
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
+   (validate-http-executor-options! http-workers http-queue-capacity)
    (when (and durability
               (not (and (map? durability)
                         (ifn? (:checkpoint! durability))
@@ -186,13 +211,18 @@
          exporter* (atom nil)
          source* (atom nil)
          server* (atom nil)
+         http-executor* (atom nil)
          batches-since-checkpoint (atom 0)
          durability-lock (Object.)
          authority* (atom (when (pos? port) (str host ":" port)))]
      (try
        ;; This is the sole schema owner. The shared oscope source below skips
        ;; its otherwise-default schema check.
-       (let [exporter (chdb-export/exporter
+       (let [owned-http-executor
+             (http-executor/start! {:workers http-workers
+                                    :queue-capacity http-queue-capacity})
+             _ (reset! http-executor* owned-http-executor)
+             exporter (chdb-export/exporter
                        {:connection conn :signals #{:spans :logs :metrics}})
              _ (reset! exporter* exporter)
              ;; Durable mode checkpoints the sole schema owner's migrations
@@ -226,14 +256,22 @@
                                       visualization-editor/default-path)})
                                    :visualization-editor-handler editor-handler
                                    :authority #(deref authority*)})
-             server (http/run-server app-handler :port port :server-name host
-                                     :reuse-address? true :pool-size 2)
+             ;; The admission wrapper is borrowed by jolt-http. It owns the
+             ;; modeled ThreadPoolExecutor beneath it, which this lifecycle
+             ;; stops only after jolt-http has retired ingress and drained all
+             ;; admitted handlers.
+             server (http/run-server
+                     app-handler :port port :server-name host
+                     :reuse-address? true
+                     :executor (:executor owned-http-executor))
              _ (reset! server* server)
              _ (reset! authority* (str host ":" (:port server)))
              lifecycle {:host host :port (:port server) :db-spec db-spec
                         :connection conn :exporter exporter :source source
                         :server server
+                        :http-executor owned-http-executor
                         :state (atom {:phase :open :ingress-stopped? false
+                                      :http-executor-stopped? false
                                       :oscope-retired? false :closed-faces #{}
                                       :connection-closed? false})
                         :lock (Object.)}]
@@ -241,6 +279,9 @@
        (catch Throwable error
          (when-let [server @server*]
            (try (http/stop-server server) (catch Throwable _ nil)))
+         (when-let [owned-http-executor @http-executor*]
+           (try (http-executor/stop! owned-http-executor)
+                (catch Throwable _ nil)))
          (when-let [source @source*]
            (try (live/close! source) (catch Throwable _ nil)))
          (when-let [exporter @exporter*]
@@ -254,10 +295,27 @@
     (stop-fn)
     {:status :closed :phase :closed}))
 
+(defn http-executor-env-options [environment]
+  (let [raw-workers (get environment "OSCOPE_HTTP_WORKERS")
+        raw-queue-capacity (get environment "OSCOPE_HTTP_QUEUE_CAPACITY")
+        workers (if (str/blank? raw-workers)
+                  default-http-workers
+                  (parse-long raw-workers))
+        queue-capacity (if (str/blank? raw-queue-capacity)
+                         default-http-queue-capacity
+                         (parse-long raw-queue-capacity))]
+    (validate-http-executor-options! workers queue-capacity)
+    {:http-workers workers :http-queue-capacity queue-capacity}))
+
 (defn env-options []
   (let [raw-port (System/getenv "OSCOPE_PORT")
         port (if (str/blank? raw-port) default-port (parse-long raw-port))]
-    {:host (or (not-empty (System/getenv "OSCOPE_HOST")) default-host)
-     :port port
-     :db-spec (or (not-empty (System/getenv "OSCOPE_CHDB_SPEC"))
-                  default-db-spec)}))
+    (merge
+     {:host (or (not-empty (System/getenv "OSCOPE_HOST")) default-host)
+      :port port
+      :db-spec (or (not-empty (System/getenv "OSCOPE_CHDB_SPEC"))
+                   default-db-spec)}
+     (http-executor-env-options
+      {"OSCOPE_HTTP_WORKERS" (System/getenv "OSCOPE_HTTP_WORKERS")
+       "OSCOPE_HTTP_QUEUE_CAPACITY"
+       (System/getenv "OSCOPE_HTTP_QUEUE_CAPACITY")}))))

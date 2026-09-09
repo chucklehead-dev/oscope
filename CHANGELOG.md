@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Bound the standalone HTTP dispatcher to its configured workers and waiting
+  capacity despite Jolt 0.8.3's advisory ThreadPoolExecutor queue model; excess
+  connections are closed before handler execution, and ordered shutdown drains
+  admitted work before terminating the owned pool.
 - Render singleton and extreme finite numeric chart domains without NaN or
   Infinity coordinates. One-sample lines now receive a visible point fallback,
   while one-sample areas explicitly collapse to a baseline-to-value segment.

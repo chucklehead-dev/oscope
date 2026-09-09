@@ -109,6 +109,21 @@ bind is intentionally loopback-only. The receiver accepts uncompressed
 `application/json`, caps the consumed request body at 1 MiB, and admits one
 OTLP export at a time because every signal shares the embedded connection.
 
+The standalone HTTP dispatcher uses two handler workers and admits at most
+eight additional waiting tasks by default. Override those bounds with positive
+integers in `OSCOPE_HTTP_WORKERS` and `OSCOPE_HTTP_QUEUE_CAPACITY`. Once both
+the workers and waiting capacity are occupied, the next connection is rejected
+and closed promptly before its Ring handler runs; it does not receive a 503
+response. OTLP, Plotje, and export-specific admission limits still apply after
+this connection-level bound.
+
+Oscope enforces this limit with a small admission wrapper around its owned
+`ThreadPoolExecutor`. Jolt 0.8.3 accepts an `ArrayBlockingQueue` in that
+executor's constructor, but treats its capacity as advisory and otherwise
+queues tasks without a bound. The wrapper rejects before submission, while the
+ordinary shutdown path first stops jolt-http ingress and drains admitted work,
+then terminates the owned pool.
+
 ### Storage modes and recovery guarantees
 
 The standalone server's default `chdb:./oscope-data` setting provides
