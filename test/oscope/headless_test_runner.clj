@@ -6,6 +6,7 @@
   runners. This runner must not load GTK-facing namespaces."
   (:require [clojure.test :as test]
             [oscope.core-test]
+            [oscope.durable-cadence-property-test]
             [oscope.durable-observability-test]
             [oscope.embedded-query-test]
             [oscope.events-test]
@@ -27,6 +28,7 @@
 (defn -main [& _]
   (let [{:keys [fail error]}
         (test/run-tests 'oscope.core-test
+                        'oscope.durable-cadence-property-test
                         'oscope.durable-observability-test
                         'oscope.embedded-query-test
                         'oscope.events-test
