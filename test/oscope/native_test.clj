@@ -8,6 +8,13 @@
             [oscope.ui.native :as native]
             [oscope.view-model :as view-model]))
 
+(defn- await-selection! [instance selection]
+  (loop [attempt 0]
+    (cond
+      (= selection (:selection @(:model instance))) true
+      (< attempt 500) (do (Thread/sleep 2) (recur (inc attempt)))
+      :else false)))
+
 (deftest glitter-renders-headlessly
   (let [r (renderer/renderer)
         root (atom {:tag-name "window" :children []})
@@ -61,12 +68,12 @@
                        :loader sample/screen-for-selection})
             selection {:signal :logs :field :severity-text :window :15m :limit 7}]
         ((:select! a) selection)
-        (is (= selection (:selection @(:model a))))
+        (is (await-selection! a selection))
         (is (= (:selection sample/default-screen)
                (:selection @(:model b))))
         ((:close! a))
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"adapter is closed"
                               ((:select! a) selection)))
         ((:select! b) selection)
-        (is (= selection (:selection @(:model b))))
+        (is (await-selection! b selection))
         ((:close! b))))))

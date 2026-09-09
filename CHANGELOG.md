@@ -11,6 +11,10 @@
   field provenance, path redaction, credential references, compatibility
   environment aliases including the bounded HTTP dispatcher, and a
   side-effect-free `--check-config` command.
+- Keep native Glitter and Glimmer selection callbacks responsive with one
+  owned OS query worker and capacity-one latest-wins replacement. Generation
+  fencing prevents stale publication, errors are bounded screen state, and
+  close waits for physical worker exit before callers retire the source.
 - Render singleton and extreme finite numeric chart domains without NaN or
   Infinity coordinates. One-sample lines now receive a visible point fallback,
   while one-sample areas explicitly collapse to a baseline-to-value segment.

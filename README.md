@@ -491,8 +491,14 @@ itself, set `OSCOPE_NATIVE_AUTO_QUIT_MS` to a positive millisecond count.
 
 Current Glitter and Glimmer application runners own their mounted root and do
 not return a complete unmount handle. Each oscope adapter isolates its model
-and callbacks per instance; its logical `close!` rejects future selections,
-but the toolkit retains the mounted root and callbacks until window teardown.
+and callbacks per instance. Selection callbacks enqueue into a capacity-one
+latest-wins path and return without running the query: one owned OS worker runs
+the blocking/lazy load, and generation fencing discards a completion when a
+newer selection is current. The screen exposes `:query-state` as `:loading`,
+`:ready`, or bounded `:error`; an error retains the prior display as `:stale`.
+The adapter's `close!` rejects future selections and waits for that physical
+worker to exit before returning, so close the shared source only afterward.
+The toolkit retains the mounted root and callbacks until window teardown.
 A future runner API returning that root can add explicit unmount and release
 without changing the oscope contract. Applications that require independently
 owned embedded native windows should treat that runner enhancement as a gate.
