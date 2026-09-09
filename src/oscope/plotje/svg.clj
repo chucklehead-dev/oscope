@@ -8,13 +8,41 @@
   (-> (str (or x "")) (str/replace "&" "&amp;") (str/replace "<" "&lt;")
       (str/replace ">" "&gt;") (str/replace "\"" "&quot;")
       (str/replace "'" "&apos;")))
-(defn- fmt [x] (format "%.2f" (double x)))
+(defn- finite-double? [x]
+  (let [d (double x)]
+    (and (= d d) (not= d ##Inf) (not= d ##-Inf))))
+(defn- fmt [x]
+  (when-not (finite-double? x)
+    (throw (ex-info "plotje produced a non-finite SVG coordinate"
+                    {:oscope.plotje/error true
+                     :type ::non-finite-coordinate})))
+  (format "%.2f" (double x)))
 (defn- extent [xs]
-  (let [low (double (apply min xs)) high (double (apply max xs))]
-    (if (= low high) [(- low 0.5) (+ high 0.5)] [low high])))
+  [(double (apply min xs)) (double (apply max xs))])
+(defn- domain-position [low high x]
+  (let [x (double x)]
+    (cond
+      (= low high) 0.5
+      (= x low) 0.0
+      (= x high) 1.0
+      :else
+      ;; Scale before subtraction so a finite domain spanning roughly
+      ;; [-Double/MAX_VALUE, Double/MAX_VALUE] does not overflow its width.
+      ;; Distinct adjacent doubles can collapse during normalization; endpoint
+      ;; checks above retain their exact placement and other collapsed values
+      ;; deterministically use the center.
+      (let [scale (max (abs low) (abs high) (abs x))
+            scale (if (zero? scale) 1.0 scale)
+            scaled-low (/ low scale)
+            scaled-high (/ high scale)
+            width (- scaled-high scaled-low)
+            position (if (zero? width)
+                       0.5
+                       (/ (- (/ x scale) scaled-low) width))]
+        (max 0.0 (min 1.0 position))))))
 (defn- linear [[low high] out-low out-high]
-  (fn [x] (+ out-low (* (/ (- (double x) low) (- high low))
-                          (- out-high out-low)))))
+  (fn [x] (+ out-low (* (domain-position low high x)
+                         (- out-high out-low)))))
 (defn- color-map [rows column palette]
   (zipmap (vec (distinct (map column rows))) (cycle palette)))
 (defn- line-svg [rows {:keys [x y color stroke opacity stroke-width]} sx sy palette]
@@ -22,14 +50,24 @@
         colors (if color (color-map rows color palette) {nil (or stroke (first palette))})]
     (apply str
            (for [[group group-rows] groups
-                 :let [points (->> group-rows (sort-by x)
+                 :let [sorted-rows (sort-by x group-rows)
+                       points (->> sorted-rows
                                    (map #(str (fmt (sx (x %))) ","
                                               (fmt (sy (y %)))))
                                    (str/join " "))]]
              (str "<polyline fill=\"none\" stroke=\"" (or stroke (colors group))
                   "\" stroke-width=\"" (fmt (or stroke-width 2.0))
                   "\" opacity=\"" (fmt (or opacity 1.0))
-                  "\" points=\"" points "\"/>")))))
+                  "\" points=\"" points "\"/>"
+                  ;; SVG does not paint a one-vertex polyline. Keep the line
+                  ;; contract visible by using a point at the same coordinate.
+                  (when (= 1 (count sorted-rows))
+                    (let [row (first sorted-rows)]
+                      (str "<circle class=\"plotje-line-singleton\" cx=\""
+                           (fmt (sx (x row))) "\" cy=\"" (fmt (sy (y row)))
+                           "\" r=\"3.00\" fill=\"" (or stroke (colors group))
+                           "\" fill-opacity=\"" (fmt (or opacity 1.0))
+                           "\"/>"))))))))
 (defn- point-svg [rows {:keys [x y color fill opacity point-radius]} sx sy palette]
   (let [colors (if color (color-map rows color palette) {})]
     (apply str
@@ -51,15 +89,29 @@
                 (or fill (if color (colors (color row)) (first palette)))
                 "\" fill-opacity=\"" (fmt (or opacity 0.75)) "\"/>")))))
 (defn- area-svg [rows {:keys [x y fill stroke opacity stroke-width]} sx sy baseline palette]
-  (let [points (->> rows (sort-by x)
+  (let [sorted-rows (sort-by x rows)
+        points (->> sorted-rows
                     (map #(str (fmt (sx (x %))) "," (fmt (sy (y %))))))
-        first-x (sx (x (first (sort-by x rows))))
-        last-x (sx (x (last (sort-by x rows))))]
-    (str "<polygon points=\"" (fmt first-x) "," (fmt baseline) " "
-         (str/join " " points) " " (fmt last-x) "," (fmt baseline)
-         "\" fill=\"" (or fill (first palette)) "\" fill-opacity=\""
-         (fmt (or opacity 0.3)) "\" stroke=\"" (or stroke (first palette))
-         "\" stroke-width=\"" (fmt (or stroke-width 2.0)) "\"/>")))
+        first-row (first sorted-rows)
+        first-x (sx (x first-row))
+        last-x (sx (x (last sorted-rows)))
+        stroke (or stroke (first palette))
+        stroke-width (or stroke-width 2.0)
+        opacity (or opacity 0.3)]
+    (if (= 1 (count sorted-rows))
+      ;; A singleton has no horizontal area. Render its explicit degenerate
+      ;; form as the baseline-to-value segment instead of relying on a
+      ;; zero-area polygon's implementation-defined visibility.
+      (str "<line class=\"plotje-area-singleton\" x1=\"" (fmt first-x)
+           "\" x2=\"" (fmt first-x) "\" y1=\"" (fmt baseline)
+           "\" y2=\"" (fmt (sy (y first-row))) "\" stroke=\"" stroke
+           "\" stroke-width=\"" (fmt stroke-width) "\" opacity=\""
+           (fmt opacity) "\"/>")
+      (str "<polygon points=\"" (fmt first-x) "," (fmt baseline) " "
+           (str/join " " points) " " (fmt last-x) "," (fmt baseline)
+           "\" fill=\"" (or fill (first palette)) "\" fill-opacity=\""
+           (fmt opacity) "\" stroke=\"" stroke
+           "\" stroke-width=\"" (fmt stroke-width) "\"/>"))))
 (defn- rule-svg [rows {:keys [y stroke opacity stroke-width]} sy left right palette]
   (apply str
          (for [row rows]

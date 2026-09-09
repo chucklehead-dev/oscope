@@ -4,6 +4,9 @@
             [oscope.plotje.spec :as spec]
             [oscope.plotje.svg :as svg]))
 
+(defn- finite-svg? [rendered]
+  (not (re-find #"(?:NaN|Infinity|##Inf)" rendered)))
+
 (def latency
   {:title "Checkout latency by percentile"
    :x-label "Minute"
@@ -54,6 +57,60 @@
     (is (str/includes? rendered ">gain</text>"))
     (is (str/includes? rendered ">loss</text>"))
     (is (not (str/includes? rendered "height=\"-")))))
+
+(deftest singleton-numeric-domains-render-visible-finite-marks
+  (let [timestamp 1699999800000000000
+        rendered
+        (svg/spec->svg
+         {:data [{:time timestamp :value 0.0 :budget 0.0}]
+          :layers [{:mark :line :x :time :y :value}
+                   {:mark :point :x :time :y :value}
+                   {:mark :area :x :time :y :value}
+                   {:mark :rule :x :time :y :budget}]})]
+    (is (finite-svg? rendered))
+    (is (str/includes? rendered
+                       "class=\"plotje-line-singleton\" cx=\"403.00\""))
+    (is (str/includes? rendered "<circle cx=\"403.00\""))
+    (is (str/includes? rendered "class=\"plotje-area-singleton\""))
+    (is (str/includes? rendered
+                       "class=\"plotje-rule\" x1=\"70.00\" x2=\"736.00\""))))
+
+(deftest ordinary-two-point-domain-retains-endpoint-geometry
+  (let [rendered
+        (svg/spec->svg
+         {:data [{:time 10.0 :value -2.0}
+                 {:time 20.0 :value 4.0}]
+          :layers [{:mark :line :x :time :y :value}]})]
+    (is (str/includes? rendered
+                       "points=\"70.00,362.00 736.00,46.00\""))
+    (is (not (str/includes? rendered "plotje-line-singleton")))))
+
+(deftest non-finite-layer-input-fails-before-svg-serialization
+  (doseq [[mark key value]
+          [[:line :time ##NaN]
+           [:point :value ##Inf]
+           [:area :time ##-Inf]
+           [:rule :value ##NaN]]]
+    (let [chart {:data [{:time 1.0 :value 2.0}]
+                 :layers [{:mark mark :x :time :y :value}]}]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"(?:invalid bounded scalar|finite numbers)"
+           (svg/spec->svg (assoc-in chart [:data 0 key] value)))
+          (str mark " must reject " value)))))
+
+(deftest extreme-finite-and-equal-domains-render-finitely
+  (doseq [rows [[{:x 0.0 :y 0.0}]
+                [{:x -7.0 :y -9.0}]
+                [{:x 1.7976931348623157E308 :y 1.7976931348623157E308}]
+                [{:x -1.7976931348623157E308 :y -1.7976931348623157E308}
+                 {:x 1.7976931348623157E308 :y 1.7976931348623157E308}]
+                [{:x 42.0 :y -3.0} {:x 42.0 :y -3.0}]]]
+    (is (finite-svg?
+         (svg/spec->svg
+          {:data rows
+           :layers [{:mark :line :x :x :y :y}
+                    {:mark :point :x :x :y :y}]}))
+        (pr-str rows))))
 
 (deftest parser-and-spec-caps-fail-closed
   (testing "bounded EDN parses without evaluation"

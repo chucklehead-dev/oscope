@@ -7,6 +7,7 @@
             [oscope.native-test]
             [oscope.native-server-test]
             [oscope.otlp-test]
+            [oscope.plotje-property-test]
             [oscope.plotje-test]
             [oscope.query-expression-test]
             [oscope.query-expression-property-test]
@@ -23,7 +24,8 @@
         (test/run-tests 'oscope.core-test 'oscope.embedded-query-test
                         'oscope.events-test 'oscope.live-test
                         'oscope.native-test 'oscope.native-server-test
-                        'oscope.otlp-test 'oscope.plotje-test
+                        'oscope.otlp-test 'oscope.plotje-property-test
+                        'oscope.plotje-test
                         'oscope.query-expression-test
                         'oscope.query-expression-property-test
                         'oscope.query-view-test 'oscope.raw-export-test
