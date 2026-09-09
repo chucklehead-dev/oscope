@@ -3,6 +3,7 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [oscope.live :as live]
+            [oscope.plotje.svg :as plotje-svg]
             [oscope.query.expression :as query-expression]
             [oscope.query.expression.chdb :as query-expression-chdb]
             [oscope.raw-export :as raw-export]
@@ -11,6 +12,34 @@
             [otel.exporter.chdb.schema :as schema]))
 
 (def test-now 1700000001000000000)
+
+(deftest one-bucket-real-metric-series-renders-finite-svg
+  (let [source (live/open! {:db-spec "chdb::memory:"
+                            :now-fn (constantly test-now)})]
+    (try
+      (jdbc/execute!
+       (:connection source)
+       ["INSERT INTO otel_metrics_gauge
+           (TimeUnix, ServiceName, MetricName, MetricUnit, ScopeName, Value)
+         VALUES (fromUnixTimestamp(?), 'api', 'queue.depth', '{job}',
+                 'demo.metrics', 4.0)"
+        1700000000])
+      (let [screen
+            ((:load-command source) :one-bucket
+             {:mode :metric-series :metric-kind :gauge
+              :metric-name "queue.depth" :group-by [:service-name]
+              :bucket :1m :aggregates [:sum]
+              :window :15m :limit 10})
+            rendered (plotje-svg/spec->svg (:chart screen))]
+        (is (= [{:bucket-start-unix-nano 1699999980000000000
+                 :service-name "api" :sum 4.0}]
+               (get-in screen [:table :rows])))
+        (is (string? rendered))
+        (is (.contains rendered "class=\"plotje-line-singleton\""))
+        (is (not (re-find #"(?:NaN|Infinity|##Inf)" rendered))))
+      (finally
+        (live/close! source)))))
+
 (deftest owned-live-source-migrates-queries-and-closes
   (let [source (live/open! {:db-spec "chdb::memory:"
                             :now-fn (constantly test-now)})]

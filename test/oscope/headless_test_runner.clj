@@ -12,6 +12,7 @@
             [oscope.events-test]
             [oscope.live-test]
             [oscope.otlp-test]
+            [oscope.plotje-property-test]
             [oscope.plotje-test]
             [oscope.query-expression-test]
             [oscope.query-expression-property-test]
@@ -34,6 +35,7 @@
                         'oscope.events-test
                         'oscope.live-test
                         'oscope.otlp-test
+                        'oscope.plotje-property-test
                         'oscope.plotje-test
                         'oscope.query-expression-test
                         'oscope.query-expression-property-test
