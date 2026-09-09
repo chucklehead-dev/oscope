@@ -1,11 +1,15 @@
 (ns oscope.durable-server-main-test
   (:require [clojure.test :refer [deftest is testing]]
             [jdbc.chdb.durable :as durable]
+            [jdbc.chdb.durable.backend :as backend]
             [jdbc.chdb.durable.control :as control]
             [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.s3 :as durable-s3]
             [oscope.durable-server-main :as durable-main]
             [oscope.server-main :as server-main]))
+
+(def ^:private test-local-backend (backend/memory-backend))
+(def ^:private test-s3-backend (backend/memory-backend))
 
 (defn- wrapped-error [type]
   (ex-info "outer path=/private/store owner=secret instance=secret"
@@ -15,14 +19,14 @@
 (defn- options [environment calls]
   (durable-main/durable-options
    environment
-   (fn [root] (swap! calls conj root) ::backend)
+   (fn [root] (swap! calls conj root) test-local-backend)
    (constantly "generated-instance")))
 
 (defn- s3-options [environment calls]
   (durable-main/durable-options
    environment
-   (fn [root] (swap! calls conj [:local root]) ::local-backend)
-   (fn [options] (swap! calls conj [:s3 options]) ::s3-backend)
+   (fn [root] (swap! calls conj [:local root]) test-local-backend)
+   (fn [options] (swap! calls conj [:s3 options]) test-s3-backend)
    (constantly "generated-instance")))
 
 (deftest durable-environment-builds-a-real-backend-dbspec
@@ -45,7 +49,7 @@
     (is (ifn? (get-in result [:durability :checkpoint!])))
     (is (ifn? (get-in result [:durability :flush!])))
     (is (= {:vendor "chdb-durable"
-            :backend ::backend
+            :backend test-local-backend
             :owner "collector"
             :instance "collector-17"
             :database "telemetry"
@@ -55,6 +59,26 @@
             :clock-skew-ms 250
             :force? true}
            (:db-spec result)))))
+
+(deftest final-writer-shape-is-validated-by-jolt-chdb
+  (let [seen (atom nil)
+        calls (atom [])]
+    (with-redefs [durable/writer-dbspec
+                  (fn [candidate]
+                    (reset! seen candidate)
+                    ::validated-dbspec)]
+      (let [result (options {"OSCOPE_DURABLE_ROOT" "/durable"} calls)]
+        (is (= ::validated-dbspec (:db-spec result)))
+        (is (= {:backend test-local-backend
+                :owner "oscope"
+                :instance "generated-instance"
+                :database "default"
+                :scratch-parent "/tmp"
+                :lease-ttl-ms 30000
+                :heartbeat-interval-ms nil
+                :clock-skew-ms 0
+                :force? false}
+               @seen))))))
 
 (deftest durable-environment-defaults-identity-and-lease-policy
   (let [calls (atom [])
@@ -83,7 +107,7 @@
          "OSCOPE_DURABLE_S3_TIMEOUT_MS" "45000"}
         result (s3-options environment calls)]
     (is (= {:vendor "chdb-durable"
-            :namespace-backend ::s3-backend
+            :namespace-backend test-s3-backend
             :object-id "telemetry-prod"}
            (select-keys (:db-spec result)
                         [:vendor :namespace-backend :object-id])))

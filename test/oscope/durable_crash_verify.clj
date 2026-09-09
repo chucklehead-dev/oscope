@@ -17,10 +17,9 @@
 
 (defn- s3-reader-spec []
   (let [db-spec (:db-spec (durable-main/env-options))]
-    {:vendor "chdb-durable"
-     :namespace-backend (:namespace-backend db-spec)
-     :object-id (:object-id db-spec)
-     :read-only? true}))
+    (jdbc.chdb.durable/snapshot-dbspec
+     {:namespace-backend (:namespace-backend db-spec)
+      :object-id (:object-id db-spec)})))
 
 (defn- verify! [db-spec expected-raw]
   (let [expected (parse-count expected-raw)]
@@ -70,9 +69,8 @@
     "--verify-s3" (verify! (s3-reader-spec) (first args))
     "--verify-local"
     (let [[root expected] args]
-      (verify! {:vendor "chdb-durable"
-                :backend (local-posix/local-backend root)
-                :read-only? true}
+      (verify! (jdbc.chdb.durable/snapshot-dbspec
+                {:backend (local-posix/local-backend root)})
                expected))
     (throw (ex-info "expected --create-s3-bucket, --verify-s3, or --verify-local"
                     {:oscope.durable-crash-verify/error true}))))

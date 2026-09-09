@@ -159,10 +159,9 @@
       (is (= 3 (count (get-in head ["manifest" "wal"]))))
       (with-open [reader
                   (jdbc/connection
-                   {:vendor "chdb-durable"
-                    :namespace-backend (:namespace-backend db-spec)
-                    :object-id (:object-id db-spec)
-                    :read-only? true})]
+                   (jdbc.chdb.durable/snapshot-dbspec
+                    {:namespace-backend (:namespace-backend db-spec)
+                     :object-id (:object-id db-spec)}))]
         (doseq [table ["otel_traces" "otel_logs" "otel_metrics_gauge"
                        "otel_metrics_sum" "otel_metrics_histogram"]]
           (is (= 1 (:n (jdbc/fetch-one

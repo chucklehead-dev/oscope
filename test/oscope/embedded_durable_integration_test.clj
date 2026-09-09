@@ -1,5 +1,6 @@
 (ns oscope.embedded-durable-integration-test
   (:require [clojure.test :refer [deftest is]]
+            [jdbc.chdb.durable]
             [jdbc.chdb.durable.backend :as backend]
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
@@ -41,12 +42,12 @@
 
 (deftest direct-sdk-exports-survive-a-fresh-durable-reader
   (let [store (backend/memory-backend)
-        db-spec {:vendor "chdb-durable"
-                 :backend store
-                 :owner "oscope-embedded-test"
-                 :instance "oscope-embedded-test-instance"
-                 :database "default"
-                 :lease-ttl-ms 30000}
+        db-spec (jdbc.chdb.durable/writer-dbspec
+                 {:backend store
+                  :owner "oscope-embedded-test"
+                  :instance "oscope-embedded-test-instance"
+                  :database "default"
+                  :lease-ttl-ms 30000})
         lifecycle
         (embedded/start!
          {:db-spec db-spec
@@ -83,9 +84,7 @@
       (is (= {:status :closed :phase :closed}
              (embedded/stop! lifecycle)))
       (with-open [reader (jdbc/connection
-                          {:vendor "chdb-durable"
-                           :backend store
-                           :read-only? true})]
+                          (jdbc.chdb.durable/snapshot-dbspec {:backend store}))]
         (let [source (live/open! {:connection reader :ensure-schema? false})]
           (try
             (assert-signals-visible! source "reader")

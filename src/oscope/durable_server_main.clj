@@ -257,17 +257,17 @@
           :durability {:checkpoint! durable/checkpoint!
                        :flush! durable/flush!}
           :db-spec
-          (merge
-           {:vendor "chdb-durable"
-            :owner owner
-            :instance instance
-            :database database
-            :scratch-parent scratch-parent
-            :lease-ttl-ms ttl
-            :heartbeat-interval-ms heartbeat
-            :clock-skew-ms skew
-            :force? force?}
-           storage)})))))
+          (durable/writer-dbspec
+           (merge
+            {:owner owner
+             :instance instance
+             :database database
+             :scratch-parent scratch-parent
+             :lease-ttl-ms ttl
+             :heartbeat-interval-ms heartbeat
+             :clock-skew-ms skew
+             :force? force?}
+            storage))})))))
 
 (defn env-options []
   (durable-options
