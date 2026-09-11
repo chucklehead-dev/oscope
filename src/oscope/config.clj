@@ -5,18 +5,21 @@
   network operations. Callers supply already-read EDN text and environment
   maps, then perform any requested startup only after `resolve-config` returns."
   (:require [clojure.edn :as edn]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]))
 
-(def version 1)
+(def version 2)
 
 (def defaults
   {:version version
    :server {:host "127.0.0.1" :port 4318
             :http-workers 2 :http-queue-capacity 8}
    :ingest {:type :otlp-http-json}
-   :storage {:type :local-path :path "./oscope-data"}})
+   :storage {:type :local-path :path "./oscope-data"}
+   :typed-attributes {:mode :disabled}})
 
-(def ^:private top-keys #{:version :server :ingest :storage})
+(def ^:private legacy-top-keys #{:version :server :ingest :storage})
+(def ^:private top-keys (conj legacy-top-keys :typed-attributes))
 (def ^:private server-keys
   #{:host :port :http-workers :http-queue-capacity})
 (def ^:private ingest-keys #{:type})
@@ -31,6 +34,36 @@
     :retry-initial-backoff-ms :retry-max-backoff-ms})
 (def ^:private credential-keys
   #{:type :access-key-env :secret-key-env :session-token-env})
+
+(def ^:private selector-value-pattern #"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+(def ^:private sha256-pattern #"[0-9a-f]{64}")
+(def ^:private max-version 9223372036854775807)
+
+(def ^:private typed-attributes-schema
+  (m/schema
+   [:or
+    [:map {:closed true}
+     [:mode [:= :disabled]]]
+    [:map {:closed true}
+     [:mode [:= :install]]
+     [:manifest
+      [:map {:closed true}
+       [:path string?]
+       [:sha256 string?]]]
+     [:registry
+      [:map {:closed true}
+       [:dataset-id string?]
+       [:application-id string?]
+       [:lineage string?]
+       [:version integer?]]]]
+    [:map {:closed true}
+     [:mode [:= :acquire]]
+     [:registry
+      [:map {:closed true}
+       [:dataset-id string?]
+       [:application-id string?]
+       [:lineage string?]
+       [:version integer?]]]]]))
 
 (defn- config-error [message data]
   (throw (ex-info message (assoc data :oscope.config/error true))))
@@ -60,6 +93,58 @@
     (config-error "configuration value must be a nonblank string"
                   {:path path}))
   value)
+
+(defn- absolute-path! [path value]
+  (nonblank! path value)
+  (when-not (.isAbsolute (java.io.File. value))
+    (config-error "configuration path must be absolute" {:path path}))
+  value)
+
+(defn- validate-selector! [selector]
+  (doseq [key [:dataset-id :application-id :lineage]]
+    (let [value (get selector key)]
+      (when-not (and (string? value)
+                     (boolean (re-matches selector-value-pattern value)))
+        (config-error "typed attribute registry selector is invalid"
+                      {:path [:typed-attributes :registry key]}))))
+  (let [value (:version selector)]
+    (when-not (and (integer? value) (pos? value) (<= value max-version))
+      (config-error "typed attribute registry selector version is invalid"
+                    {:path [:typed-attributes :registry :version]})))
+  selector)
+
+(defn validate-typed-attributes
+  "Validate one closed version-2 typed-attribute section without I/O."
+  [typed-attributes]
+  ;; Malli owns the closed sum-of-products shape. Do not attach its explanation:
+  ;; it could echo a private path or deployment selector into an exception.
+  (when-not (m/validate typed-attributes-schema typed-attributes)
+    (config-error "typed attributes must use a closed version-2 variant"
+                  {:path [:typed-attributes]}))
+  (case (:mode typed-attributes)
+    :disabled nil
+    :install
+    (do
+      (absolute-path! [:typed-attributes :manifest :path]
+                      (get-in typed-attributes [:manifest :path]))
+      (when-not (boolean
+                 (re-matches sha256-pattern
+                             (get-in typed-attributes [:manifest :sha256])))
+        (config-error "typed attribute manifest digest must be lowercase SHA-256"
+                      {:path [:typed-attributes :manifest :sha256]}))
+      (validate-selector! (:registry typed-attributes)))
+    :acquire (validate-selector! (:registry typed-attributes)))
+  typed-attributes)
+
+(defn- normalize-version [document]
+  (case (:version document)
+    1 (do
+        (closed! [] legacy-top-keys document)
+        (assoc document
+               :version version
+               :typed-attributes {:mode :disabled}))
+    2 document
+    (config-error "unsupported configuration version" {:path [:version]})))
 
 (defn- optional-positive! [storage key]
   (when (contains? storage key)
@@ -162,26 +247,28 @@
                     {:path [:storage :type]}))))
 
 (defn validate
-  "Validate and return one normalized version-1 config document."
+  "Validate and return one normalized version-2 config document.
+
+  A closed version-1 document is upgraded to version 2 with typed attributes
+  disabled. Version 1 cannot opt into behavior that its schema did not name."
   [document]
-  (closed! [] top-keys document)
-  (when-not (= version (:version document))
-    (config-error "unsupported configuration version"
-                  {:path [:version]}))
-  (let [server (closed! [:server] server-keys (:server document))
-        ingest (closed! [:ingest] ingest-keys (:ingest document))]
-    (when-not (= "127.0.0.1" (:host server))
-      (config-error "server host must be 127.0.0.1"
-                    {:path [:server :host]}))
-    (when-not (and (integer? (:port server)) (<= 0 (:port server) 65535))
-      (config-error "server port must be between 0 and 65535"
-                    {:path [:server :port]}))
-    (doseq [key [:http-workers :http-queue-capacity]]
-      (positive-int! [:server key] (get server key)))
-    (when-not (= :otlp-http-json (:type ingest))
-      (config-error "unknown ingest type" {:path [:ingest :type]}))
-    (validate-storage! (:storage document))
-    document))
+  (let [document (normalize-version document)]
+    (closed! [] top-keys document)
+    (let [server (closed! [:server] server-keys (:server document))
+          ingest (closed! [:ingest] ingest-keys (:ingest document))]
+      (when-not (= "127.0.0.1" (:host server))
+        (config-error "server host must be 127.0.0.1"
+                      {:path [:server :host]}))
+      (when-not (and (integer? (:port server)) (<= 0 (:port server) 65535))
+        (config-error "server port must be between 0 and 65535"
+                      {:path [:server :port]}))
+      (doseq [key [:http-workers :http-queue-capacity]]
+        (positive-int! [:server key] (get server key)))
+      (when-not (= :otlp-http-json (:type ingest))
+        (config-error "unknown ingest type" {:path [:ingest :type]}))
+      (validate-storage! (:storage document))
+      (validate-typed-attributes (:typed-attributes document))
+      document)))
 
 (defn- plain-edn! [value]
   (cond
@@ -216,12 +303,12 @@
         (config-error "configuration is not valid EDN" {:path []})))))
 
 (defn file-document
-  "Require the explicit version marker on an already parsed file document."
+  "Require and normalize the explicit version on a parsed file document."
   [document]
   (when-not (contains? document :version)
     (config-error "configuration file must declare its version"
                   {:path [:version]}))
-  document)
+  (normalize-version document))
 
 (defn- ordered [value]
   (cond
@@ -307,19 +394,26 @@
   "Merge `[source partial-document]` layers from lowest to highest priority.
 
   Server and ingest fields merge independently. A higher-priority storage
-  section replaces the whole lower variant so stale variant fields cannot
-  survive. The result includes leaf provenance for status/settings UIs."
+  or typed-attributes section replaces the whole lower variant so stale
+  fields cannot survive. The result includes leaf provenance for
+  status/settings UIs."
   [layers]
   (let [{:keys [config provenance]}
         (reduce
          (fn [{:keys [config provenance]} [source layer]]
            (when-not (map? layer)
              (config-error "configuration layer must be a map" {:source source}))
-           (let [provenance (if (contains? layer :storage)
-                              (into {} (remove (fn [[path _]]
-                                                 (beneath? [:storage] path)))
-                                    provenance)
-                              provenance)]
+           (let [layer (if (contains? layer :version)
+                         (normalize-version layer)
+                         layer)
+                 replaced (filter #(contains? layer %)
+                                  [:storage :typed-attributes])
+                 provenance (reduce
+                             (fn [current section]
+                               (into {} (remove (fn [[path _]]
+                                                  (beneath? [section] path)))
+                                     current))
+                             provenance replaced)]
              {:config (merge-section config layer)
               :provenance (reduce #(assoc %1 %2 source)
                                   provenance (leaf-paths layer))}))
@@ -332,20 +426,31 @@
 (defn redact
   "Return a diagnostic-safe config/provenance result.
 
-  Local paths and object-store identity are suppressed. Credential values are
-  impossible in the schema; environment variable references remain visible."
+  Local paths, object-store identity, typed manifest paths, and typed deployment
+  selector strings are suppressed. Credential values are impossible in the
+  schema; environment variable references remain visible."
   [{:keys [config provenance] :as resolved}]
   (let [kind (get-in config [:storage :type])
-        paths (case kind
-                :local-path [[:storage :path]]
-                :durable-local [[:storage :root] [:storage :scratch-parent]
-                                [:storage :owner] [:storage :instance]
-                                [:storage :database]]
-                :durable-s3 [[:storage :s3 :endpoint] [:storage :s3 :bucket]
-                             [:storage :s3 :prefix] [:storage :s3 :object-id]
-                             [:storage :scratch-parent] [:storage :owner]
-                             [:storage :instance] [:storage :database]]
-                [])]
+        storage-paths (case kind
+                        :local-path [[:storage :path]]
+                        :durable-local [[:storage :root] [:storage :scratch-parent]
+                                        [:storage :owner] [:storage :instance]
+                                        [:storage :database]]
+                        :durable-s3 [[:storage :s3 :endpoint] [:storage :s3 :bucket]
+                                     [:storage :s3 :prefix] [:storage :s3 :object-id]
+                                     [:storage :scratch-parent] [:storage :owner]
+                                     [:storage :instance] [:storage :database]]
+                        [])
+        typed-mode (get-in config [:typed-attributes :mode])
+        typed-paths
+        (if (contains? #{:install :acquire} typed-mode)
+          (cond-> [[:typed-attributes :registry :dataset-id]
+                   [:typed-attributes :registry :application-id]
+                   [:typed-attributes :registry :lineage]]
+            (= :install typed-mode)
+            (conj [:typed-attributes :manifest :path]))
+          [])
+        paths (into storage-paths typed-paths)]
     (assoc resolved :config
            (reduce (fn [document path]
                      (if (get-in document path)

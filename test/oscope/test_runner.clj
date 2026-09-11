@@ -20,6 +20,8 @@
             [oscope.sample-emitter-test]
             [oscope.server-test]
             [oscope.telemetry-test]
+            [oscope.typed-schema-config-test]
+            [oscope.typed-schema-runtime-test]
             [oscope.typed-schema-test]
             [oscope.visualization-editor-test]
             [oscope.web-test]
@@ -39,7 +41,10 @@
                         'oscope.query-view-test 'oscope.raw-export-test
                         'oscope.sample-emitter-test
                         'oscope.server-test 'oscope.visualization-editor-test
-                        'oscope.telemetry-test 'oscope.typed-schema-test
+                        'oscope.telemetry-test
+                        'oscope.typed-schema-config-test
+                        'oscope.typed-schema-runtime-test
+                        'oscope.typed-schema-test
                         'oscope.web-test
                         'oscope.workbench-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add version 2 file configuration for disabled, install, and read-only acquire
+  typed-attribute modes. Version 1 normalizes to disabled; install mode uses a
+  bounded read and hashes exact manifest bytes before safe EDN/exporter
+  validation, enforces deployment-selector equality, redacts private
+  provenance, and routes the result through a persistent database-scoped local
+  registry. Acquire remains read-only through the existing typed-schema startup
+  boundary; ephemeral memory and not-yet-owned Durable file launches fail
+  closed.
 - Add an explicit operator-authorized typed span schema startup boundary for
   embedded and standalone collection. Base schema and approved additive DDL
   complete before exporter or ingress startup, and only installer-confirmed

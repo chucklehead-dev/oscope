@@ -11,10 +11,27 @@
 
   This deliberately models capabilities as predicates instead of serializable
   configuration. File configuration resolves into this envelope later."
-  [:map {:closed true}
-   [:approved-manifest some?]
-   [:registry-backend some?]
-   [:emit! {:optional true} fn?]])
+  [:or
+   ;; Backward-compatible programmatic install envelope from the first slice.
+   [:map {:closed true}
+    [:approved-manifest some?]
+    [:registry-backend some?]
+    [:emit! {:optional true} fn?]]
+   [:map {:closed true}
+    [:mode [:= :install]]
+    [:approved-manifest some?]
+    [:registry-backend some?]
+    [:emit! {:optional true} fn?]]
+   [:map {:closed true}
+    [:mode [:= :acquire]]
+    [:selector
+     [:map {:closed true}
+      [:dataset-id string?]
+      [:application-id string?]
+      [:lineage string?]
+      [:version integer?]]]
+    [:registry-backend some?]
+    [:emit! {:optional true} fn?]]])
 
 (defn- fail! [message type]
   (throw (ex-info message {:oscope.typed-schema/error true :type type})))
@@ -42,35 +59,70 @@
    (sort-by (juxt (comp str :signal) :table)
             identity/physically-supported-targets)))
 
-(defn install!
-  "Ensure the base schema, then install one explicitly approved manifest.
+(defn- options-mode [options]
+  (or (:mode options) :install))
 
-  Supplying the approved manifest and registry backend is the operator
-  authority. Oscope derives DDL and physical observation from the exact startup
-  connection, so application code cannot redirect the effects or target."
-  [connection options]
-  (when-let [{:keys [approved-manifest registry-backend emit!]}
-             (validate-options options)]
-    (schema/ensure-schema! connection)
-    (let [installation
-          (try
-            (installer/install-approved!
-             registry-backend approved-manifest
-             (cond->
-              {:target connection
-               :execute-ddl! #(jdbc/execute! connection %)
-               :observe-columns #(observe-supported-columns connection)}
-               emit! (assoc :emit! emit!)))
-            (catch Throwable _
-              ;; Exporter validation failures may carry the entire manifest in
-              ;; ex-data. Cross this boundary with a fresh, cause-free error.
-              (fail! "oscope typed schema installation failed"
-                     ::installation-failed)))
-          descriptor-set (:descriptor-set installation)]
-      (when-not (and (= :active (:status installation)) descriptor-set)
+(defn- installer-runtime [connection emit!]
+  (cond->
+   {:target connection
+    :observe-columns #(observe-supported-columns connection)}
+    emit! (assoc :emit! emit!)))
+
+(defn- confirmed-context [kind activation]
+  (let [descriptor-set (:descriptor-set activation)]
+    (when-not (and (= :active (:status activation)) descriptor-set)
+      (if (= :install kind)
+        ;; Preserve the first slice's public failure type and wording for the
+        ;; existing programmatic install envelope.
         (fail! "oscope typed schema installation was not confirmed active"
-               ::installation-unconfirmed))
-      {:descriptor-set descriptor-set :installation installation})))
+               ::installation-unconfirmed)
+        (fail! "oscope typed schema acquisition was not confirmed active"
+               ::acquisition-unconfirmed)))
+    ;; Preserve the exact install result shape for programmatic callers.
+    (if (= :install kind)
+      {:descriptor-set descriptor-set :installation activation}
+      {:descriptor-set descriptor-set :acquisition activation})))
+
+(defn install!
+  "Activate explicitly authorized typed descriptors for one connection.
+
+  Install mode ensures the base schema and runs the approved additive installer.
+  Acquire mode performs only registry reads and fresh physical observation; it
+  never supplies a DDL effect. Oscope derives every database effect from the
+  exact startup connection, so application code cannot redirect its target."
+  [connection options]
+  (when-let [{:keys [approved-manifest registry-backend selector emit!] :as options}
+             (validate-options options)]
+    (let [kind (options-mode options)
+          runtime (installer-runtime connection emit!)
+          activation
+          (case kind
+            :install
+            (do
+              ;; Keep the original programmatic envelope's base-schema
+              ;; boundary unchanged: only exporter installer failures are
+              ;; translated by this namespace.
+              (schema/ensure-schema! connection)
+              (try
+                (installer/install-approved!
+                 registry-backend approved-manifest
+                 (assoc runtime :execute-ddl! #(jdbc/execute! connection %)))
+                (catch Throwable _
+                  ;; Exporter validation failures may carry the entire manifest
+                  ;; in ex-data. Cross with a fresh, cause-free error.
+                  (fail! "oscope typed schema installation failed"
+                         ::installation-failed))))
+
+            :acquire
+            (try
+              (installer/acquire-active!
+               registry-backend selector runtime)
+              (catch Throwable _
+                ;; Registry failures may carry selector identities, records, or
+                ;; physical column details. Do not retain their cause chain.
+                (fail! "oscope typed schema acquisition failed"
+                       ::acquisition-failed))))]
+      (confirmed-context kind activation))))
 
 (defn exporter-options [options schema-context]
   (if schema-context

@@ -27,11 +27,14 @@ the same behavior. The bounded dispatcher settings `OSCOPE_HTTP_WORKERS` and
 as `:server` fields in the file. Only the numeric loopback host `127.0.0.1` is
 accepted.
 
-## Version 1 document
+## Version 2 document
 
 [`config/oscope.example.edn`](../config/oscope.example.edn) is the canonical
 local-path example. The schema is closed: unknown versions, sections, fields,
-ingest types, and storage variants fail before startup.
+ingest types, storage variants, and typed-attribute modes fail before startup.
+Existing version 1 files are accepted and normalized to version 2 with
+`{:typed-attributes {:mode :disabled}}`; version 1 cannot opt into typed
+attributes.
 
 Storage variants are:
 
@@ -55,7 +58,7 @@ Durable S3 files may contain only credential references, never credentials:
 ```
 
 The ordinary `-M:server` launcher currently starts only `:memory` and
-`:local-path` storage. Version 1 validates Durable variants so they can be
+`:local-path` storage. Version 2 validates Durable variants so they can be
 managed safely, but wiring those documents into `-M:durable-server-dev` remains
 a follow-up slice. Existing Durable environment variables remain unchanged.
 
@@ -63,3 +66,66 @@ Diagnostic rendering redacts local paths, object-store locations, Durable
 owner/instance identities, and database names. Field provenance is retained
 internally as `:default`, `:file`, `:environment`, or `:cli` for a future
 settings/status screen.
+
+## Approved typed attributes
+
+Version 2 adds one optional, whole-replacement `:typed-attributes` section. It
+is not merged field by field across configuration layers. The default is:
+
+```clojure
+{:typed-attributes {:mode :disabled}}
+```
+
+Install mode names an already compiled and reviewed exporter manifest by an
+absolute path and the SHA-256 of its exact bytes. It also names the closed
+deployment identity the manifest is allowed to install:
+
+```clojure
+{:typed-attributes
+ {:mode :install
+  :manifest {:path "/etc/oscope/typed-attributes.edn"
+             :sha256 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+  :registry {:dataset-id "telemetry-prod"
+             :application-id "checkout"
+             :lineage "checkout-v1"
+             :version 1}}}
+```
+
+Acquire mode selects the same identity but does not authorize manifest loading,
+catalog writes, or DDL:
+
+```clojure
+{:typed-attributes
+ {:mode :acquire
+  :registry {:dataset-id "telemetry-prod"
+             :application-id "checkout"
+             :lineage "checkout-v1"
+             :version 1}}}
+```
+
+There are no manifest command-line flags or environment aliases. Put this
+section in the file selected by the existing `--config` or `OSCOPE_CONFIG`
+mechanism.
+
+`--check-config` accepts manifest files of at most 8 MiB, compares the digest of
+the exact file bytes before parsing EDN, validates the compiled manifest through
+the exporter, and requires its deployment identity to equal `:registry`. It
+opens neither chDB storage nor a listener. Diagnostic output redacts the
+manifest path and all selector strings, and it discards the loaded manifest
+capability after the check.
+
+For ordinary `:local-path` storage, Oscope derives one persistent registry
+namespace beside the canonical chDB path and uses one fixed private object scope
+within it. Install and acquire therefore reopen the same cross-process CAS
+catalog after restart without exposing a declared dataset name in a filesystem
+component. All dataset declarations targeting the same physical database share
+that catalog, preserving the exporter's cross-dataset physical-column collision
+checks. The backend is passed through the existing typed-schema startup
+boundary; the exporter remains the sole schema owner.
+
+`:memory` is rejected for non-disabled typed attributes because a process-only
+registry would make restart and read-only acquisition claims false. The
+versioned Durable launcher adapter remains separate work: `:durable-local` and
+`:durable-s3` config documents are validated, but the ordinary `-M:server`
+launcher does not own their writer lifecycle or backend and will not invent a
+second one.
