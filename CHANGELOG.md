@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a table-only typed span explorer for approved Boolean and string
+  attributes. Saved URLs carry exact logical schema bindings, stale bindings
+  fail visibly, and results show typed-value coverage plus the live two-query
+  freshness boundary without exposing physical columns or registry identity.
+  Runtime catalog acquisition remains separate from the pure query and display
+  contracts, so the JVM Typed Clojure pilot continues to check those contracts
+  without loading the Jolt-native exporter stack.
 - Add version 2 file configuration for disabled, install, and read-only acquire
   typed-attribute modes. Version 1 normalizes to disabled; install mode uses a
   bounded read and hashes exact manifest bytes before safe EDN/exporter

@@ -10,6 +10,7 @@
             [oscope.query.expression.chdb :as query-expression-chdb]
             [oscope.raw-export :as raw-export]
             [oscope.raw-export.chdb :as raw-export-chdb]
+            [oscope.typed-catalog :as typed-catalog]
             [oscope.view-model :as view-model]
             [otel.exporter.chdb.schema :as schema]))
 
@@ -38,13 +39,22 @@
          conn (or connection (jdbc/connection db-spec))]
      (try
        (when ensure-schema? (schema/ensure-schema! conn))
-       (let [closed? (atom false)
+       (let [typed-span-fields (when typed-span-descriptors
+                                 (typed-catalog/acquire conn typed-span-descriptors))
+             closed? (atom false)
              loader (fn [selection]
                       (when @closed?
                         (throw (ex-info "oscope live source is closed"
                                         {:oscope.live/error true :type ::closed})))
                       (let [plan (query/compile-query selection (now-fn))]
-                        (view-model/screen plan (query-chdb/run conn plan))))
+                        (if typed-span-descriptors
+                          (view-model/screen
+                           plan
+                           (query-chdb/run conn plan
+                                           {:typed-span-descriptors typed-span-descriptors
+                                            :typed-span-fields typed-span-fields})
+                           {:typed-span-fields typed-span-fields})
+                          (view-model/screen plan (query-chdb/run conn plan)))))
              load-command (fn [request-id selection]
                             (effect/run-command
                              loader (command/query-command request-id selection)))
@@ -83,7 +93,8 @@
                      (when (compare-and-set! closed? false true)
                        (when owned? (.close conn))))}
           typed-span-descriptors
-          (assoc :typed-span-descriptors typed-span-descriptors)))
+          (assoc :typed-span-descriptors typed-span-descriptors
+                 :typed-span-fields typed-span-fields)))
        (catch Throwable error
          (when owned? (.close conn))
          (throw error))))))

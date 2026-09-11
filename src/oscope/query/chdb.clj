@@ -1,11 +1,27 @@
 (ns oscope.query.chdb
   "Embedded chDB execution adapter for pure oscope query plans."
   (:require [oscope.query :as query]
+            [oscope.typed-query :as typed-query]
             [otel.exporter.chdb.explorer :as explorer]))
 
-(defn run [connection plan]
+(defn run
+  ([connection plan] (run connection plan {}))
+  ([connection plan {:keys [typed-span-descriptors typed-span-fields]}]
   (let [{:keys [selection request]} (query/validate-plan plan)]
     (case (:mode selection)
+      :typed-span-filter
+      (let [binding (typed-query/resolve-binding typed-span-fields
+                                                  (:schema-binding request))]
+        (when-not (= typed-query/filter-capability
+                     (explorer/supported-typed-span-filters))
+          (throw (ex-info "oscope typed span filter choices do not match the chDB explorer"
+                          {:oscope.query/error true
+                           :type ::incompatible-typed-span-filter})))
+        (explorer/typed-span-filtered-traces
+         connection typed-span-descriptors
+         (-> request (dissoc :schema-binding)
+             (assoc :signal :spans :attribute-key (:attribute-key binding)))))
+
       :cumulative-histogram-series
       (do
         (when-not (= query/cumulative-histogram-series-options
@@ -50,4 +66,4 @@
                            :type ::incompatible-explorer-fields
                            :oscope-fields (query/supported-fields)
                            :explorer-fields (explorer/supported-fields)})))
-        (explorer/top-values connection request)))))
+        (explorer/top-values connection request))))))

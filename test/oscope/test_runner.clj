@@ -23,6 +23,7 @@
             [oscope.typed-schema-config-test]
             [oscope.typed-schema-runtime-test]
             [oscope.typed-schema-test]
+            [oscope.typed-span-filter-test]
             [oscope.visualization-editor-test]
             [oscope.web-test]
             [oscope.workbench-test]))
@@ -45,6 +46,7 @@
                         'oscope.typed-schema-config-test
                         'oscope.typed-schema-runtime-test
                         'oscope.typed-schema-test
+                        'oscope.typed-span-filter-test
                         'oscope.web-test
                         'oscope.workbench-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

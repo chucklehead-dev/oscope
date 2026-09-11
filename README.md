@@ -577,9 +577,14 @@ options remain unchanged and the exporter retains its default base-schema
 ownership. Version 2 file configuration validates a digest-pinned approved
 manifest or read-only registry selector with `--check-config`. Ordinary
 local-path startup reopens a persistent database-scoped registry and passes the
-authorized install or acquire mode through this same boundary. Durable
-file-launcher integration and schema-aware UI/query controls remain separate
-follow-on work. Typed promotion is never inferred from telemetry.
+authorized install or acquire mode through this same boundary. A confirmed
+capability also adds table-only Boolean and string span filters to the web UI.
+Those controls use logical attribute names and exact manifest-version bindings;
+stale saved URLs fail visibly, while physical columns and registry ownership
+identity remain exporter-private. Coverage and matches are two bounded live
+queries, so the UI calls out that concurrent ingestion can advance one between
+them. Numeric controls and Durable file-launcher integration remain follow-on
+work. Typed promotion is never inferred from telemetry.
 
 The returned `:source` is the ordinary live oscope query source and can be
 given to the web or native UI handlers. The exporter owns schema migration,
