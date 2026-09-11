@@ -19,7 +19,10 @@
 (def string-binding
   {:field-id "attribute_abcdef0123456789abcd"
    :attribute-key "game.phase" :attribute-type :string :manifest-version 3})
-(def catalog [bool-binding string-binding])
+(def int64-binding
+  {:field-id "attribute_11111111111111111111"
+   :attribute-key "game.score" :attribute-type :int64 :manifest-version 3})
+(def catalog [bool-binding string-binding int64-binding])
 
 (defn- selection [binding value]
   {:mode :typed-span-filter :schema-binding binding :operator :eq :value value
@@ -52,16 +55,22 @@
                     :identity {:version 3 :dataset-id "secret-dataset"}
                     :physical {:value-column "private_column"}
                     :provenance [{:source "private/path"}]}
-                   {:id "attribute_11111111111111111111" :key "game.score"
+                   {:id (:field-id int64-binding) :key "game.score"
                     :type :int64 :identity {:version 3}}])]
     (let [actual (typed-catalog/acquire ::connection ::descriptors)]
-      (is (= [bool-binding] actual))
+      (is (= [bool-binding int64-binding] actual))
       (is (not (str/includes? (pr-str actual) "secret")))
       (is (not (str/includes? (pr-str actual) "private"))))))
 
 (deftest typed-plan-is-logical-and-executor-requires-the-exact-binding
-  (doseq [[binding value] [[bool-binding false] [string-binding ""]]]
-    (let [plan (query/compile-query (selection binding value) now)
+  (doseq [[binding value operator]
+          [[bool-binding false :eq]
+           [string-binding "" :eq]
+           [int64-binding 9007199254740993 :gte]
+           [int64-binding typed-query/int64-min :eq]
+           [int64-binding typed-query/int64-max :lt]]]
+    (let [plan (query/compile-query (assoc (selection binding value)
+                                          :operator operator) now)
           seen (atom nil)]
       (is (= value (get-in plan [:request :value])))
       (is (empty? (filter #(contains? (:request plan) %)
@@ -69,8 +78,10 @@
       (with-redefs [explorer/typed-span-filtered-traces
                     (fn [connection descriptors request]
                       (reset! seen [connection descriptors request])
-                      (result binding value))]
-        (is (= (result binding value)
+                      (assoc (result binding value)
+                             :filter {:operator operator :value value}))]
+        (is (= (assoc (result binding value)
+                      :filter {:operator operator :value value})
                (query-chdb/run ::connection plan
                                {:typed-span-descriptors ::descriptors
                                 :typed-span-fields catalog})))
@@ -94,7 +105,9 @@
 
 (deftest table-screen-preserves-false-and-empty-string-and-explains-coverage
   (doseq [[binding value display] [[bool-binding false "false"]
-                                   [string-binding "" "(empty string)"]]]
+                                   [string-binding "" "(empty string)"]
+                                   [int64-binding 9007199254740993
+                                    "9007199254740993"]]]
     (let [plan (query/compile-query (selection binding value) now)
           screen (view-model/screen plan (result binding value)
                                     {:typed-span-fields catalog})]
@@ -110,6 +123,27 @@
               {:status :historical-untyped-fallback :count 4}
               {:status :historical-untyped-unavailable :count 5}]
              (:coverage screen))))))
+
+(deftest int64-web-values-remain-exact-decimal-text-until-bounded-parsing
+  (doseq [[operator value] [[:eq 9007199254740993]
+                            [:gte typed-query/int64-min]
+                            [:lt typed-query/int64-max]]]
+    (let [selected (assoc (selection int64-binding value) :operator operator)
+          query-string (web/selection-query-string selected)
+          parsed (web/selection-from-params
+                  (web/parse-query-params (subs query-string 1)) catalog)]
+      (is (= selected parsed))
+      (is (str/includes? query-string (str "typed-value=" value)))))
+  (let [screen (view-model/screen
+                (query/compile-query (selection int64-binding
+                                                9007199254740993) now)
+                (result int64-binding 9007199254740993)
+                {:typed-span-fields catalog})
+        html (web/render-page screen)]
+    (is (str/includes? html "inputmode=\"numeric\""))
+    (is (not (str/includes? html "type=\"number\" name=\"typed-value\"")))
+    (is (= {:status :historical-untyped-unavailable :count 5}
+           (last (:coverage screen))))))
 
 (deftest typed-results-require-conserved-closed-coverage-and-bounded-rows
   (let [plan (query/compile-query (selection bool-binding false) now)
@@ -171,6 +205,23 @@
         (is (= "<!doctype html><html lang=\"en\"><body><main><h1>Invalid typed filter</h1><p>The typed span filter request is invalid.</p></main></body></html>"
                (:body response)))))))
 
+(deftest malformed-and-out-of-range-int64-web-values-return-bad-requests
+  (let [handler (web/handler {:typed-span-fields catalog
+                              :load-command (fn [_ _] (throw (AssertionError.)))})]
+    (doseq [params (conj
+                    (mapv (fn [value]
+                            {"mode" "typed-span-filter"
+                             "typed-field-id" (:field-id int64-binding)
+                             "typed-operator" "gte" "typed-value" value})
+                          ["1.5" "9e15" "9223372036854775808"
+                           "-9223372036854775809" ""])
+                    {"mode" "typed-span-filter"
+                     "typed-field-id" (:field-id int64-binding)
+                     "typed-operator" "contains" "typed-value" "1"})]
+      (let [response (handler {:request-method :get :uri "/oscope"
+                               :query-params params})]
+        (is (= 400 (:status response)))))))
+
 (deftest live-source-discovers-once-and-shares-catalog-with-loading
   (let [catalog-calls (atom 0) execution (atom nil)]
     (with-redefs [schema/ensure-schema! (fn [_])
@@ -192,7 +243,7 @@
         (is (= 1 @catalog-calls))
         (is (= catalog (:typed-span-fields source)))
         (is (= catalog (get-in source [:screen :controls :typed-span-fields])))
-        (is (= 2 (get-in source [:screen :controls :typed-span-field-total])))
+        (is (= 3 (get-in source [:screen :controls :typed-span-field-total])))
         (is (false? (get-in source [:screen :controls
                                     :typed-span-fields-truncated?])))
         ((:loader source) (selection bool-binding false))

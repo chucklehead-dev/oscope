@@ -2,9 +2,16 @@
   "Pure validation and UI vocabulary for typed query bindings.")
 
 (def filter-capability
-  {:operators {:boolean [:eq] :string [:eq :prefix :contains]}
+  {:operators {:boolean [:eq] :int64 [:eq :gte :lt]
+               :string [:eq :prefix :contains]}
    :signals [:spans]
-   :types [:boolean :string]})
+   :types [:boolean :int64 :string]})
+
+(def int64-min -9223372036854775808)
+(def int64-max 9223372036854775807)
+
+(defn int64? [value]
+  (and (integer? value) (<= int64-min value int64-max)))
 
 (def binding-keys
   #{:field-id :attribute-key :attribute-type :manifest-version})
@@ -25,7 +32,7 @@
        (re-matches field-id-pattern (:field-id value))
        (string? (:attribute-key value))
        (<= 1 (count (:attribute-key value)) 256)
-       (contains? #{:boolean :string} (:attribute-type value))
+       (contains? (set (:types filter-capability)) (:attribute-type value))
        (integer? (:manifest-version value))
        (pos? (:manifest-version value))))
 

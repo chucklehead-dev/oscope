@@ -75,22 +75,38 @@
                       {:field-id field-id
                        :attribute-key (get params "typed-attribute-key")
                        :attribute-type (keyword-param params "typed-attribute-type"
-                                                      [:boolean :string] nil)
+                                                      (:types typed-query/filter-capability)
+                                                      nil)
                        :manifest-version
                        (when (re-matches #"[0-9]{1,9}" (or (get params "typed-manifest-version") ""))
                          (parse-long (get params "typed-manifest-version")))}
                       (typed-query/resolve-field-id typed-span-fields field-id))
             binding (typed-query/resolve-binding typed-span-fields binding)
-            operator (keyword-param params "typed-operator"
-                                    (get-in typed-query/filter-capability
-                                            [:operators (:attribute-type binding)])
-                                    :eq)
+            allowed-operators (typed-query/operators-for (:attribute-type binding))
+            raw-operator (get params "typed-operator")
+            operator (if (nil? raw-operator)
+                       :eq
+                       (some #(when (= raw-operator (name %)) %)
+                             allowed-operators))
             raw-value (get params "typed-value" "")
-            value (if (= :boolean (:attribute-type binding))
+            value (case (:attribute-type binding)
+                    :boolean
                     (case raw-value "true" true "false" false
                           (throw (ex-info "invalid typed Boolean filter value"
                                           {:oscope.ui/error true})))
+                    :int64
+                    (when (re-matches #"-?[0-9]{1,20}" raw-value)
+                      (try
+                        (let [parsed (parse-long raw-value)]
+                          (when (typed-query/int64? parsed) parsed))
+                        (catch Throwable _ nil)))
                     raw-value)]
+        (when (nil? operator)
+          (throw (ex-info "invalid typed filter operator"
+                          {:oscope.ui/error true})))
+        (when (and (= :int64 (:attribute-type binding)) (nil? value))
+          (throw (ex-info "invalid typed Int64 filter value"
+                          {:oscope.ui/error true})))
         (query/normalize-selection
          {:mode :typed-span-filter :schema-binding binding :operator operator
           :value value :window window :limit limit}))
@@ -245,16 +261,18 @@
          (checkbox "live" "Live refresh" live?)
          "<button type=\"submit\">Run query</button></div></form>")))
 (defn- render-controls [controls selection action live?]
-  (if (contains? #{:metric-series :counter-series
-                   :cumulative-histogram-series} (:mode selection))
+  (cond
+    (= :typed-span-filter (:mode selection)) ""
+    (contains? #{:metric-series :counter-series
+                 :cumulative-histogram-series} (:mode selection))
     (render-series-controls controls selection action live?)
-    (render-distribution-controls controls selection action live?)))
+    :else (render-distribution-controls controls selection action live?)))
 
 (defn- render-typed-controls [controls selection action]
   (let [fields (:typed-span-fields controls)]
     (when (seq fields)
       (apply str
-             (for [type [:boolean :string]
+             (for [type (:types typed-query/filter-capability)
                    :let [candidates (filterv #(= type (:attribute-type %)) fields)]
                    :when (seq candidates)]
                (let [current (when (= :typed-span-filter (:mode selection))
@@ -272,11 +290,16 @@
                                               (= % (or (:operator selection) :eq)))
                                       (get-in typed-query/filter-capability [:operators type])))
                       "</select></label><label>Value"
-                      (if (= :boolean type)
+                      (case type
+                        :boolean
                         (str "<select name=\"typed-value\">"
                              (option :true "true" (not= false (:value selection)))
                              (option :false "false" (= false (:value selection)))
                              "</select>")
+                        :int64
+                        (str "<input name=\"typed-value\" inputmode=\"numeric\" pattern=\"-?[0-9]+\" maxlength=\"20\" value=\""
+                             (esc (when (= :int64 (:attribute-type current))
+                                    (:value selection))) "\">")
                         (str "<input name=\"typed-value\" maxlength=\"256\" value=\""
                              (esc (when (= :string type) (:value selection))) "\">"))
                       "</label><label>Window<select name=\"window\">"
