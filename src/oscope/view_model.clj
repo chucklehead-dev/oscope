@@ -466,6 +466,9 @@
                                       (case (:attribute-type binding)
                                         :boolean (and (= 3 (:typed-status row))
                                                       (boolean? (:attribute-value row)))
+                                        :int64 (and (= 3 (:typed-status row))
+                                                    (typed-query/int64?
+                                                     (:attribute-value row)))
                                         :string (and (contains? #{2 3} (:typed-status row))
                                                      (string? (:attribute-value row))
                                                      (<= (count (:attribute-value row))

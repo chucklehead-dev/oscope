@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Discover approved Int64 span attributes beside Boolean and string fields and
+  filter them with exact signed 64-bit `eq`, `gte`, and `lt` predicates. The
+  browser keeps values as decimal text until bounded parsing, preserving
+  integers beyond JavaScript's safe-number range and exact saved bindings.
 - Add a table-only typed span explorer for approved Boolean and string
   attributes. Saved URLs carry exact logical schema bindings, stale bindings
   fail visibly, and results show typed-value coverage plus the live two-query

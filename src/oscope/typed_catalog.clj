@@ -17,7 +17,7 @@
              "typed span filter capability does not match this oscope build"))
     (->> (projection/confirmed-span-fields descriptor-set connection)
          (keep (fn [{:keys [id key type identity]}]
-                 (when (contains? #{:boolean :string} type)
+                 (when (contains? (set (:types typed-query/filter-capability)) type)
                    {:field-id id :attribute-key key :attribute-type type
                     :manifest-version (:version identity)})))
          (sort-by (juxt :attribute-key :attribute-type :field-id))

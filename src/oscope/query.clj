@@ -117,6 +117,7 @@
       (fail! ::unsupported-typed-operator "typed span filter operator is unsupported" {}))
     (when-not (case type
                 :boolean (boolean? value)
+                :int64 (typed-query/int64? value)
                 :string (and (string? value) (<= (count value) max-value-length)
                              (or (= :eq operator) (not (empty? value))))
                 false)
