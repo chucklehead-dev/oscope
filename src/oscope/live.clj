@@ -21,7 +21,8 @@
   With `:connection`, oscope never closes the caller-owned connection. With
   `:db-spec`, oscope owns the new connection and closes it exactly once."
   ([] (open! {}))
-  ([{:keys [connection db-spec now-fn export-capacity ensure-schema?]
+  ([{:keys [connection db-spec now-fn export-capacity ensure-schema?
+            typed-span-descriptors]
      :or {db-spec "chdb::memory:" now-fn now-unix-nano
           export-capacity 1 ensure-schema? true}}]
    (when-not (and (integer? export-capacity) (pos? export-capacity)
@@ -69,17 +70,20 @@
                               (effect/run-export-command
                                exporter
                                (command/export-command request-id selection)))]
-         {:connection conn :db-spec db-spec :owned? owned?
-          :export-admission {:capacity export-capacity :active (atom 0)}
-          :loader loader
-          :screen (load-command :initial query/default-selection)
-          :load-command load-command
-          :plotje-query-command plotje-query-command
-          :export-command export-command
-          :closed? closed?
-          :close! (fn []
-                    (when (compare-and-set! closed? false true)
-                      (when owned? (.close conn))))})
+         (cond->
+          {:connection conn :db-spec db-spec :owned? owned?
+           :export-admission {:capacity export-capacity :active (atom 0)}
+           :loader loader
+           :screen (load-command :initial query/default-selection)
+           :load-command load-command
+           :plotje-query-command plotje-query-command
+           :export-command export-command
+           :closed? closed?
+           :close! (fn []
+                     (when (compare-and-set! closed? false true)
+                       (when owned? (.close conn))))}
+          typed-span-descriptors
+          (assoc :typed-span-descriptors typed-span-descriptors)))
        (catch Throwable error
          (when owned? (.close conn))
          (throw error))))))

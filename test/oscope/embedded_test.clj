@@ -4,6 +4,7 @@
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
             [oscope.live :as live]
+            [oscope.typed-schema :as typed-schema]
             [otel.exporter.chdb :as chdb-export]
             [otel.sdk :as sdk]))
 
@@ -118,3 +119,84 @@
                  :sdk-options {:exporter ::caller-owned}})))
   (is (thrown? Exception (embedded/stop! nil)))
   (is (thrown? Exception (embedded/force-flush! {}))))
+
+(defn- typed-schema-options []
+  {:approved-manifest ::approved
+   :registry-backend ::registry})
+
+(deftest embedded-installs-confirmed-schema-before-exporter-and-sdk
+  (let [events (atom [])
+        descriptor-set (Object.)
+        typed-options (typed-schema-options)
+        connection (reify java.io.Closeable
+                     (close [_] (swap! events conj :connection-close)))
+        exporter-options (atom nil)
+        source-options (atom nil)]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (fn [_]
+                                    (swap! events conj :connection-open)
+                                    connection)
+                  jdbc.chdb.durable/connection-role (constantly :writer)
+                  typed-schema/install!
+                  (fn [actual options]
+                    (is (= connection actual))
+                    (is (identical? typed-options options))
+                    (swap! events conj :schema-installed)
+                    {:descriptor-set descriptor-set})
+                  jdbc.chdb.durable/checkpoint!
+                  (fn [_]
+                    (swap! events conj :checkpoint)
+                    {:status :committed})
+                  chdb-export/exporter
+                  (fn [options]
+                    (reset! exporter-options options)
+                    (swap! events conj :exporter-open)
+                    ::exporter)
+                  live/open!
+                  (fn [options]
+                    (reset! source-options options)
+                    (swap! events conj :source-open)
+                    {:close! #(swap! events conj :source-close)})
+                  sdk/init! (fn [_]
+                              (swap! events conj :sdk-start)
+                              ::sdk-handle)
+                  sdk/shutdown! (fn [_]
+                                  (swap! events conj :sdk-stop)
+                                  true)]
+      (let [lifecycle
+            (embedded/start! {:db-spec ::durable
+                              :typed-schema typed-options})]
+        (is (= [:connection-open :schema-installed :checkpoint :exporter-open
+                :source-open :sdk-start]
+               @events))
+        (is (false? (:create-schema? @exporter-options)))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors @exporter-options)))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors @source-options)))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors lifecycle)))
+        (is (= {:status :closed :phase :closed} (embedded/stop! lifecycle)))))))
+
+(deftest embedded-schema-failure-closes-before-exporter-or-sdk
+  (let [events (atom [])
+        typed-options (typed-schema-options)
+        connection (reify java.io.Closeable
+                     (close [_] (swap! events conj :connection-close)))]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (constantly connection)
+                  jdbc.chdb.durable/connection-role (constantly :writer)
+                  typed-schema/install! (fn [& _]
+                                          (swap! events conj :schema-failed)
+                                          (throw (ex-info "failed" {})))
+                  chdb-export/exporter (fn [_]
+                                         (swap! events conj :exporter-open))
+                  sdk/init! (fn [_] (swap! events conj :sdk-start))]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (embedded/start! {:db-spec ::durable
+                                     :typed-schema typed-options})))
+      (is (= [:schema-failed :connection-close] @events)))))

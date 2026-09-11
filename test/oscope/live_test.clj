@@ -38,6 +38,15 @@
                         (live/open! {:connection ::shared
                                      :ensure-schema? nil}))))
 
+(deftest confirmed-descriptors-remain-in-the-live-query-context
+  (let [descriptor-set (Object.)]
+    (with-redefs [query-chdb/run (fn [_ _] [])]
+      (let [source (live/open! {:connection ::shared
+                                :ensure-schema? false
+                                :typed-span-descriptors descriptor-set})]
+        (is (identical? descriptor-set (:typed-span-descriptors source)))
+        (live/close! source)))))
+
 (deftest plotje-query-command-has-one-query-admission
   (let [source* (atom nil)
         rejected (atom nil)
