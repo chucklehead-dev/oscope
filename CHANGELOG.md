@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refresh the OpenTelemetry exporter and viewer to the reviewed typed-attribute
+  and canonical crypto stack while retaining the existing opt-in schema
+  boundary.
 - Bound the standalone HTTP dispatcher to its configured workers and waiting
   capacity despite Jolt 0.8.3's advisory ThreadPoolExecutor queue model; excess
   connections are closed before handler execution, and ordered shutdown drains
