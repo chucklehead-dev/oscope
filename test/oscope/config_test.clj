@@ -23,6 +23,43 @@
     (is (= :environment
            (get-in resolved [:provenance [:storage :type]])))))
 
+(deftest version-one-normalizes-to-version-two-with-typed-attributes-disabled
+  (let [legacy (config/parse file-document)
+        normalized (config/file-document legacy)
+        resolved (config/resolve-config [[:file legacy]])]
+    (is (= 2 (:version normalized)))
+    (is (= {:mode :disabled} (:typed-attributes normalized)))
+    (is (= {:mode :disabled}
+           (get-in resolved [:config :typed-attributes])))
+    (is (= :file
+           (get-in resolved
+                   [:provenance [:typed-attributes :mode]])))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (config/file-document
+                  (assoc legacy :typed-attributes {:mode :disabled}))))))
+
+(deftest typed-attributes-are-a-whole-section-replacement
+  (let [selector {:dataset-id "private-dataset"
+                  :application-id "private-app"
+                  :lineage "private-lineage"
+                  :version 7}
+        install {:mode :install
+                 :manifest {:path "/private/manifest.edn"
+                            :sha256 (apply str (repeat 64 "a"))}
+                 :registry selector}
+        resolved (config/resolve-config
+                  [[:file {:typed-attributes install}]
+                   [:cli {:typed-attributes {:mode :disabled}}]])]
+    (is (= {:mode :disabled}
+           (get-in resolved [:config :typed-attributes])))
+    (is (= :cli
+           (get-in resolved
+                   [:provenance [:typed-attributes :mode]])))
+    (is (nil? (get-in resolved
+                      [:provenance [:typed-attributes :manifest :path]])))
+    (is (nil? (get-in resolved
+                      [:provenance [:typed-attributes :registry :lineage]])))))
+
 (deftest explicit-file-selection-has-no-cwd-fallback
   (is (nil? (cli/config-path (cli/parse-args []) {})))
   (is (= "/env.edn"
@@ -53,12 +90,43 @@
 (deftest validation-is-closed-and-side-effect-free
   (doseq [document [(assoc config/defaults :unknown true)
                     (assoc-in config/defaults [:server :unknown] true)
-                    (assoc config/defaults :version 2)
+                    (assoc config/defaults :version 3)
                     (assoc config/defaults :storage
                            {:type :local-path :path "/ok" :root "/stale"})]]
     (is (thrown? clojure.lang.ExceptionInfo (config/validate document))))
   (is (thrown? clojure.lang.ExceptionInfo
                (config/file-document {:server {:port 5000}}))))
+
+(deftest typed-attribute-variants-are-closed-and-bounded
+  (let [selector {:dataset-id "dataset"
+                  :application-id "app"
+                  :lineage "lineage-v1"
+                  :version 1}
+        digest (apply str (repeat 64 "a"))
+        document #(assoc config/defaults :typed-attributes %)]
+    (doseq [value [{:mode :disabled}
+                   {:mode :install
+                    :manifest {:path "/private/manifest.edn"
+                               :sha256 digest}
+                    :registry selector}
+                   {:mode :acquire :registry selector}]]
+      (is (= value (:typed-attributes (config/validate (document value))))))
+    (doseq [value [{:mode :disabled :registry selector}
+                   {:mode :install
+                    :manifest {:path "relative.edn" :sha256 digest}
+                    :registry selector}
+                   {:mode :install
+                    :manifest {:path "/private/manifest.edn"
+                               :sha256 (.toUpperCase digest)}
+                    :registry selector}
+                   {:mode :acquire
+                    :registry (assoc selector :unknown true)}
+                   {:mode :acquire
+                    :registry (assoc selector :dataset-id "secret value")}
+                   {:mode :acquire
+                    :registry (assoc selector :version 0)}]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (config/validate (document value)))))))
 
 (deftest storage-variants-and-credential-references
   (doseq [storage [{:type :memory}
@@ -140,6 +208,26 @@
                            "private-owner" "private-instance"
                            "private_database"]]
       (is (not (.contains rendered private-value))))))
+
+(deftest typed-attribute-diagnostics-redact-path-and-selector-strings
+  (let [private-values ["/private/manifest.edn" "private-dataset"
+                        "private-app" "private-lineage"]
+        resolved
+        (config/resolve-config
+         [[:file
+           {:typed-attributes
+            {:mode :install
+             :manifest {:path (first private-values)
+                        :sha256 (apply str (repeat 64 "a"))}
+             :registry {:dataset-id (second private-values)
+                        :application-id (nth private-values 2)
+                        :lineage (nth private-values 3)
+                        :version 4}}}]])
+        rendered (config/encode-diagnostic resolved)]
+    (doseq [private-value private-values]
+      (is (not (.contains rendered private-value))))
+    (is (.contains rendered "<redacted>"))
+    (is (.contains rendered ":install"))))
 
 (deftest tagged-values-are-rejected-on-jolt
   (doseq [text ["{:version 1 :value #uuid \"00000000-0000-0000-0000-000000000000\"}"

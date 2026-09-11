@@ -574,9 +574,12 @@ ordinary local server has no Durable checkpoint promise; when its existing
 `:durability` callbacks are supplied, base and typed schema changes are
 checkpointed before HTTP ingress starts. With no `:typed-schema` map, exporter
 options remain unchanged and the exporter retains its default base-schema
-ownership. The versioned configuration-file form and schema-aware UI/query
-controls are separate follow-on work; typed promotion is never inferred from
-telemetry.
+ownership. Version 2 file configuration validates a digest-pinned approved
+manifest or read-only registry selector with `--check-config`. Ordinary
+local-path startup reopens a persistent database-scoped registry and passes the
+authorized install or acquire mode through this same boundary. Durable
+file-launcher integration and schema-aware UI/query controls remain separate
+follow-on work. Typed promotion is never inferred from telemetry.
 
 The returned `:source` is the ordinary live oscope query source and can be
 given to the web or native UI handlers. The exporter owns schema migration,

@@ -1,6 +1,8 @@
 (ns oscope.config-cli
   "Small side-effect boundary around the pure oscope.config model."
-  (:require [oscope.config :as config]))
+  (:require [oscope.config :as config]
+            [oscope.typed-schema-config :as typed-schema-config]
+            [oscope.typed-schema-runtime :as typed-schema-runtime]))
 
 (def environment-names
   ["OSCOPE_CONFIG" "OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_CHDB_SPEC"
@@ -47,10 +49,17 @@
   (or (:config parsed) (not-empty (get environment "OSCOPE_CONFIG"))))
 
 (defn load-config
-  "Resolve startup config. `read-text` is injected to keep filesystem I/O here."
+  "Resolve startup config and validate any typed manifest before startup.
+
+  Readers are injected for causal tests. The typed reader receives the absolute
+  manifest path and a hard byte limit."
   ([arguments environment]
-   (load-config arguments environment slurp))
+   (load-config arguments environment slurp
+                typed-schema-config/read-bounded-file!))
   ([arguments environment read-text]
+   (load-config arguments environment read-text
+                typed-schema-config/read-bounded-file!))
+  ([arguments environment read-text read-manifest-bytes]
    (let [parsed (parse-args arguments)
          path (config-path parsed environment)
          file-layer (if path
@@ -65,16 +74,37 @@
          resolved (config/resolve-config
                    [[:file file-layer]
                     [:environment (config/environment-layer environment)]
-                    [:cli (:layer parsed)]])]
-     (assoc resolved :check-config? (:check-config? parsed)))))
+                    [:cli (:layer parsed)]])
+         typed-handoff
+         (typed-schema-config/load-handoff
+          (get-in resolved [:config :typed-attributes])
+          read-manifest-bytes)]
+     (cond-> (assoc resolved :check-config? (:check-config? parsed))
+       ;; A check proves the manifest but deliberately drops the manifest and
+       ;; selector capability before returning to the diagnostic renderer.
+       (not (:check-config? parsed))
+       (assoc :typed-attributes-handoff typed-handoff)))))
 
-(defn server-options [resolved]
-  (let [document (:config resolved)]
-    {:host (get-in document [:server :host])
-     :port (get-in document [:server :port])
-     :http-workers (get-in document [:server :http-workers])
-     :http-queue-capacity (get-in document [:server :http-queue-capacity])
-     :db-spec (config/storage->db-spec (:storage document))}))
+(defn typed-attributes-handoff
+  "Return the validated plan consumed by the storage-owned runtime adapter."
+  [resolved]
+  (:typed-attributes-handoff resolved))
+
+(defn server-options
+  ([resolved]
+   (server-options resolved typed-schema-runtime/standalone-typed-schema))
+  ([resolved typed-schema-fn]
+   (let [document (:config resolved)
+         storage (:storage document)
+         handoff (or (typed-attributes-handoff resolved) {:mode :disabled})
+         typed-schema (typed-schema-fn storage handoff)]
+     (cond->
+      {:host (get-in document [:server :host])
+       :port (get-in document [:server :port])
+       :http-workers (get-in document [:server :http-workers])
+       :http-queue-capacity (get-in document [:server :http-queue-capacity])
+       :db-spec (config/storage->db-spec storage)}
+       typed-schema (assoc :typed-schema typed-schema)))))
 
 (defn check-output
   "Return deterministic, redacted diagnostic EDN for `--check-config`."
