@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add optional embedded dual span export with independently bounded local chDB
+  and remote OTLP/HTTP JSON pipelines under one SDK owner. Terminal telemetry
+  failures are reported without waiving query or Durable cleanup, logs and
+  metrics remain local, credentials are environment-referenced and absent from
+  public lifecycle results, ambient standard OTLP settings cannot widen the
+  validated remote destination, and the existing local-only API remains
+  unchanged when the option is absent.
 - Discover approved Int64 span attributes beside Boolean and string fields and
   filter them with exact signed 64-bit `eq`, `gte`, and `lt` predicates. The
   browser keeps values as decimal text until bounded parsing, preserving

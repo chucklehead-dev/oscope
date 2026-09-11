@@ -2,7 +2,10 @@
 
  :jolt/min-version "0.8.3"
 
- :deps {io.github.casselc/jolt-http
+ :deps {io.github.casselc/otel
+        {:git/url "https://github.com/casselc/otel.git"
+         :git/sha "ce702e761de49e538dba9815ec7567f21699ab73"}
+        io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
@@ -10,7 +13,7 @@
          :git/sha "dbc2db22130c7e783739c79bc24691dcbba21906"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "a84ae89283a4bbcb40487a659285304fdc546ab5"}
+         :git/sha "b28d155e438e1fa189a1733d15b0fbce4052a392"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}

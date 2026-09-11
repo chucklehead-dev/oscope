@@ -1,12 +1,14 @@
 (ns oscope.embedded-durable-integration-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.data.json :as json]
+            [clojure.test :refer [deftest is]]
             [jdbc.chdb.durable]
             [jdbc.chdb.durable.backend :as backend]
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
             [oscope.embedded.query :as embedded-query]
             [oscope.live :as live]
-            [oscope.sample-emitter :as sample]))
+            [oscope.sample-emitter :as sample]
+            [otel.otlp.http :as otlp-http]))
 
 (defn- values [source request-id signal field]
   (set
@@ -92,3 +94,72 @@
               (live/close! source)))))
       (finally
         (embedded/stop! lifecycle)))))
+
+(defn- wire-spans [payload]
+  (for [resource-spans (:resourceSpans payload)
+        scope-spans (:scopeSpans resource-spans)
+        span (:spans scope-spans)]
+    {:trace-id (:traceId span)
+     :span-id (:spanId span)
+     :parent-span-id (or (:parentSpanId span) "")}))
+
+(deftest dual-export-preserves-local-and-remote-trace-identity
+  (let [store (backend/memory-backend)
+        requests (atom [])
+        db-spec (jdbc.chdb.durable/writer-dbspec
+                 {:backend store
+                  :owner "oscope-embedded-dual-test"
+                  :instance "oscope-embedded-dual-test-instance"
+                  :database "default"
+                  :lease-ttl-ms 30000})]
+    (with-redefs [otlp-http/post
+                  (fn [url body options]
+                    (swap! requests conj {:url url :body body :options options})
+                    {:status 200 :body "{}"})]
+      (let [lifecycle
+            (embedded/start!
+             {:db-spec db-spec
+              :sdk-options {:service-name "oscope-embedded-dual-test"
+                            :metrics? true
+                            :runtime-metrics? false
+                            :logs? true
+                            :bridge-logging? false}
+              :span-pipelines
+              {:local {:schedule-delay-ms 60000}
+               :remote {:endpoint "http://collector.invalid:4318"
+                        :max-retries 0
+                        :schedule-delay-ms 60000}}})]
+        (try
+          (sample/emit-scenario!)
+          (is (= {:sdk {:ok? true}
+                  :span-pipelines
+                  {:local {:ok? true} :remote {:ok? true}}}
+                 (embedded/force-flush! lifecycle)))
+          (let [local
+                (set
+                 (map (fn [row]
+                        {:trace-id (:traceid row)
+                         :span-id (:spanid row)
+                         :parent-span-id (:parentspanid row)})
+                      (jdbc/fetch
+                       (:connection lifecycle)
+                       "select TraceId, SpanId, ParentSpanId from otel_traces")))
+                remote
+                (set
+                 (mapcat
+                  (fn [{:keys [body]}]
+                    (wire-spans (json/read-str body :key-fn keyword)))
+                  @requests))]
+            (is (= local remote))
+            (is (= 5 (count local)))
+            (is (every? #(= "http://collector.invalid:4318/v1/traces"
+                            (:url %))
+                        @requests)
+                "the remote exporter receives spans only")
+            (let [stopped (embedded/stop! lifecycle)]
+              (is (= {:ok? true} (get-in stopped [:telemetry :sdk])))
+              (is (= #{{:ok? true}}
+                     (set (vals (get-in stopped
+                                        [:telemetry :span-pipelines])))))))
+          (finally
+            (embedded/stop! lifecycle)))))))
