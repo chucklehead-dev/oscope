@@ -2,7 +2,8 @@
   "Pure query result to serializable, renderer-independent UI model."
   (:require [clojure.string :as str]
             [oscope.plotje.spec :as plotje]
-            [oscope.query :as query]))
+            [oscope.query :as query]
+            [oscope.typed-query :as typed-query]))
 
 (defn- fail! [type message data]
   (throw (ex-info message
@@ -413,9 +414,111 @@
 
        :else nil)}))
 
-(defn screen [plan rows]
-  (if (contains? #{:metric-series :counter-series
-                   :cumulative-histogram-series}
-                 (get-in plan [:selection :mode]))
-    (metric-series-screen plan rows)
-    (distribution-screen plan rows)))
+(def ^:private coverage-order
+  [:valid :present-empty :absent :invalid :historical-untyped-fallback
+   :historical-untyped-unavailable])
+(def ^:private coverage-keys (conj (set coverage-order) :total))
+(def ^:private typed-row-keys
+  #{:attribute-key :attribute-type :attribute-value :field-id
+    :manifest-version :parent-span-id :service-name :signal :source :span-id
+    :span-name :timestamp-unix-nano :trace-id :typed-status})
+
+(defn- valid-bounded-text? [value]
+  (and (string? value) (<= (count value) max-plotje-text)))
+
+(defn- typed-span-filter-screen [plan result typed-span-fields]
+  (let [plan (query/validate-plan plan)
+        {:keys [schema-binding operator value limit] :as selection} (:selection plan)
+        binding (typed-query/resolve-binding typed-span-fields schema-binding)
+        expected {:attribute-key (:attribute-key binding)
+                  :attribute-type (:attribute-type binding)
+                  :field-id (:field-id binding)
+                  :manifest-version (:manifest-version binding)
+                  :signal :spans}]
+    (let [coverage (:coverage result)
+          counts (when (map? coverage) (mapv coverage coverage-order))]
+      (when-not (and (map? result)
+                   (= expected (select-keys result (keys expected)))
+                   (= {:operator operator :value value} (:filter result))
+                   (map? coverage) (= coverage-keys (set (keys coverage)))
+                   (every? #(and (integer? %) (not (neg? %))) counts)
+                   (integer? (:total coverage)) (not (neg? (:total coverage)))
+                   (= (:total coverage) (reduce + 0 counts))
+                   (vector? (:matches result))
+                   (<= (count (:matches result)) limit))
+        (fail! ::invalid-typed-result "typed span filter result does not match its schema binding" {})))
+    (let [rows (mapv (fn [row]
+                       (when-not (and (map? row)
+                                      (= typed-row-keys (set (keys row)))
+                                      (= (:field-id binding) (:field-id row))
+                                      (= (:manifest-version binding) (:manifest-version row))
+                                      (= (:attribute-key binding) (:attribute-key row))
+                                      (= (:attribute-type binding) (:attribute-type row))
+                                      (= :typed (:source row))
+                                      (= :spans (:signal row))
+                                      (integer? (:timestamp-unix-nano row))
+                                      (<= 0 (:timestamp-unix-nano row)
+                                          9223372036854775807)
+                                      (every? valid-bounded-text?
+                                              ((juxt :trace-id :span-id
+                                                     :parent-span-id :service-name
+                                                     :span-name) row))
+                                      (case (:attribute-type binding)
+                                        :boolean (and (= 3 (:typed-status row))
+                                                      (boolean? (:attribute-value row)))
+                                        :string (and (contains? #{2 3} (:typed-status row))
+                                                     (string? (:attribute-value row))
+                                                     (<= (count (:attribute-value row))
+                                                         query/max-value-length)
+                                                     (= (= 2 (:typed-status row))
+                                                        (empty? (:attribute-value row))))
+                                        false))
+                         (fail! ::invalid-typed-row "typed span row does not match its schema binding" {}))
+                       (assoc row :display-value
+                              (if (and (= :string (:attribute-type binding))
+                                       (= "" (:attribute-value row)))
+                                "(empty string)" (str (:attribute-value row)))))
+                     (:matches result))
+          visible (typed-query/visible-catalog typed-span-fields binding)]
+      {:oscope.view/version 1 :view :telemetry-typed-span-filter
+       :status (if (seq rows) :ready :empty)
+       :title (str "Typed spans · " (:attribute-key binding))
+       :selection selection :query-plan plan :chart nil
+       :controls {:typed-span-fields (:fields visible)
+                  :typed-span-field-total (:total visible)
+                  :typed-span-fields-truncated? (:truncated? visible)
+                  :windows (keys query/windows)
+                  :limit {:value limit :minimum 1 :maximum query/max-result-limit}}
+       :coverage (mapv (fn [status] {:status status
+                                     :count (get (:coverage result) status)})
+                       coverage-order)
+       :freshness-notice
+       "Coverage and matching spans are evaluated by two bounded live queries; concurrent ingestion can advance one between them."
+       :table {:columns [{:key :timestamp-unix-nano :label "Timestamp (Unix ns)"}
+                         {:key :service-name :label "Service"}
+                         {:key :span-name :label "Span"}
+                         {:key :display-value :label "Typed value"}
+                         {:key :trace-id :label "Trace ID"}
+                         {:key :span-id :label "Span ID"}]
+               :rows rows}
+       :empty-message (when (empty? rows) "No typed spans matched this bounded query window.")})))
+
+(defn screen
+  ([plan rows] (screen plan rows {}))
+  ([plan rows {:keys [typed-span-fields]}]
+   (let [mode (get-in plan [:selection :mode])
+         result (cond
+                  (= :typed-span-filter mode)
+                  (typed-span-filter-screen plan rows typed-span-fields)
+                  (contains? #{:metric-series :counter-series
+                               :cumulative-histogram-series} mode)
+                  (metric-series-screen plan rows)
+                  :else (distribution-screen plan rows))]
+     (if (and (seq typed-span-fields) (not= :typed-span-filter mode))
+       (let [{:keys [fields total truncated?]}
+             (typed-query/visible-catalog typed-span-fields)]
+         (-> result
+             (assoc-in [:controls :typed-span-fields] fields)
+             (assoc-in [:controls :typed-span-field-total] total)
+             (assoc-in [:controls :typed-span-fields-truncated?] truncated?)))
+       result))))

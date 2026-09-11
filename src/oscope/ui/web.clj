@@ -5,6 +5,7 @@
             [oscope.command :as command]
             [oscope.plotje.svg :as plotje]
             [oscope.query :as query]
+            [oscope.typed-query :as typed-query]
             [oscope.raw-export :as raw-export]
             [oscope.sample :as sample])
   (:import [java.net URLDecoder URLEncoder]))
@@ -40,12 +41,16 @@
       (catch Throwable _ {}))))
 (defn- keyword-param [params key allowed fallback]
   (or (some #(when (= (get params key) (name %)) %) allowed) fallback))
-(defn selection-from-params [params]
+(defn selection-from-params
+  ([params] (selection-from-params params nil))
+  ([params typed-span-fields]
   (let [mode (case (get params "mode")
+               "typed-span-filter" :typed-span-filter
                "metric-series" :metric-series
                "counter-series" :counter-series
                "cumulative-histogram-series" :cumulative-histogram-series
                :distribution)
+        typed? (= :typed-span-filter mode)
         series? (contains? #{:metric-series :counter-series
                              :cumulative-histogram-series} mode)
         counter? (= :counter-series mode)
@@ -62,7 +67,35 @@
                  (parse-long raw-limit))
         limit (if (and parsed (<= 1 parsed query/max-result-limit))
                 parsed (:limit defaults))]
-    (if series?
+    (cond
+      typed?
+      (let [field-id (get params "typed-field-id")
+            serialized? (some? (get params "typed-attribute-key"))
+            binding (if serialized?
+                      {:field-id field-id
+                       :attribute-key (get params "typed-attribute-key")
+                       :attribute-type (keyword-param params "typed-attribute-type"
+                                                      [:boolean :string] nil)
+                       :manifest-version
+                       (when (re-matches #"[0-9]{1,9}" (or (get params "typed-manifest-version") ""))
+                         (parse-long (get params "typed-manifest-version")))}
+                      (typed-query/resolve-field-id typed-span-fields field-id))
+            binding (typed-query/resolve-binding typed-span-fields binding)
+            operator (keyword-param params "typed-operator"
+                                    (get-in typed-query/filter-capability
+                                            [:operators (:attribute-type binding)])
+                                    :eq)
+            raw-value (get params "typed-value" "")
+            value (if (= :boolean (:attribute-type binding))
+                    (case raw-value "true" true "false" false
+                          (throw (ex-info "invalid typed Boolean filter value"
+                                          {:oscope.ui/error true})))
+                    raw-value)]
+        (query/normalize-selection
+         {:mode :typed-span-filter :schema-binding binding :operator operator
+          :value value :window window :limit limit}))
+
+      series?
       (let [options (cond counter? query/counter-series-options
                           histogram? query/cumulative-histogram-series-options
                           :else query/metric-series-options)
@@ -104,6 +137,7 @@
           :window window :limit limit}
            counter? (assoc :temporality :cumulative :monotonic? true)
            histogram? (assoc :temporality :cumulative))))
+      :else
       (let [supported (query/supported-fields)
             signal (keyword-param params "signal" (keys supported)
                                   (:signal defaults))
@@ -112,7 +146,7 @@
                                  (or (some #{(:field defaults)} fields)
                                      (first fields)))]
         (query/normalize-selection
-         {:signal signal :field field :window window :limit limit})))))
+         {:signal signal :field field :window window :limit limit}))))))
 (defn- option [value label selected?]
   (str "<option value=\"" (esc (name value)) "\""
        (when selected? " selected") ">" (esc label) "</option>"))
@@ -215,9 +249,61 @@
                    :cumulative-histogram-series} (:mode selection))
     (render-series-controls controls selection action live?)
     (render-distribution-controls controls selection action live?)))
+
+(defn- render-typed-controls [controls selection action]
+  (let [fields (:typed-span-fields controls)]
+    (when (seq fields)
+      (apply str
+             (for [type [:boolean :string]
+                   :let [candidates (filterv #(= type (:attribute-type %)) fields)]
+                   :when (seq candidates)]
+               (let [current (when (= :typed-span-filter (:mode selection))
+                               (:schema-binding selection))
+                     selected (or (some #(when (= current %) %) candidates)
+                                  (first candidates))]
+                 (str "<form method=\"get\" action=\"" (esc action)
+                      "\" aria-label=\"Typed " (name type) " span filter\">"
+                      "<input type=\"hidden\" name=\"mode\" value=\"typed-span-filter\">"
+                      "<div class=\"controls\"><label>Typed span attribute<select name=\"typed-field-id\">"
+                      (apply str (map #(option (:field-id %) (:attribute-key %)
+                                              (= selected %)) candidates))
+                      "</select></label><label>Operator<select name=\"typed-operator\">"
+                      (apply str (map #(option % (name %)
+                                              (= % (or (:operator selection) :eq)))
+                                      (get-in typed-query/filter-capability [:operators type])))
+                      "</select></label><label>Value"
+                      (if (= :boolean type)
+                        (str "<select name=\"typed-value\">"
+                             (option :true "true" (not= false (:value selection)))
+                             (option :false "false" (= false (:value selection)))
+                             "</select>")
+                        (str "<input name=\"typed-value\" maxlength=\"256\" value=\""
+                             (esc (when (= :string type) (:value selection))) "\">"))
+                      "</label><label>Window<select name=\"window\">"
+                      (apply str (map #(option % (name %) (= % (:window selection)))
+                                      [:15m :1h :6h :24h]))
+                      "</select></label><label>Maximum rows<input name=\"limit\" type=\"number\" min=\"1\" max=\"100\" value=\""
+                      (or (:limit selection) 12)
+                      "\"></label><button type=\"submit\">Filter typed spans</button></div>"
+                      (when (:typed-span-fields-truncated? controls)
+                        (str "<p>Showing " (count fields) " of "
+                             (:typed-span-field-total controls)
+                             " approved typed fields.</p>"))
+                      "</form>")))))))
 (defn selection-query-string [selection]
   (let [selection (query/normalize-selection selection)]
-    (if (contains? #{:metric-series :counter-series
+    (cond
+      (= :typed-span-filter (:mode selection))
+      (let [{:keys [field-id attribute-key attribute-type manifest-version]}
+            (:schema-binding selection)]
+        (str "?mode=typed-span-filter&typed-field-id=" (URLEncoder/encode field-id "UTF-8")
+             "&typed-attribute-key=" (URLEncoder/encode attribute-key "UTF-8")
+             "&typed-attribute-type=" (name attribute-type)
+             "&typed-manifest-version=" manifest-version
+             "&typed-operator=" (name (:operator selection))
+             "&typed-value=" (URLEncoder/encode (str (:value selection)) "UTF-8")
+             "&window=" (name (:window selection)) "&limit=" (:limit selection)))
+      (contains? #{:metric-series :counter-series
                      :cumulative-histogram-series} (:mode selection))
       (str "?mode=" (name (:mode selection))
            "&metric-kind=" (name (:metric-kind selection))
@@ -233,6 +319,7 @@
                            (:aggregates selection)))
            "&window=" (name (:window selection))
            "&limit=" (:limit selection))
+      :else
       (str "?signal=" (name (:signal selection))
            "&field=" (name (:field selection))
            "&window=" (name (:window selection))
@@ -241,7 +328,7 @@
   (let [{:keys [signal mode metric-kind]} (:selection screen)
         series? (contains? #{:metric-series :counter-series
                              :cumulative-histogram-series} mode)
-        signal (if series? :metrics signal)
+        signal (cond series? :metrics (= :typed-span-filter mode) :spans :else signal)
         metric-kind (if series? metric-kind :gauge)
         {:keys [start-unix-nano end-unix-nano]}
         (get-in screen [:query-plan :request])]
@@ -317,7 +404,7 @@
   "Render one complete, atomically replaceable versioned query screen."
   ([screen] (render-screen-fragment screen {}))
   ([screen {:keys [live?]}]
-   (let [{:keys [title chart table empty-message view]} screen
+   (let [{:keys [title chart table empty-message view coverage freshness-notice]} screen
          version (:oscope.view/version screen)
          {:keys [start-unix-nano end-unix-nano]}
          (get-in screen [:query-plan :request])]
@@ -332,6 +419,14 @@
             (str "<div class=\"live-state\"><button type=\"button\" data-oscope-freeze>Freeze for export</button>"
                  "<span role=\"status\" aria-live=\"polite\" data-oscope-live-status>Live refresh is on.</span></div>"))
           "</div>"
+          (when freshness-notice
+            (str "<p role=\"note\">" (esc freshness-notice) "</p>"))
+          (when coverage
+            (str "<section class=\"panel\" aria-labelledby=\"typed-coverage-title\">"
+                 "<h3 id=\"typed-coverage-title\">Typed value coverage</h3>"
+                 (render-table {:columns [{:key :status :label "Status"}
+                                          {:key :count :label "Rows"}]
+                                :rows coverage}) "</section>"))
           (if chart
             (str "<div class=\"grid"
                  (when (contains? #{:telemetry-metric-series
@@ -341,8 +436,10 @@
                  "\"><section class=\"panel\">"
                  (plotje/spec->svg chart) "</section><section class=\"panel\">"
                  (render-table table) "</section></div>")
-            (str "<section class=\"panel\" role=\"status\"><p>" (esc empty-message)
-                 "</p>" (render-table table) "</section>"))
+            (str "<section class=\"panel\""
+                 (when empty-message " role=\"status\"") ">"
+                 (when empty-message (str "<p>" (esc empty-message) "</p>"))
+                 (render-table table) "</section>"))
           "</section>"))))
 
 (def ^:private live-script
@@ -401,7 +498,7 @@
          (when live? (str "<script defer src=\"" (esc (live-asset-path path)) "\"></script>"))
          "</head><body>"
          "<header><h1>oscope</h1><p>Explore bounded distributions and metric series from embedded telemetry.</p>"
-         (when visualization-editor-path
+         (when (and visualization-editor-path (:chart screen))
            (str "<nav aria-label=\"Visualization utilities\"><a href=\""
                 (esc visualization-editor-path)
                 (esc (selection-query-string selection))
@@ -410,6 +507,7 @@
          (when live? (str " data-oscope-live-root data-oscope-refresh-path=\""
                           (esc (refresh-path path)) "\"")) ">"
          (render-controls controls selection path live?)
+         (render-typed-controls controls selection path)
          (render-screen-fragment screen {:live? live?})
          (render-export-controls screen (export-path path) export-enabled?)
          "</main></body></html>"))))
@@ -528,7 +626,8 @@
          admission (or (:export-admission source)
                        {:capacity 1 :active (atom 0)})]
      (fn [{:keys [request-method uri query-string query-params] :as request}]
-       (cond
+       (try
+        (cond
         (= live-asset-path uri)
         (if (= :get request-method)
           (live-asset-response)
@@ -540,7 +639,7 @@
           {:status 405 :headers (assoc html-headers "Allow" "GET")
            :body "method not allowed"}
           (let [params (or query-params (parse-query-params query-string))
-                selection (selection-from-params params)
+                selection (selection-from-params params (:typed-span-fields source))
                 screen ((:load-command source)
                         [:web-refresh (System/nanoTime)] selection)]
             {:status 200 :headers html-headers
@@ -551,7 +650,7 @@
            {:status 405 :headers (assoc html-headers "Allow" "GET")
             :body "method not allowed"}
            (let [params (or query-params (parse-query-params query-string))
-                 selection (selection-from-params params)
+                 selection (selection-from-params params (:typed-span-fields source))
                  live? (= "1" (get params "live"))
                  screen ((:load-command source)
                          [:web (System/nanoTime)] selection)]
@@ -596,7 +695,24 @@
                   {:status 400 :headers text-headers
                    :body "invalid raw export request"})))))
 
-        :else nil)))))
+        :else nil)
+        (catch clojure.lang.ExceptionInfo error
+          (let [data (ex-data error)
+                params (or query-params (parse-query-params query-string))
+                typed-request? (= "typed-span-filter" (get params "mode"))]
+            (cond
+              (= :oscope.typed-query/stale-binding (:type data))
+              {:status 409 :headers html-headers
+               :body "<!doctype html><html lang=\"en\"><body><main><h1>Typed schema changed</h1><p>The typed schema binding is no longer available. Reload and select an available field.</p></main></body></html>"}
+
+              (and typed-request?
+                   (or (:oscope.typed-query/error data)
+                       (:oscope.query/error data)
+                       (:oscope.ui/error data)))
+              {:status 400 :headers html-headers
+               :body "<!doctype html><html lang=\"en\"><body><main><h1>Invalid typed filter</h1><p>The typed span filter request is invalid.</p></main></body></html>"}
+
+              :else (throw error)))))))))
 
 (defn sample-handler []
   (handler {:load-command (fn [_ selection]

@@ -3,6 +3,7 @@
             [oscope.live :as live]
             [oscope.query.chdb :as query-chdb]
             [oscope.query.expression.chdb :as query-expression-chdb]
+            [oscope.typed-catalog :as typed-catalog]
             [otel.exporter.chdb.schema :as schema]))
 
 (def test-now 1700000001000000000)
@@ -39,12 +40,22 @@
                                      :ensure-schema? nil}))))
 
 (deftest confirmed-descriptors-remain-in-the-live-query-context
-  (let [descriptor-set (Object.)]
-    (with-redefs [query-chdb/run (fn [_ _] [])]
+  (let [descriptor-set (Object.)
+        fields [{:field-id "attribute_0123456789abcdefabcd"
+                 :attribute-key "game.ready" :attribute-type :boolean
+                 :manifest-version 1}]]
+    (with-redefs [typed-catalog/acquire (fn [connection descriptors]
+                                        (is (= ::shared connection))
+                                        (is (identical? descriptor-set descriptors))
+                                        fields)
+                  query-chdb/run (fn [_ _ context]
+                                   (is (= fields (:typed-span-fields context)))
+                                   [])]
       (let [source (live/open! {:connection ::shared
                                 :ensure-schema? false
                                 :typed-span-descriptors descriptor-set})]
         (is (identical? descriptor-set (:typed-span-descriptors source)))
+        (is (= fields (:typed-span-fields source)))
         (live/close! source)))))
 
 (deftest plotje-query-command-has-one-query-admission

@@ -1,7 +1,8 @@
 (ns oscope.query
   "Pure, bounded, SQL-free query plans for the telemetry explorer."
   (:require [clojure.string :as str]
-            [oscope.error :as error]))
+            [oscope.error :as error]
+            [oscope.typed-query :as typed-query]))
 
 (def max-time-range-nanos (* 24 60 60 1000000000))
 (def max-result-limit 100)
@@ -96,8 +97,36 @@
 (def ^:private cumulative-histogram-series-selection-keys
   #{:mode :metric-kind :temporality :metric-name :group-by :bucket
     :aggregates :window :limit})
+(def ^:private typed-span-filter-selection-keys
+  #{:mode :schema-binding :operator :value :window :limit})
 
-(declare quantile-aggregate?)
+(declare fail! quantile-aggregate?)
+
+(defn normalize-typed-span-filter-selection [selection]
+  (when-not (map? selection)
+    (fail! ::invalid-selection "oscope typed span filter selection must be a map" {}))
+  (when-let [unknown (seq (remove typed-span-filter-selection-keys (keys selection)))]
+    (fail! ::unsupported-selection-key "oscope typed span filter contains unsupported keys"
+           {:keys (error/sorted-keys unknown)}))
+  (let [{:keys [schema-binding operator value window limit]} selection
+        type (:attribute-type schema-binding)
+        allowed (typed-query/operators-for type)]
+    (when-not (typed-query/binding? schema-binding)
+      (fail! ::invalid-schema-binding "typed span filter requires a closed schema binding" {}))
+    (when-not (some #{operator} allowed)
+      (fail! ::unsupported-typed-operator "typed span filter operator is unsupported" {}))
+    (when-not (case type
+                :boolean (boolean? value)
+                :string (and (string? value) (<= (count value) max-value-length)
+                             (or (= :eq operator) (not (empty? value))))
+                false)
+      (fail! ::invalid-typed-value "typed span filter value is invalid" {}))
+    (when-not (contains? windows window)
+      (fail! ::unsupported-window "oscope query window is not supported" {:window window}))
+    (when-not (and (integer? limit) (<= 1 limit max-result-limit))
+      (fail! ::invalid-limit "oscope result limit is outside the explorer cap" {:limit limit}))
+    {:mode :typed-span-filter :schema-binding schema-binding :operator operator
+     :value value :window window :limit limit}))
 
 (defn- fail! [type message data]
   (throw (ex-info message (assoc data :oscope.query/error true :type type))))
@@ -344,6 +373,7 @@
 
 (defn normalize-selection [selection]
   (case (:mode selection)
+    :typed-span-filter (normalize-typed-span-filter-selection selection)
     :metric-series (normalize-metric-series-selection selection)
     :counter-series (normalize-counter-series-selection selection)
     :cumulative-histogram-series
@@ -359,6 +389,14 @@
         (normalize-selection selection)
         start (max 0 (- end-unix-nano (window-nanos window)))]
     (case (:mode selected)
+      :typed-span-filter
+      {:oscope.query/version 1
+       :selection selected
+       :request {:schema-binding (:schema-binding selected)
+                 :operator (:operator selected) :value (:value selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
       :cumulative-histogram-series
       {:oscope.query/version 1
        :selection selected
