@@ -3,6 +3,7 @@
   (:require [jdbc.chdb.durable :as durable]
             [jdbc.core :as jdbc]
             [oscope.live :as live]
+            [oscope.typed-schema :as typed-schema]
             [otel.exporter.chdb :as chdb-export]
             [otel.sdk :as sdk]
             [otel.sdk.export :as export]
@@ -73,11 +74,15 @@
   `otel.sdk/init!`; this lifecycle supplies its own exporter. Metrics default on
   and logs default off, matching the SDK. When `:checkpoint-on-close?` is true
   (the default), shutdown compacts committed WAL into a new checkpoint.
+  Optional `:typed-schema` is a closed operator-supplied approved manifest,
+  registry backend, and optional event sink. Oscope binds all database effects
+  to its owned connection, and checkpoints the schema before the exporter or
+  SDK starts.
 
   The caller must stop application ingress before calling `stop!`. The returned
   `:source` can be given to oscope UI handlers, and ordinary instrumentation can
   use `otel.sdk/tracer`, `meter`, and `logger` without OTLP or HTTP encoding."
-  [{:keys [db-spec sdk-options checkpoint-on-close?]
+  [{:keys [db-spec sdk-options checkpoint-on-close? typed-schema]
     :or {sdk-options {} checkpoint-on-close? true}}]
   (when-not db-spec
     (throw (ex-info "oscope embedded requires a Durable :db-spec"
@@ -92,6 +97,7 @@
     (throw (ex-info "oscope embedded :checkpoint-on-close? must be boolean"
                     {:oscope.embedded/error true
                      :type ::invalid-checkpoint-on-close})))
+  (typed-schema/validate-options typed-schema)
   (when (or (sdk/tracer-provider) (sdk/meter-provider) (sdk/logger-provider))
     (throw (ex-info "oscope embedded requires an unconfigured process OTel SDK"
                     {:oscope.embedded/error true :type ::sdk-already-configured})))
@@ -101,12 +107,31 @@
         source* (atom nil)
         sdk-handle* (atom nil)]
     (try
-      ;; The exporter is the sole schema owner. Durable mode checkpoints those
-      ;; migrations and installs a persistence barrier on every non-empty batch.
-      (let [exporter (chdb-export/exporter
-                      {:connection connection :signals signals :durable? true})
+      (when (and typed-schema
+                 (not= :writer (durable/connection-role connection)))
+        (throw (ex-info "oscope typed schema requires a Durable writer"
+                        {:oscope.embedded/error true
+                         :type ::typed-schema-writer-required})))
+      ;; Typed DDL is reachable only through the explicit operator-authorized
+      ;; installer. It owns the base schema and publishes descriptors only
+      ;; after active persistence and physical observation are confirmed.
+      (let [schema-context (typed-schema/install! connection typed-schema)
+            _ (when schema-context
+                (require-status! :checkpoint #{:committed :reconciled}
+                                 (durable/checkpoint! connection)))
+            exporter-options
+            ;; With no typed schema this helper returns the map unchanged, so
+            ;; the exporter retains its default base-schema ownership.
+            (typed-schema/exporter-options
+             {:connection connection :signals signals :durable? true}
+             schema-context)
+            exporter (chdb-export/exporter exporter-options)
             _ (reset! exporter* exporter)
-            source (live/open! {:connection connection :ensure-schema? false})
+            source (live/open!
+                    (cond-> {:connection connection :ensure-schema? false}
+                      schema-context
+                      (assoc :typed-span-descriptors
+                             (:descriptor-set schema-context))))
             _ (reset! source* source)
             sdk-handle (sdk/init! (assoc sdk-options :exporter exporter))
             _ (reset! sdk-handle* sdk-handle)]
@@ -114,19 +139,23 @@
           (throw (ex-info "oscope embedded cannot start while OTEL_SDK_DISABLED is true"
                           {:oscope.embedded/error true :type ::sdk-disabled})))
         (let [lifecycle
-              {:db-spec db-spec
-               :connection connection
-               :exporter exporter
-               :source source
-               :sdk-handle sdk-handle
-               :signals signals
-               :checkpoint-on-close? checkpoint-on-close?
-               :state (atom {:phase :open
-                             :sdk-stopped? false
-                             :oscope-retired? false
-                             :persisted? false
-                             :connection-closed? false})
-               :lock (Object.)}]
+              (cond->
+               {:db-spec db-spec
+                :connection connection
+                :exporter exporter
+                :source source
+                :sdk-handle sdk-handle
+                :signals signals
+                :checkpoint-on-close? checkpoint-on-close?
+                :state (atom {:phase :open
+                              :sdk-stopped? false
+                              :oscope-retired? false
+                              :persisted? false
+                              :connection-closed? false})
+                :lock (Object.)}
+                schema-context
+                (assoc :typed-span-descriptors
+                       (:descriptor-set schema-context)))]
           (assoc lifecycle :stop! #(stop-lifecycle! lifecycle))))
       (catch Throwable error
         (when-let [sdk-handle @sdk-handle*]

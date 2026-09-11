@@ -531,6 +531,53 @@ owned embedded native windows should treat that runner enhancement as a gate.
 (embedded/stop! runtime)
 ```
 
+To promote reviewed span attributes into typed ClickHouse columns, compile the
+approved manifest before startup and pass it with the registry backend. Oscope
+binds schema observation and additive DDL to its own connection; application
+telemetry never receives either capability:
+
+```clojure
+(require '[otel.exporter.chdb.attribute-manifest :as attribute-manifest])
+
+(def approved
+  (attribute-manifest/compile-manifest
+   {:dataset-id "telemetry-prod"
+    :application-id "checkout"
+    :lineage "checkout-v1"
+    :version 1
+    :fragments
+    [{:schema attribute-manifest/reviewed-fragment-schema
+      :authority :advice
+      :source "advice/checkout.edn"
+      :entries [{:signal :spans
+                 :table "otel_traces"
+                 :location :span-attributes
+                 :key "checkout.complete"
+                 :type :boolean}]}]}))
+
+(def runtime
+  (embedded/start!
+   {:db-spec (durable/writer-dbspec
+              {:backend durable-object-backend
+               :owner "checkout"
+               :database "default"})
+    :typed-schema {:approved-manifest approved
+                   ;; Reuse the same object-scoped backend in Durable mode.
+                   :registry-backend durable-object-backend}}))
+```
+
+`oscope.server/start!` accepts the same `:typed-schema` map for a programmatic
+standalone receiver. Startup fails closed unless the registry record is active
+and its physical columns were freshly observed. Only the opaque confirmed
+descriptor capability reaches the exporter and returned live source. The
+ordinary local server has no Durable checkpoint promise; when its existing
+`:durability` callbacks are supplied, base and typed schema changes are
+checkpointed before HTTP ingress starts. With no `:typed-schema` map, exporter
+options remain unchanged and the exporter retains its default base-schema
+ownership. The versioned configuration-file form and schema-aware UI/query
+controls are separate follow-on work; typed promotion is never inferred from
+telemetry.
+
 The returned `:source` is the ordinary live oscope query source and can be
 given to the web or native UI handlers. The exporter owns schema migration,
 checkpoints it before startup returns, and confirms a Durable flush after every
