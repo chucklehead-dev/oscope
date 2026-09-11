@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add an explicit operator-authorized typed span schema startup boundary for
+  embedded and standalone collection. Base schema and approved additive DDL
+  complete before exporter or ingress startup, and only installer-confirmed
+  descriptor capabilities reach export and the live query context.
 - Refresh the OpenTelemetry exporter and viewer to the reviewed typed-attribute
   and canonical crypto stack while retaining the existing opt-in schema
   boundary.

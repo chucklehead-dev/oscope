@@ -9,6 +9,7 @@
             [oscope.otlp :as otlp]
             [oscope.server :as server]
             [oscope.server-main :as server-main]
+            [oscope.typed-schema :as typed-schema]
             [oscope.ui.events :as events]
             [oscope.ui.workbench :as workbench]
             [oscope.ui.web :as web]
@@ -199,6 +200,82 @@
         (is (= [[:connection "chdb:test"] :ingress-started :ingress-stopped
                 :oscope :spans :logs :metrics :connection]
                @events))))))
+
+(defn- typed-schema-options []
+  {:approved-manifest ::approved
+   :registry-backend ::registry})
+
+(deftest standalone-installs-confirmed-schema-before-exporter-and-ingress
+  (let [events (atom [])
+        descriptor-set (Object.)
+        typed-options (typed-schema-options)
+        conn (reify java.io.Closeable
+               (close [_] (swap! events conj :connection-close)))
+        exporter (fake-exporter events)
+        exporter-options (atom nil)
+        source-options (atom nil)]
+    (with-redefs [jdbc/connection (fn [_]
+                                    (swap! events conj :connection-open)
+                                    conn)
+                  typed-schema/install!
+                  (fn [actual options]
+                    (is (= conn actual))
+                    (is (identical? typed-options options))
+                    (swap! events conj :schema-installed)
+                    {:descriptor-set descriptor-set})
+                  chdb-export/exporter
+                  (fn [options]
+                    (reset! exporter-options options)
+                    (swap! events conj :exporter-open)
+                    exporter)
+                  live/open!
+                  (fn [options]
+                    (reset! source-options options)
+                    (swap! events conj :source-open)
+                    {:close! #(swap! events conj :source-close)})
+                  otlp/handler (fn [& _] (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _]
+                                    (swap! events conj :ingress-started)
+                                    {:port 9198})
+                  http/stop-server (fn [_]
+                                     (swap! events conj :ingress-stopped))]
+      (let [lifecycle
+            (server/start!
+             {:port 0
+              :typed-schema typed-options
+              :durability {:checkpoint! (fn [_]
+                                          (swap! events conj :checkpoint)
+                                          {:status :committed})
+                           :flush! (fn [_] {:status :empty})}})]
+        (is (= [:connection-open :schema-installed :exporter-open :checkpoint
+                :source-open :ingress-started]
+               @events))
+        (is (false? (:create-schema? @exporter-options)))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors @exporter-options)))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors @source-options)))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors lifecycle)))
+        (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))))))
+
+(deftest standalone-schema-failure-closes-before-exporter-or-ingress
+  (let [events (atom [])
+        conn (reify java.io.Closeable
+               (close [_] (swap! events conj :connection-close)))]
+    (with-redefs [jdbc/connection (constantly conn)
+                  typed-schema/install! (fn [& _]
+                                          (swap! events conj :schema-failed)
+                                          (throw (ex-info "failed" {})))
+                  chdb-export/exporter (fn [_]
+                                         (swap! events conj :exporter-open))
+                  http/run-server (fn [& _]
+                                    (swap! events conj :ingress-started))]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (server/start! {:port 0
+                                   :typed-schema (typed-schema-options)})))
+      (is (= [:schema-failed :connection-close] @events)))))
 
 (deftest standalone-http-executor-configuration-is-bounded-and-validated
   (is (= {:http-workers 2 :http-queue-capacity 8}

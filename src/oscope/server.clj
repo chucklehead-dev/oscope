@@ -8,6 +8,7 @@
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
+            [oscope.typed-schema :as typed-schema]
             [oscope.ui.events :as events]
             [oscope.ui.workbench :as workbench]
             [oscope.ui.visualization-editor :as visualization-editor]
@@ -183,10 +184,14 @@
 
   `:port` may be zero for an ephemeral test port. jolt-http currently binds
   loopback at the transport layer, so `:host` deliberately accepts only
-  127.0.0.1. The returned `:stop!` is idempotent and retries the first
-  incomplete ownership boundary on each call."
+  127.0.0.1. Optional `:typed-schema` is a closed operator-supplied approved
+  manifest, registry backend, and optional event sink; Oscope binds all
+  database effects to its owned connection. The returned
+  `:stop!` is idempotent and retries the first incomplete ownership boundary
+  on each call."
   ([] (start! {}))
-  ([{:keys [host port db-spec durability http-workers http-queue-capacity]
+  ([{:keys [host port db-spec durability http-workers http-queue-capacity
+            typed-schema]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
           http-queue-capacity default-http-queue-capacity}}]
@@ -197,6 +202,7 @@
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
    (validate-http-executor-options! http-workers http-queue-capacity)
+   (typed-schema/validate-options typed-schema)
    (when (and durability
               (not (and (map? durability)
                         (ifn? (:checkpoint! durability))
@@ -217,23 +223,34 @@
          durability-lock (Object.)
          authority* (atom (when (pos? port) (str host ":" port)))]
      (try
-       ;; This is the sole schema owner. The shared oscope source below skips
-       ;; its otherwise-default schema check.
-       (let [owned-http-executor
+       ;; Typed DDL is reachable only through this explicit operator-authorized
+       ;; startup boundary, before an exporter or ingress can observe it.
+       (let [schema-context (typed-schema/install! conn typed-schema)
+             owned-http-executor
              (http-executor/start! {:workers http-workers
                                     :queue-capacity http-queue-capacity})
              _ (reset! http-executor* owned-http-executor)
-             exporter (chdb-export/exporter
-                       {:connection conn :signals #{:spans :logs :metrics}})
+             exporter
+             (chdb-export/exporter
+              ;; The no-manifest path remains unchanged: create-schema? is
+              ;; absent and the exporter applies its default base migrations.
+              (typed-schema/exporter-options
+               {:connection conn :signals #{:spans :logs :metrics}}
+               schema-context))
              _ (reset! exporter* exporter)
-             ;; Durable mode checkpoints the sole schema owner's migrations
-             ;; before ingress can become reachable. Ordinary local mode has
-             ;; no extra boundary and retains its existing startup behavior.
+             ;; Durable mode checkpoints base and typed schema changes before
+             ;; ingress can become reachable. Ordinary local mode has no
+             ;; Durable promise and retains its existing startup behavior.
              _ (when durability
                  (require-durability-status!
                   :checkpoint #{:committed :reconciled}
                   ((:checkpoint! durability) conn)))
-             source (live/open! {:connection conn :ensure-schema? false})
+             source
+             (live/open!
+              (cond-> {:connection conn :ensure-schema? false}
+                schema-context
+                (assoc :typed-span-descriptors
+                       (:descriptor-set schema-context))))
              _ (reset! source* source)
              editor-handler (visualization-editor/handler source)
              app-handler (handler {:otlp-handler
@@ -267,15 +284,20 @@
                      :executor (:executor owned-http-executor))
              _ (reset! server* server)
              _ (reset! authority* (str host ":" (:port server)))
-             lifecycle {:host host :port (:port server) :db-spec db-spec
-                        :connection conn :exporter exporter :source source
-                        :server server
-                        :http-executor owned-http-executor
-                        :state (atom {:phase :open :ingress-stopped? false
-                                      :http-executor-stopped? false
-                                      :oscope-retired? false :closed-faces #{}
-                                      :connection-closed? false})
-                        :lock (Object.)}]
+             lifecycle
+             (cond->
+              {:host host :port (:port server) :db-spec db-spec
+               :connection conn :exporter exporter :source source
+               :server server
+               :http-executor owned-http-executor
+               :state (atom {:phase :open :ingress-stopped? false
+                             :http-executor-stopped? false
+                             :oscope-retired? false :closed-faces #{}
+                             :connection-closed? false})
+               :lock (Object.)}
+               schema-context
+               (assoc :typed-span-descriptors
+                      (:descriptor-set schema-context)))]
          (assoc lifecycle :stop! #(stop-lifecycle! lifecycle)))
        (catch Throwable error
          (when-let [server @server*]

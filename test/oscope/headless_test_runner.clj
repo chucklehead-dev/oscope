@@ -26,6 +26,7 @@
             [oscope.sample-emitter-test]
             [oscope.server-test]
             [oscope.telemetry-test]
+            [oscope.typed-schema-test]
             [oscope.visualization-editor-test]
             [oscope.web-test]
             [oscope.workbench-test]))
@@ -53,6 +54,7 @@
                         'oscope.sample-emitter-test
                         'oscope.server-test
                         'oscope.telemetry-test
+                        'oscope.typed-schema-test
                         'oscope.visualization-editor-test
                         'oscope.web-test
                         'oscope.workbench-test)]
