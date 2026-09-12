@@ -9,8 +9,8 @@
 (defn- approved-manifest []
   (manifest/compile-manifest
    {:dataset-id "oscope-browser"
-    :application-id "typed-int64"
-    :lineage "typed-int64-v1"
+    :application-id "typed-browser"
+    :lineage "typed-browser-v1"
     :version 1
     :fragments
     [{:schema manifest/reviewed-fragment-schema
@@ -18,7 +18,10 @@
       :source "test/browser/typed-attributes.spec.js"
       :entries [{:signal :spans :table "otel_traces"
                  :location :span-attributes
-                 :key "game.score" :type :int64}]}]}))
+                 :key "game.score" :type :int64}
+                {:signal :spans :table "otel_traces"
+                 :location :span-attributes
+                 :key "game.ready" :type :boolean}]}]}))
 
 (defn- req-attribute [key kind value]
   {"key" key "value" {kind value}})
@@ -36,7 +39,8 @@
            "spanId" "9100000000000000" "name" "historical.fallback"
            "startTimeUnixNano" (str (- now 4000000))
            "endTimeUnixNano" (str (- now 3000000))
-           "attributes" [(req-attribute "game.score" "intValue" "7")]}
+           "attributes" [(req-attribute "game.score" "intValue" "7")
+                          (req-attribute "game.ready" "boolValue" true)]}
           {"traceId" "92000000000000000000000000000000"
            "spanId" "9200000000000000" "name" "historical.unavailable"
            "startTimeUnixNano" (str (- now 2000000))

@@ -121,7 +121,8 @@
               {:status :absent :count 2}
               {:status :invalid :count 3}
               {:status :historical-untyped-fallback :count 4}
-              {:status :historical-untyped-unavailable :count 5}]
+              {:status :historical-untyped-unavailable :count 5}
+              {:status :total :count 16}]
              (:coverage screen))))))
 
 (deftest int64-web-values-remain-exact-decimal-text-until-bounded-parsing
@@ -142,7 +143,7 @@
         html (web/render-page screen)]
     (is (str/includes? html "inputmode=\"numeric\""))
     (is (not (str/includes? html "type=\"number\" name=\"typed-value\"")))
-    (is (= {:status :historical-untyped-unavailable :count 5}
+    (is (= {:status :total :count 16}
            (last (:coverage screen))))))
 
 (deftest typed-results-require-conserved-closed-coverage-and-bounded-rows
@@ -186,6 +187,39 @@
                                           "typed-value" "false"}})]
     (is (= 409 (:status response)))
     (is (str/includes? (:body response) "Typed schema changed"))))
+
+(deftest raw-boolean-false-form-canonicalizes-before-query-execution
+  (let [loads (atom 0)
+        handler
+        (web/handler
+         {:typed-span-fields catalog
+          :load-command
+          (fn [_ selected]
+            (swap! loads inc)
+            (view-model/screen (query/compile-query selected now)
+                               (result bool-binding false)
+                               {:typed-span-fields catalog}))})
+        response
+        (handler {:request-method :get :uri "/oscope"
+                  :query-params
+                  {"mode" "typed-span-filter"
+                   "typed-field-id" (:field-id bool-binding)
+                   "typed-operator" "eq" "typed-value" "false"
+                   "window" "1h" "limit" "12"}})
+        location (get-in response [:headers "Location"])]
+    (is (= 303 (:status response)))
+    (is (zero? @loads))
+    (doseq [part ["typed-field-id=attribute_0123456789abcdefabcd"
+                  "typed-attribute-key=game.ready"
+                  "typed-attribute-type=boolean"
+                  "typed-manifest-version=3"
+                  "typed-operator=eq" "typed-value=false"]]
+      (is (str/includes? location part)))
+    (let [canonical
+          (handler {:request-method :get :uri "/oscope"
+                    :query-string (subs location (inc (str/index-of location "?")))})]
+      (is (= 200 (:status canonical)))
+      (is (= 1 @loads)))))
 
 (deftest malformed-typed-web-filters-return-bounded-bad-requests
   (let [handler (web/handler {:typed-span-fields catalog

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify approved Boolean span filtering through the standalone browser path.
+  False values remain distinct through OTLP ingestion, schema-bound saved URLs,
+  exporter-owned filtering, and typed display; the view now shows the conserved
+  coverage total beside all six availability and historical states.
+
 - Add a table-first typed Int64 span summary for approved fields. Saved URLs
   retain the exact field ID, logical key, type, and manifest version; the
   exporter owns the half-open range, optional service grouping, and

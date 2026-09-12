@@ -271,7 +271,7 @@
           (is (= (set (keys values)) (set (keys bindings))))
           (is (= {:valid 1 :present-empty 0 :absent 1 :invalid 1
                   :historical-untyped-fallback 1
-                  :historical-untyped-unavailable 1}
+                  :historical-untyped-unavailable 1 :total 5}
                  exact-coverage))
           (is (= {:valid 1 :present-empty 0 :absent 1 :invalid 1
                   :historical-untyped-fallback 1

@@ -137,6 +137,33 @@ async function emitTypedInt64(request, baseURL) {
   await postSignal(request, baseURL, "/v1/traces", {resourceSpans});
 }
 
+async function emitTypedBoolean(request, baseURL) {
+  const now = BigInt(Date.now()) * 1000000n;
+  const at = (millisBefore) => String(now - BigInt(millisBefore) * 1000000n);
+  const scope = {name: "oscope.browser.typed-boolean", version: "1.0"};
+  const span = (tracePrefix, name, millisBefore, attributes) => ({
+    traceId: `${tracePrefix}${"0".repeat(30)}`,
+    spanId: `${tracePrefix}${"0".repeat(14)}`,
+    name,
+    startTimeUnixNano: at(millisBefore),
+    endTimeUnixNano: at(millisBefore - 1),
+    attributes,
+  });
+  const ready = (value) => [{key: "game.ready", value: {boolValue: value}}];
+  const resourceSpans = [{
+    resource: {attributes: [attribute("service.name", "oscope-typed-boolean")]},
+    scopeSpans: [{scope, spans: [
+      span("a1", "ready.false.first", 40, ready(false)),
+      span("a2", "ready.true", 35, ready(true)),
+      span("a3", "ready.false.second", 30, ready(false)),
+      span("a4", "ready.invalid", 25,
+        [attribute("game.ready", "not-a-boolean")]),
+      span("a5", "ready.absent", 20, []),
+    ]}],
+  }];
+  await postSignal(request, baseURL, "/v1/traces", {resourceSpans});
+}
+
 async function openCheckoutTrace(page) {
   await page.goto("/oscope/telemetry");
   await page.getByLabel("Service").selectOption(SERVICE);
@@ -151,6 +178,7 @@ async function openCheckoutTrace(page) {
 module.exports = {
   emitCheckout,
   emitGaugeBuckets,
+  emitTypedBoolean,
   emitTypedInt64,
   openCheckoutTrace,
   SERVICE,

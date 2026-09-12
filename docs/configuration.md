@@ -134,6 +134,11 @@ canonical URL before running the query. A serialized binding is either absent
 or complete, and its manifest version must be in the positive signed-Int64
 domain.
 
+Approved Boolean fields use an explicit true/false selector. A false value is
+kept as typed data through ingestion, filtering, saved URLs, and display rather
+than being treated as absent. Their coverage table shows the same six
+availability and historical states plus the conserved total.
+
 The aggregate table counts only values confirmed as valid Int64 data. A
 separate coverage table shows valid, present-empty, absent, invalid,
 historical-with-fallback, and historical-unavailable rows plus their conserved
