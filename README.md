@@ -651,10 +651,11 @@ overflowing signed-Int64 manifest versions, and stale saved URLs fail visibly,
 while physical columns and registry ownership
 identity remain exporter-private. Filter coverage and matches, or aggregate
 rows and aggregate coverage, are two bounded live queries, so the UI calls out
-that concurrent ingestion can advance one between them. Aggregate coverage
-lists valid, empty, absent, invalid, historical fallback, and historical
-unavailable rows plus the conserved total. Only valid typed values enter
-numeric aggregates; generic historical text is never parsed as a number.
+that concurrent ingestion can advance one between them. Both views list valid,
+empty, absent, invalid, historical fallback, and historical unavailable rows
+plus the conserved total. Boolean results preserve `false` as a typed value;
+only valid typed values enter numeric aggregates, and generic historical text
+is never parsed as a number.
 Durable file-launcher integration remains follow-on work. Typed promotion is
 never inferred from telemetry.
 

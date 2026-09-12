@@ -492,9 +492,11 @@
                   :typed-span-fields-truncated? (:truncated? visible)
                   :windows (keys query/windows)
                   :limit {:value limit :minimum 1 :maximum query/max-result-limit}}
-       :coverage (mapv (fn [status] {:status status
-                                     :count (get (:coverage result) status)})
-                       coverage-order)
+       :coverage (conj
+                  (mapv (fn [status] {:status status
+                                      :count (get (:coverage result) status)})
+                        coverage-order)
+                  {:status :total :count (get-in result [:coverage :total])})
        :freshness-notice
        "Coverage and matching spans are evaluated by two bounded live queries; concurrent ingestion can advance one between them."
        :table {:columns [{:key :timestamp-unix-nano :label "Timestamp (Unix ns)"}
