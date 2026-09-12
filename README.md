@@ -531,6 +531,65 @@ owned embedded native windows should treat that runner enhancement as a gate.
 (embedded/stop! runtime)
 ```
 
+An embedded runtime can also send the same completed spans to a remote
+OTLP/HTTP JSON collector while retaining spans, logs, and metrics locally. Each
+span destination has its own bounded queue and worker, so a slow or unavailable
+remote collector cannot block local ingestion:
+
+```clojure
+(def runtime
+  (embedded/start!
+   {:db-spec durable-writer-dbspec
+    :sdk-options {:service-name "checkout"
+                  :metrics? true
+                  :logs? true}
+    :span-pipelines
+    {:local {:max-queue-size 4096
+             :max-export-batch-size 512
+             :schedule-delay-ms 1000}
+     :remote {:endpoint "https://collector.example.com:4318"
+              ;; The variable contains comma-separated OTLP key=value headers.
+              ;; Header values are never accepted inline here.
+              :headers-env "CHECKOUT_OTLP_HEADERS"
+              :timeout-ms 10000
+              :max-retries 3
+              :insecure? false
+              :max-queue-size 2048
+              :max-export-batch-size 512
+              :schedule-delay-ms 1000}}}))
+
+(embedded/span-pipeline-stats runtime)
+;; => {:local {:queue-size 0 :dropped-count 0}
+;;     :remote {:queue-size 0 :dropped-count 0}}
+
+(embedded/force-flush! runtime)
+;; => {:sdk {:ok? true}
+;;     :span-pipelines
+;;     {:local {:ok? true} :remote {:ok? true}}}
+```
+
+Use either remote `:endpoint` (Oscope appends `/v1/traces`) or the full
+`:traces-url`, never both. URLs with userinfo, query strings, or fragments are
+rejected so credentials stay out of transport diagnostics. `:headers-env`
+names an environment variable; its
+resolved header values are retained only inside the private remote exporter,
+and neither the variable name nor values appear in the returned lifecycle or
+operation results. Standard `OTEL_EXPORTER_OTLP_*` variables do not override or
+supplement this closed embedded destination. Inline `:headers`, custom SDK
+`:exporter`, and custom SDK `:span-processors` are rejected before Oscope opens
+JDBC or starts a batch worker.
+
+`force-flush!` and `stop!` report a safe overall SDK marker beside closed
+per-destination outcomes. This keeps a log or metric lifecycle failure distinct
+from a local span-pipeline failure. False returns and throws are visible only as
+`{:ok? false :failure :returned-false}` or `:threw`. Terminal SDK and pipeline
+shutdown runs exactly once, so a telemetry failure is retained rather than
+pretended retryable; source retirement, the final Durable checkpoint or flush,
+and connection close still run. Only a failed query, persistence, or connection
+boundary leaves the lifecycle `:closing` for a later `stop!` retry. Logs and
+metrics are intentionally local-only in this slice. This is generic OTLP/HTTP
+export; interoperability with a particular hosted product is not implied.
+
 To promote reviewed span attributes into typed ClickHouse columns, compile the
 approved manifest before startup and pass it with the registry backend. Oscope
 binds schema observation and additive DDL to its own connection; application
@@ -863,7 +922,8 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 ## Exact dependency baselines
 
-- `chucklehead-dev/jolt-otel-clickhouse` `212032d3a84478b506c6b016bac6d9c36a58a31d`
+- `casselc/otel` `ce702e761de49e538dba9815ec7567f21699ab73`
+- `chucklehead-dev/jolt-otel-clickhouse` `b28d155e438e1fa189a1733d15b0fbce4052a392`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
 - `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`
