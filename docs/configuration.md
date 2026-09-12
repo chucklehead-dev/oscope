@@ -123,6 +123,26 @@ that catalog, preserving the exporter's cross-dataset physical-column collision
 checks. The backend is passed through the existing typed-schema startup
 boundary; the exporter remains the sole schema owner.
 
+Once startup confirms an Int64 span field, the web viewer offers both exact
+typed filters and a numeric summary. The summary accepts an inclusive lower
+bound and optional exclusive upper bound, can group by service name, and shows
+`count`, `min`, `max`, and `avg`. Saved URLs serialize the exact four-part
+logical binding (field ID, attribute key, type, and manifest version), so a
+catalog change produces a visible stale-binding response instead of silently
+following a different column. Interactive field-only forms redirect to that
+canonical URL before running the query. A serialized binding is either absent
+or complete, and its manifest version must be in the positive signed-Int64
+domain.
+
+The aggregate table counts only values confirmed as valid Int64 data. A
+separate coverage table shows valid, present-empty, absent, invalid,
+historical-with-fallback, and historical-unavailable rows plus their conserved
+total. Historical fallback text remains visible as coverage but is never parsed
+for a numeric result. Coverage and aggregates are separate bounded live queries,
+not a snapshot; Oscope displays that freshness boundary when ingestion can
+advance between them. All physical SQL, tables, columns, limits, and resource
+settings remain owned by `jolt-otel-clickhouse`.
+
 `:memory` is rejected for non-disabled typed attributes because a process-only
 registry would make restart and read-only acquisition claims false. The
 versioned Durable launcher adapter remains separate work: `:durable-local` and

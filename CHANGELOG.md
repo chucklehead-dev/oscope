@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add a table-first typed Int64 span summary for approved fields. Saved URLs
+  retain the exact field ID, logical key, type, and manifest version; the
+  exporter owns the half-open range, optional service grouping, and
+  `count`/`min`/`max`/`avg` queries. The view separately reports all six typed
+  availability states and their conserved total, including historical values
+  that cannot safely participate in numeric aggregation. Raw field-selection
+  forms redirect to complete four-field binding URLs before query execution;
+  partial bindings and manifest versions outside positive signed Int64 fail
+  closed.
 - Qualify version 2 typed-attribute file configuration through the real
   standalone loopback server and persistent local-path restart. Digest-pinned
   install preserves Boolean, string, and full signed Int64 values plus every

@@ -640,13 +640,23 @@ authorized install or acquire mode through this same boundary. A confirmed
 capability also adds table-only Boolean, signed Int64, and string span filters
 to the web UI. Int64 values support exact `eq`, `gte`, and `lt` predicates and
 remain decimal text in the browser until Oscope performs bounded parsing, so
-values beyond JavaScript's safe-number range remain exact.
+values beyond JavaScript's safe-number range remain exact. Approved Int64
+fields also have a table-first summary with an inclusive lower bound, optional
+exclusive upper bound, optional service grouping, and selectable `count`,
+`min`, `max`, and `avg` columns.
 Those controls use logical attribute names and exact manifest-version bindings;
-stale saved URLs fail visibly, while physical columns and registry ownership
-identity remain exporter-private. Coverage and matches are two bounded live
-queries, so the UI calls out that concurrent ingestion can advance one between
-them. Typed Int64 aggregate controls and Durable file-launcher integration
-remain follow-on work. Typed promotion is never inferred from telemetry.
+successful field-selection forms redirect to a canonical URL containing the
+complete binding before executing the query. Partial bindings, nonpositive or
+overflowing signed-Int64 manifest versions, and stale saved URLs fail visibly,
+while physical columns and registry ownership
+identity remain exporter-private. Filter coverage and matches, or aggregate
+rows and aggregate coverage, are two bounded live queries, so the UI calls out
+that concurrent ingestion can advance one between them. Aggregate coverage
+lists valid, empty, absent, invalid, historical fallback, and historical
+unavailable rows plus the conserved total. Only valid typed values enter
+numeric aggregates; generic historical text is never parsed as a number.
+Durable file-launcher integration remains follow-on work. Typed promotion is
+never inferred from telemetry.
 
 The returned `:source` is the ordinary live oscope query source and can be
 given to the web or native UI handlers. The exporter owns schema migration,
@@ -923,7 +933,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `casselc/otel` `ce702e761de49e538dba9815ec7567f21699ab73`
-- `chucklehead-dev/jolt-otel-clickhouse` `b28d155e438e1fa189a1733d15b0fbce4052a392`
+- `chucklehead-dev/jolt-otel-clickhouse` `03b75ae1c6cdba107584827e950e2048ab322578`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
 - `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`

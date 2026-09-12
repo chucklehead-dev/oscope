@@ -24,20 +24,19 @@ module.exports = defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: `${joltCommand} -M:server`,
+    command: `${joltCommand} -M:typed-browser-server`,
     url: `${baseURL}/healthz`,
     timeout: 120_000,
     reuseExistingServer: false,
     env: {
       ...process.env,
       OSCOPE_PORT: String(port),
-      OSCOPE_CHDB_SPEC: "chdb::memory:",
     },
   },
   projects: [
     {
       name: "chromium",
-      testMatch: /oscope\.spec\.js/,
+      testMatch: /(?:oscope|typed-attributes)\.spec\.js/,
     },
     {
       name: "docs",

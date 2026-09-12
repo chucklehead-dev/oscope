@@ -104,6 +104,39 @@ async function emitGaugeBuckets(request, baseURL, {metricName, buckets}) {
   });
 }
 
+async function emitTypedInt64(request, baseURL) {
+  const now = BigInt(Date.now()) * 1000000n;
+  const at = (millisBefore) => String(now - BigInt(millisBefore) * 1000000n);
+  const scope = {name: "oscope.browser.typed-int64", version: "1.0"};
+  const resourceSpans = [
+    {service: "oscope-typed-alpha", values: [10, 15]},
+    {service: "oscope-typed-beta", values: [30]},
+  ].map(({service, values}, resourceIndex) => ({
+    resource: {attributes: [attribute("service.name", service)]},
+    scopeSpans: [{scope, spans: values.map((value, index) => ({
+      traceId: `${93 + resourceIndex}${String(index).padStart(30, "0")}`,
+      spanId: `${93 + resourceIndex}${String(index).padStart(14, "0")}`,
+      name: "typed.score",
+      startTimeUnixNano: at(30 - (resourceIndex * 5 + index)),
+      endTimeUnixNano: at(29 - (resourceIndex * 5 + index)),
+      attributes: [{key: "game.score", value: {intValue: String(value)}}],
+    }))}],
+  }));
+  resourceSpans.push({
+    resource: {attributes: [attribute("service.name", "oscope-typed-alpha")]},
+    scopeSpans: [{scope, spans: [
+      {traceId: "95000000000000000000000000000000",
+       spanId: "9500000000000000", name: "typed.invalid",
+       startTimeUnixNano: at(10), endTimeUnixNano: at(9),
+       attributes: [attribute("game.score", "not-an-int")]},
+      {traceId: "96000000000000000000000000000000",
+       spanId: "9600000000000000", name: "typed.absent",
+       startTimeUnixNano: at(8), endTimeUnixNano: at(7), attributes: []},
+    ]}],
+  });
+  await postSignal(request, baseURL, "/v1/traces", {resourceSpans});
+}
+
 async function openCheckoutTrace(page) {
   await page.goto("/oscope/telemetry");
   await page.getByLabel("Service").selectOption(SERVICE);
@@ -118,6 +151,7 @@ async function openCheckoutTrace(page) {
 module.exports = {
   emitCheckout,
   emitGaugeBuckets,
+  emitTypedInt64,
   openCheckoutTrace,
   SERVICE,
   TRACE_ID,

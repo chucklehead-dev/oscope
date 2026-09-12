@@ -7,6 +7,13 @@
    :signals [:spans]
    :types [:boolean :int64 :string]})
 
+(def int64-aggregate-capability
+  {:aggregates [:count :min :max :avg]
+   :group-by [:service-name]
+   :predicate-keys [:gte :lt]
+   :signals [:spans]
+   :types [:int64]})
+
 (def int64-min -9223372036854775808)
 (def int64-max 9223372036854775807)
 
@@ -34,7 +41,7 @@
        (<= 1 (count (:attribute-key value)) 256)
        (contains? (set (:types filter-capability)) (:attribute-type value))
        (integer? (:manifest-version value))
-       (pos? (:manifest-version value))))
+       (<= 1 (:manifest-version value) int64-max)))
 
 (defn resolve-binding
   "Require a serialized logical binding to equal the startup-confirmed catalog."
