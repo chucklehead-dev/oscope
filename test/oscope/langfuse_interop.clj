@@ -61,7 +61,9 @@
              from otel_traces where TraceId=? order by SpanId"
           trace-id]))))
 
-(defn- observation-response [url headers trace-id]
+(defn observation-response
+  "Fetch one observations page and retain only fields needed by the gate."
+  [url headers trace-id]
   (try
     (let [response
           (http/get

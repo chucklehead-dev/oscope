@@ -4,6 +4,7 @@
             [clojure.test :refer [deftest is]]
             [jolt.http.server :as http]
             [oscope.langfuse-gate :as gate]
+            [oscope.langfuse-interop :as interop]
             [oscope.otlp :as oscope-otlp]
             [otel.sdk :as sdk]
             [otel.sdk.export :as export]))
@@ -35,14 +36,29 @@
                         (:boolValue value) (:doubleValue value))]))
         (:attributes span)))
 
-(deftest live-readback-retains-only-asserted-observation-fields
-  (is (= {:id "child" :traceId "trace" :name gate/child-name
-          :type "GENERATION" :input "in" :output "out"}
-         (gate/observation-view
-          {:id "child" :traceId "trace" :name gate/child-name
-           :type "GENERATION" :input "in" :output "out"
-           :metadata {:authorization "must-not-be-retained"}
-           :environment "private-deployment"}))))
+(deftest live-readback-boundary-retains-only-asserted-observation-fields
+  (let [listener
+        (http/run-server
+         (fn [_]
+           {:status 200
+            :headers {"Content-Type" "application/json"}
+            :body
+            (json/write-str
+             {:data [{:id "child" :traceId "trace" :name gate/child-name
+                      :type "GENERATION" :input "in" :output "out"
+                      :metadata {:authorization "must-not-be-retained"}
+                      :environment "private-deployment"}]})})
+         :port 0 :server-name "127.0.0.1" :reuse-address? true)]
+    (try
+      (is (= {:status 200
+              :rows [{:id "child" :traceId "trace" :name gate/child-name
+                      :type "GENERATION" :input "in" :output "out"}]}
+             (interop/observation-response
+              (str "http://127.0.0.1:" (:port listener) "/observations")
+              {"Authorization" "Basic local-test-credential"}
+              "trace")))
+      (finally
+        (http/stop-server listener)))))
 
 (deftest standalone-profile-uses-real-http-and-preserves-canonical-spans
   (let [requests (atom [])
