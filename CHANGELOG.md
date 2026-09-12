@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Counterbalance typed query/storage comparisons across optional fresh-process
+  repetitions. Reports now retain each repetition and actual mode order, keep a
+  one-process run explicitly unbalanced, and reject missing, duplicate, biased,
+  reordered, or stale-provenance repetition sets. Each process boundary and
+  final publication rechecks the clean exact source under reproducible
+  dependency resolution, and a failed replacement run preserves the previous
+  validated artifact.
+
 - Add an opt-in, reproducible local benchmark for approved Boolean and Int64
   span queries versus string fallback. It drives real standalone OTLP/chDB,
   checks exact cross-mode filters and Int64 aggregates, preserves restart
