@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Counterbalance typed query/storage comparisons across optional fresh-process
+  repetitions. Reports now retain each repetition and actual mode order, keep a
+  one-process run explicitly unbalanced, and reject missing, duplicate, biased,
+  reordered, or stale-provenance repetition sets. Each process boundary and
+  final publication rechecks the clean exact source under reproducible
+  dependency resolution, and a failed replacement run preserves the previous
+  validated artifact.
+
 - Qualify the Langfuse OTLP/HTTP JSON profile through a real loopback socket,
   preserving canonical span identity across independently bounded local and
   remote queues. Add an opt-in live gate that reads the same nested trace from

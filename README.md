@@ -674,7 +674,9 @@ string-fallback database. It reconciles Boolean and Int64 filters, Int64
 aggregates, coverage, restart bindings, and a narrowly scoped active-part
 footprint before reporting bounded latency summaries. Its smoke profile checks
 the harness; the larger profile is manual performance evidence, not a CI
-threshold or a cold-cache claim.
+threshold or a cold-cache claim. A one-process run is explicitly unbalanced;
+an optional even repetition count launches fresh processes with alternating
+typed/fallback order and rejects incomplete or stale repetition sets.
 
 Durable file-launcher integration remains follow-on work. Typed promotion is
 never inferred from telemetry.

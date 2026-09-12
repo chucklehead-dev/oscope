@@ -1,7 +1,6 @@
 (ns oscope.typed-query-storage
   "Reproducible local chDB qualification for typed span promotion and queries."
   (:require [clojure.data.json :as json]
-            [clojure.edn :as edn]
             [db.jdbc]
             [jdbc.chdb.native :as chdb-native]
             [jdbc.core :as jdbc]
@@ -19,7 +18,6 @@
    :lineage "typed-query-storage-v1" :version 1})
 (def ^:private int64-key "benchmark.int64")
 (def ^:private boolean-key "benchmark.boolean")
-(def ^:private output-path "target/profiles/typed-query-storage.edn")
 
 (def profiles
   {:smoke {:row-counts [32] :cardinalities [4] :batch-size 16
@@ -406,7 +404,8 @@
    :dependency-pins report/dependency-pins :transport :otlp-http-json
    :cache-states [:first-after-reopen :warmed] :cold-cache-claimed? false})
 
-(defn run! [qualification source-sha source-worktree-state]
+(defn run! [qualification source-sha source-worktree-state repetition-index
+            repetition-count output-path]
   (ensure! (and (string? source-sha)
                 (boolean (re-matches #"[0-9a-f]{40}" source-sha)))
            "benchmark source SHA must be full lowercase hexadecimal" {})
@@ -414,38 +413,51 @@
            "benchmark source worktree state must be clean or dirty" {})
   (ensure! (or (= :smoke qualification) (= :clean source-worktree-state))
            "representative benchmark requires a clean committed worktree" {})
+  (ensure! (report/valid-repetition-count? repetition-count)
+           "process repetition count must be one or an even integer up to ten" {})
+  (ensure! (and (integer? repetition-index) (<= 0 repetition-index)
+                (< repetition-index repetition-count))
+           "process repetition index is outside the declared repetition set" {})
+  (ensure! (and (string? output-path) (not (empty? output-path)))
+           "benchmark repetition output path must be nonempty" {})
   (let [configuration (or (get profiles qualification)
                           (fail! "benchmark profile must be smoke or representative" {}))
+        mode-order (report/mode-order-for repetition-index)
         results (vec (for [row-count (:row-counts configuration)
                            cardinality (:cardinalities configuration)
-                           mode [:string-fallback :typed]]
+                           mode mode-order]
                        (run-case mode configuration row-count cardinality)))
-        artifact {:schema report/schema-version :benchmark :typed-query-storage
+        artifact {:schema report/shard-schema-version
+                  :benchmark :typed-query-storage
                   :qualification qualification :configuration configuration
                   :provenance (provenance source-sha source-worktree-state)
+                  :repetition {:index repetition-index :count repetition-count
+                               :mode-order mode-order}
                   :cases (mapv :report results)
                   :comparison (report/compare-results! results)}]
-    (report/validate-report! artifact)
-    (let [output (java.io.File. output-path)]
-      (.mkdirs (.getParentFile output))
-      (spit output (str (pr-str artifact) "\n"))
-      (let [read-back (edn/read-string (slurp output))]
-        (report/validate-report! read-back)
-        (ensure! (= artifact read-back) "benchmark artifact changed on readback" {})
-        (ensure! (< (.length output) (* 1024 1024))
-                 "benchmark artifact exceeded its 1 MiB bound" {})))
+    (report/write-artifact! output-path artifact report/validate-shard!)
     artifact))
 
 (defn- parse-options [arguments]
-  (when-not (and (= 2 (count arguments)) (= "--profile" (first arguments)))
-    (fail! "use scripts/run-typed-query-storage-benchmark.sh smoke|representative" {}))
+  (when-not (and
+             (= 8 (count arguments))
+             (= ["--profile" "--repetition-index" "--repetition-count" "--output"]
+                (mapv first (partition 2 arguments))))
+    (fail! "use the typed query/storage benchmark runner script" {}))
   {:profile (keyword (second arguments))
+   :repetition-index (parse-long (nth arguments 3))
+   :repetition-count (parse-long (nth arguments 5))
+   :output (nth arguments 7)
    :source-sha (System/getenv "OSCOPE_BENCHMARK_SOURCE_SHA")
    :source-state (keyword (or (System/getenv "OSCOPE_BENCHMARK_SOURCE_STATE")
                               "missing"))})
 
 (defn -main [& arguments]
-  (let [{:keys [profile source-sha source-state]} (parse-options arguments)
-        artifact (run! profile source-sha source-state)]
-    (println "typed query/storage benchmark" (name profile) "complete")
-    (println "cases:" (count (:cases artifact)) "artifact:" output-path)))
+  (let [{:keys [profile source-sha source-state repetition-index repetition-count
+                output]} (parse-options arguments)
+        artifact (run! profile source-sha source-state repetition-index
+                       repetition-count output)]
+    (println "typed query/storage benchmark" (name profile) "repetition"
+             (inc repetition-index) "of" repetition-count "complete")
+    (println "mode order:" (pr-str (get-in artifact [:repetition :mode-order]))
+             "artifact:" output)))

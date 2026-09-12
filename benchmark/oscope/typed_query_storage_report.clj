@@ -1,8 +1,11 @@
 (ns oscope.typed-query-storage-report
   "Closed, bounded report contract for the typed query/storage benchmark."
-  (:require [clojure.string :as str]))
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]))
 
-(def schema-version 1)
+(def schema-version 2)
+(def shard-schema-version 1)
+(def max-process-repetitions 10)
 (def minimum-percentile-samples {:p50 5 :p95 20 :p99 100})
 (def modes #{:typed :string-fallback})
 (def operations #{:int64-filter :boolean-filter :int64-aggregate})
@@ -32,6 +35,15 @@
 
 (defn- nonblank-string? [value]
   (and (string? value) (not (str/blank? value))))
+
+(defn valid-repetition-count? [value]
+  (and (integer? value) (pos? value) (<= value max-process-repetitions)
+       (or (= 1 value) (even? value))))
+
+(defn mode-order-for [repetition-index]
+  (if (even? repetition-index)
+    [:string-fallback :typed]
+    [:typed :string-fallback]))
 
 (defn- quantile [ordered probability]
   (nth ordered (max 0 (dec (long (Math/ceil (* probability (count ordered))))))))
@@ -198,74 +210,189 @@
             (group-by (juxt #(get-in % [:report :row-count])
                             #(get-in % [:report :int64-cardinality])) case-results))))
 
-(defn validate-report!
-  "Reject incomplete, non-finite, tail-overclaiming, or non-conserving reports."
-  [report]
-  (let [{:keys [schema benchmark qualification configuration provenance cases
-                comparison]} report
-        expected-pairs (set (for [rows (:row-counts configuration)
+(defn- valid-configuration? [configuration]
+  (and (= #{:row-counts :cardinalities :batch-size :missing-every
+            :query-warmups :query-samples :result-limit}
+          (set (keys configuration)))
+       (vector? (:row-counts configuration)) (seq (:row-counts configuration))
+       (vector? (:cardinalities configuration)) (seq (:cardinalities configuration))
+       (every? pos-int? (concat (:row-counts configuration)
+                                (:cardinalities configuration)
+                                [(:batch-size configuration)
+                                 (:missing-every configuration)
+                                 (:query-warmups configuration)
+                                 (:query-samples configuration)
+                                 (:result-limit configuration)]))))
+
+(defn- valid-provenance? [provenance]
+  (and (= #{:source-sha :source-sha-source :source-worktree-state
+            :runtime :jolt-version :clojure-version :scheme-version
+            :machine-type :os-name
+            :os-arch :native-chdb-version :declared-chdb-version
+            :dependency-pins :transport :cache-states :cold-cache-claimed?}
+          (set (keys provenance)))
+       (sha? (:source-sha provenance))
+       (= :clean-worktree-runner (:source-sha-source provenance))
+       (= :clean (:source-worktree-state provenance))
+       (= :jolt (:runtime provenance))
+       (every? nonblank-string?
+               (map provenance [:jolt-version :clojure-version :scheme-version
+                                :machine-type :os-name :os-arch
+                                :native-chdb-version :declared-chdb-version]))
+       (= dependency-pins (:dependency-pins provenance))
+       (= :otlp-http-json (:transport provenance))
+       (= [:first-after-reopen :warmed] (:cache-states provenance))
+       (false? (:cold-cache-claimed? provenance))))
+
+(defn- valid-payload? [configuration mode-order cases comparison]
+  (let [expected-pairs (set (for [rows (:row-counts configuration)
                                   cardinality (:cardinalities configuration)]
                               [rows cardinality]))
+        expected-case-order
+        (vec (for [rows (:row-counts configuration)
+                   cardinality (:cardinalities configuration)
+                   mode mode-order]
+               [rows cardinality mode]))
+        actual-case-order (mapv (juxt :row-count :int64-cardinality :mode) cases)
         grouped (group-by (juxt :row-count :int64-cardinality) cases)]
+    (and (= modes (set mode-order)) (= 2 (count mode-order))
+         (vector? cases) (= expected-case-order actual-case-order)
+         (every? #(valid-case? % configuration) cases)
+         (= expected-pairs (set (keys grouped)))
+         (every? #(and (= 2 (count %)) (= modes (set (map :mode %))))
+                 (vals grouped))
+         (vector? comparison)
+         (= expected-pairs
+            (set (map (juxt :row-count :int64-cardinality) comparison)))
+         (every?
+          #(and (= #{:row-count :int64-cardinality :method :typed-bytes
+                      :string-fallback-bytes :typed-to-fallback-ratio
+                      :results-equal?} (set (keys %)))
+                (= :system-parts-active (:method %))
+                (every? pos-int? (map % [:typed-bytes :string-fallback-bytes]))
+                (nonnegative-number? (:typed-to-fallback-ratio %))
+                (true? (:results-equal? %))
+                (let [pair (get grouped [(:row-count %) (:int64-cardinality %)])
+                      by-mode (into {} (map (juxt :mode identity)) pair)
+                      typed-bytes (get-in by-mode [:typed :storage :bytes-on-disk])
+                      fallback-bytes
+                      (get-in by-mode [:string-fallback :storage :bytes-on-disk])]
+                  (and (= typed-bytes (:typed-bytes %))
+                       (= fallback-bytes (:string-fallback-bytes %))
+                       (= (/ (double typed-bytes) fallback-bytes)
+                          (:typed-to-fallback-ratio %)))))
+          comparison))))
+
+(defn validate-shard!
+  "Reject an incomplete or dishonestly ordered single-process repetition."
+  [shard]
+  (let [{:keys [schema benchmark qualification configuration provenance
+                repetition cases comparison]} shard
+        {:keys [index count mode-order]} repetition]
     (when-not
      (and (= #{:schema :benchmark :qualification :configuration :provenance
-               :cases :comparison} (set (keys report)))
+               :repetition :cases :comparison} (set (keys shard)))
+          (= shard-schema-version schema) (= :typed-query-storage benchmark)
+          (contains? #{:smoke :representative} qualification)
+          (valid-configuration? configuration) (valid-provenance? provenance)
+          (= #{:index :count :mode-order} (set (keys repetition)))
+          (valid-repetition-count? count)
+          (integer? index) (<= 0 index) (< index count)
+          (= (mode-order-for index) mode-order)
+          (valid-payload? configuration mode-order cases comparison))
+      (fail! "typed query/storage benchmark repetition is invalid" {}))
+    shard))
+
+(declare validate-report!)
+
+(defn combine-shards!
+  "Validate complete fresh process repetitions and construct one bounded report."
+  [shards]
+  (let [shards (mapv validate-shard! shards)
+        first-shard (first shards)
+        repetition-count (get-in first-shard [:repetition :count])
+        common-keys [:benchmark :qualification :configuration :provenance]
+        indexes (mapv #(get-in % [:repetition :index]) shards)]
+    (when-not
+     (and first-shard
+          (= repetition-count (count shards))
+          (= (vec (range repetition-count)) indexes)
+          (every? #(= repetition-count (get-in % [:repetition :count])) shards)
+          (every? #(= (select-keys first-shard common-keys)
+                       (select-keys % common-keys)) shards))
+      (fail! "benchmark repetitions are missing, duplicated, reordered, or stale" {}))
+    (validate-report!
+     {:schema schema-version
+      :benchmark (:benchmark first-shard)
+      :qualification (:qualification first-shard)
+      :configuration (:configuration first-shard)
+      :provenance (:provenance first-shard)
+      :execution
+      {:process-repetitions repetition-count
+       :counterbalanced? (> repetition-count 1)
+       :mode-orders
+       (mapv (fn [shard]
+               {:repetition-index (get-in shard [:repetition :index])
+                :mode-order (get-in shard [:repetition :mode-order])}) shards)}
+      :runs
+      (mapv (fn [shard]
+              {:repetition-index (get-in shard [:repetition :index])
+               :mode-order (get-in shard [:repetition :mode-order])
+               :cases (:cases shard) :comparison (:comparison shard)}) shards)})))
+
+(defn validate-report!
+  "Reject incomplete, biased, stale, tail-overclaiming, or non-conserving reports."
+  [report]
+  (let [{:keys [schema benchmark qualification configuration provenance
+                execution runs]} report
+        repetition-count (:process-repetitions execution)
+        expected-orders
+        (when (valid-repetition-count? repetition-count)
+          (mapv (fn [index]
+                  {:repetition-index index :mode-order (mode-order-for index)})
+                (range repetition-count)))]
+    (when-not
+     (and (= #{:schema :benchmark :qualification :configuration :provenance
+               :execution :runs} (set (keys report)))
           (= schema-version schema) (= :typed-query-storage benchmark)
           (contains? #{:smoke :representative} qualification)
-          (= #{:row-counts :cardinalities :batch-size :missing-every
-               :query-warmups :query-samples :result-limit}
-             (set (keys configuration)))
-          (vector? (:row-counts configuration)) (seq (:row-counts configuration))
-          (vector? (:cardinalities configuration)) (seq (:cardinalities configuration))
-          (every? pos-int? (concat (:row-counts configuration)
-                                   (:cardinalities configuration)
-                                   [(:batch-size configuration)
-                                    (:missing-every configuration)
-                                    (:query-warmups configuration)
-                                    (:query-samples configuration)
-                                    (:result-limit configuration)]))
-          (= #{:source-sha :source-sha-source :source-worktree-state
-                :runtime :jolt-version :clojure-version :scheme-version
-                :machine-type :os-name
-                :os-arch :native-chdb-version :declared-chdb-version
-                :dependency-pins :transport :cache-states :cold-cache-claimed?}
-             (set (keys provenance)))
-          (sha? (:source-sha provenance))
-          (= :clean-worktree-runner (:source-sha-source provenance))
-          (= :clean (:source-worktree-state provenance))
-          (= :jolt (:runtime provenance))
-          (every? nonblank-string?
-                  (map provenance [:jolt-version :clojure-version :scheme-version
-                                   :machine-type :os-name :os-arch
-                                   :native-chdb-version :declared-chdb-version]))
-          (= dependency-pins (:dependency-pins provenance))
-          (= :otlp-http-json (:transport provenance))
-          (= [:first-after-reopen :warmed] (:cache-states provenance))
-          (false? (:cold-cache-claimed? provenance))
-          (vector? cases) (every? #(valid-case? % configuration) cases)
-          (= expected-pairs (set (keys grouped)))
-          (every? #(and (= 2 (count %)) (= modes (set (map :mode %))))
-                  (vals grouped))
-          (vector? comparison)
-          (= expected-pairs
-             (set (map (juxt :row-count :int64-cardinality) comparison)))
+          (valid-configuration? configuration) (valid-provenance? provenance)
+          (= #{:process-repetitions :counterbalanced? :mode-orders}
+             (set (keys execution)))
+          (valid-repetition-count? repetition-count)
+          (= (> repetition-count 1) (:counterbalanced? execution))
+          (= expected-orders (:mode-orders execution))
+          (vector? runs) (= repetition-count (count runs))
+          (= expected-orders
+             (mapv #(select-keys % [:repetition-index :mode-order]) runs))
           (every?
-           #(and (= #{:row-count :int64-cardinality :method :typed-bytes
-                       :string-fallback-bytes :typed-to-fallback-ratio
-                       :results-equal?} (set (keys %)))
-                 (= :system-parts-active (:method %))
-                 (every? pos-int? (map % [:typed-bytes :string-fallback-bytes]))
-                 (nonnegative-number? (:typed-to-fallback-ratio %))
-                 (true? (:results-equal? %))
-                 (let [pair (get grouped [(:row-count %) (:int64-cardinality %)])
-                       by-mode (into {} (map (juxt :mode identity)) pair)
-                       typed-bytes (get-in by-mode [:typed :storage :bytes-on-disk])
-                       fallback-bytes
-                       (get-in by-mode [:string-fallback :storage :bytes-on-disk])]
-                   (and (= typed-bytes (:typed-bytes %))
-                        (= fallback-bytes (:string-fallback-bytes %))
-                        (= (/ (double typed-bytes) fallback-bytes)
-                           (:typed-to-fallback-ratio %)))))
-           comparison))
+           (fn [run]
+             (and (= #{:repetition-index :mode-order :cases :comparison}
+                     (set (keys run)))
+                  (valid-payload? configuration (:mode-order run)
+                                  (:cases run) (:comparison run))))
+           runs))
       (fail! "typed query/storage benchmark report is invalid" {}))
     report))
+
+(defn write-artifact! [path artifact validator]
+  (let [output (java.io.File. path)]
+    (when-let [parent (.getParentFile output)]
+      (.mkdirs parent))
+    (spit output (str (pr-str artifact) "\n"))
+    (let [read-back (edn/read-string (slurp output))]
+      (validator read-back)
+      (when-not (= artifact read-back)
+        (fail! "benchmark artifact changed on readback" {}))
+      (when-not (< (.length output) (* 1024 1024))
+        (fail! "benchmark artifact exceeded its 1 MiB bound" {})))
+    artifact))
+
+(defn -main [& arguments]
+  (when-not (and (<= 3 (count arguments)) (= "--output" (first arguments)))
+    (fail! "combine requires --output followed by one or more shard paths" {}))
+  (let [output (second arguments)
+        shards (mapv #(edn/read-string (slurp %)) (drop 2 arguments))]
+    (write-artifact! output (combine-shards! shards) validate-report!)
+    (println "typed query/storage benchmark report complete")
+    (println "process repetitions:" (count shards) "artifact:" output)))
