@@ -104,6 +104,14 @@
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.durable-s3-test-runner"]}
 
+  :test-typed-query-storage-report
+  {:extra-paths ["benchmark" "test"]
+   :main-opts ["-m" "oscope.typed-query-storage-report-test-runner"]}
+
+  :bench-typed-query-storage
+  {:extra-paths ["benchmark"]
+   :main-opts ["-m" "oscope.typed-query-storage"]}
+
   :web-snapshot {:main-opts ["-m" "oscope.ui.web"]}
   :server {:main-opts ["-m" "oscope.server-main"]}
   :typed-browser-server
@@ -175,6 +183,10 @@
          test-durable-crash "test/durable_crash_reopen.sh"
          test-durable-s3-crash "test/durable_s3_crash_reopen.sh"
          test-durable-s3 "test/durable_s3_minio.sh"
+         test-typed-query-storage-report
+         "jolt -M:test-typed-query-storage-report"
+         bench-typed-query-storage
+         "scripts/run-typed-query-storage-benchmark.sh"
          durable-server-dev "jolt -M:durable-server-dev"
          test-standalone "test/standalone_build_smoke.sh"
          web-snapshot "jolt -M:web-snapshot"

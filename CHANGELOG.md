@@ -9,6 +9,12 @@
   treating HTTP acceptance as semantic interoperability; credentials and
   response bodies remain outside diagnostics.
 
+- Add an opt-in, reproducible local benchmark for approved Boolean and Int64
+  span queries versus string fallback. It drives real standalone OTLP/chDB,
+  checks exact cross-mode filters and Int64 aggregates, preserves restart
+  bindings and coverage, reports only sample-supported percentiles, and scopes
+  storage comparison to optimized active `otel_traces` parts.
+
 - Retain scalar, per-destination delivery counts for embedded span pipelines.
   Background remote export failures remain visible through later flush and
   shutdown results without blocking healthy local delivery or cleanup.

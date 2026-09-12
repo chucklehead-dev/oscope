@@ -667,6 +667,15 @@ empty, absent, invalid, historical fallback, and historical unavailable rows
 plus the conserved total. Boolean results preserve `false` as a typed value;
 only valid typed values enter numeric aggregates, and generic historical text
 is never parsed as a number.
+
+The opt-in [typed query and storage benchmark](docs/benchmarks/typed-query-storage.md)
+drives this real standalone OTLP/chDB path against an otherwise identical
+string-fallback database. It reconciles Boolean and Int64 filters, Int64
+aggregates, coverage, restart bindings, and a narrowly scoped active-part
+footprint before reporting bounded latency summaries. Its smoke profile checks
+the harness; the larger profile is manual performance evidence, not a CI
+threshold or a cold-cache claim.
+
 Durable file-launcher integration remains follow-on work. Typed promotion is
 never inferred from telemetry.
 
