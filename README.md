@@ -583,6 +583,10 @@ supplement this closed embedded destination. Inline `:headers`, custom SDK
 `:exporter`, and custom SDK `:span-processors` are rejected before Oscope opens
 JDBC or starts a batch worker.
 
+For the exact Langfuse endpoint/header profile, the standalone two-exporter
+topology, and the opt-in semantic readback gate, see
+[Langfuse span export](docs/LANGFUSE.md).
+
 Delivery counts reported by `span-pipeline-stats` cover each processor's
 lifetime. Consequently, a failed background export remains visible to later
 `force-flush!` and `stop!` calls even when the exporter's own flush callback

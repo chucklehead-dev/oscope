@@ -53,6 +53,10 @@
      :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}}
    :main-opts ["-m" "oscope.chdb-test-runner"]}
 
+  :test-langfuse
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.langfuse-interop"]}
+
   :test-readers
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.reader-test-runner"]}
@@ -169,6 +173,7 @@
  :tasks {test "jolt -M:test"
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"
+         test-langfuse "test/langfuse_interop.sh"
          test-readers "jolt -M:test-readers"
          test-durable "jolt -M:test-durable"
          test-durable-dev "jolt -M:test-durable-dev"

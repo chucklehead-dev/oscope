@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Qualify the Langfuse OTLP/HTTP JSON profile through a real loopback socket,
+  preserving canonical span identity across independently bounded local and
+  remote queues. Add an opt-in live gate that reads the same nested trace from
+  a standalone Oscope receiver and Langfuse's v2 Observations API instead of
+  treating HTTP acceptance as semantic interoperability; credentials and
+  response bodies remain outside diagnostics.
+
 - Add an opt-in, reproducible local benchmark for approved Boolean and Int64
   span queries versus string fallback. It drives real standalone OTLP/chDB,
   checks exact cross-mode filters and Int64 aggregates, preserves restart
