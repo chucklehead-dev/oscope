@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Qualify the Langfuse OTLP/HTTP JSON profile through a real loopback socket,
+  preserving canonical span identity across independently bounded local and
+  remote queues. Add an opt-in live gate that reads the same nested trace from
+  a standalone Oscope receiver and Langfuse's v2 Observations API instead of
+  treating HTTP acceptance as semantic interoperability; credentials and
+  response bodies remain outside diagnostics.
+
 - Retain scalar, per-destination delivery counts for embedded span pipelines.
   Background remote export failures remain visible through later flush and
   shutdown results without blocking healthy local delivery or cleanup.

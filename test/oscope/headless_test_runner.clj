@@ -14,6 +14,7 @@
             [oscope.embedded-query-test]
             [oscope.events-test]
             [oscope.http-executor-test]
+            [oscope.langfuse-profile-test]
             [oscope.live-test]
             [oscope.otlp-test]
             [oscope.plotje-property-test]
@@ -46,6 +47,7 @@
                         'oscope.embedded-query-test
                         'oscope.events-test
                         'oscope.http-executor-test
+                        'oscope.langfuse-profile-test
                         'oscope.live-test
                         'oscope.otlp-test
                         'oscope.plotje-property-test
