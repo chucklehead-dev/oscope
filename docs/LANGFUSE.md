@@ -88,6 +88,10 @@ placeholders. The same gate is designed for a self-hosted v4 base URL.
 Ingestion is asynchronous, so it polls the Observations API for up to 90 seconds
 instead of treating an ingestion HTTP 2xx response as proof of semantic storage.
 
-The gate prints only a pass marker and the non-secret trace ID. Failures are
-reduced to a fixed message; endpoint URLs, authorization headers, response
-bodies, and nested transport exceptions are not printed or retained.
+The gate itself prints only a pass marker and the non-secret trace ID, or one
+fixed failure message. It projects observation responses to the seven fields it
+asserts before retaining them and does not print headers, response bodies, or
+nested causes. The pinned OTLP exporter can independently print a transport
+diagnostic to stderr. That diagnostic may include the endpoint, so the gate
+requires a credential-free base URL and rejects userinfo, query strings, and
+fragments; authorization headers are not part of the diagnostic.

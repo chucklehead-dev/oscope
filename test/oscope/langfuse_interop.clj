@@ -70,7 +70,8 @@
             :throw-exceptions false})]
       (if (= 200 (:status response))
         {:status 200
-         :rows (:data (json/read-str (:body response) :key-fn keyword))}
+         :rows (mapv gate/observation-view
+                     (:data (json/read-str (:body response) :key-fn keyword)))}
         {:status (:status response)}))
     (catch Throwable _
       {:status :transport-failure})))

@@ -35,6 +35,15 @@
                         (:boolValue value) (:doubleValue value))]))
         (:attributes span)))
 
+(deftest live-readback-retains-only-asserted-observation-fields
+  (is (= {:id "child" :traceId "trace" :name gate/child-name
+          :type "GENERATION" :input "in" :output "out"}
+         (gate/observation-view
+          {:id "child" :traceId "trace" :name gate/child-name
+           :type "GENERATION" :input "in" :output "out"
+           :metadata {:authorization "must-not-be-retained"}
+           :environment "private-deployment"}))))
+
 (deftest standalone-profile-uses-real-http-and-preserves-canonical-spans
   (let [requests (atom [])
         local-batches (atom [])

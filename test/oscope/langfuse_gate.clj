@@ -9,6 +9,13 @@
 (def root-name "oscope.langfuse.checkout")
 (def child-name "oscope.langfuse.generate")
 
+(def observation-fields
+  "The only Langfuse observation fields retained by the live gate."
+  [:id :traceId :parentObservationId :name :type :input :output])
+
+(defn observation-view [observation]
+  (select-keys observation observation-fields))
+
 (defn memory-exporter [batches]
   (reify export/SpanExporter
     (export-spans! [_ spans]
