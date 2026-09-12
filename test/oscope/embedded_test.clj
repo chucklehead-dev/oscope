@@ -10,7 +10,15 @@
             [otel.exporter.otlp :as otlp]
             [otel.sdk :as sdk]
             [otel.sdk.export :as export]
-            [otel.sdk.logs :as sdk-logs]))
+            [otel.sdk.logs :as sdk-logs]
+            [otel.trace :as trace]))
+
+(defn- await! [pred]
+  (loop [attempt 0]
+    (cond
+      (pred) true
+      (< attempt 1000) (do (Thread/sleep 2) (recur (inc attempt)))
+      :else false)))
 
 (deftest embedded-runtime-shares-one-writer-and-retires-in-order
   (let [events (atom [])
@@ -146,6 +154,105 @@
     sdk-logs/LogRecordExporter
     (export-logs! [_ _] true)
     (shutdown-log-exporter! [_] true)))
+
+(deftest embedded-lifecycle-retains-background-remote-export-failure
+  (let [entered (promise)
+        release (promise)
+        remote-export-calls (atom 0)
+        remote-flushes (atom 0)
+        remote-shutdowns (atom 0)
+        local-batches (atom [])
+        local-shutdowns (atom 0)
+        local-exporter (test-exporter local-batches local-shutdowns)
+        remote-exporter
+        (reify export/SpanExporter
+          (export-spans! [_ _]
+            (swap! remote-export-calls inc)
+            (deliver entered true)
+            @release
+            false)
+          ;; This matches the stateless OTLP exporter contract. It must not
+          ;; erase a failure from a batch that the worker already dequeued.
+          (flush-exporter! [_]
+            (swap! remote-flushes inc)
+            true)
+          (shutdown-exporter! [_]
+            (swap! remote-shutdowns inc)
+            true))
+        events (atom [])
+        connection (reify java.io.Closeable
+                     (close [_] (swap! events conj :connection-close)))]
+    (with-redefs [host/getenv (constantly nil)
+                  jdbc/connection (constantly connection)
+                  chdb-export/exporter (constantly local-exporter)
+                  otlp/exporter (constantly remote-exporter)
+                  live/open!
+                  (constantly {:close! #(swap! events conj :source-close)})
+                  jdbc.chdb.durable/checkpoint!
+                  (fn [_]
+                    (swap! events conj :checkpoint)
+                    {:status :committed})]
+      (let [lifecycle
+            (embedded/start!
+             {:db-spec ::durable
+              :sdk-options {:service-name "oscope.pipeline-isolation-test"
+                            :metrics? false :logs? false}
+              :span-pipelines
+              {:local {:schedule-delay-ms 1}
+               :remote {:endpoint "http://collector:4318"
+                        :schedule-delay-ms 1
+                        :max-queue-size 2
+                        :max-export-batch-size 1}}})]
+        (try
+          (trace/with-span [_ (sdk/tracer "oscope.pipeline-isolation") "first"])
+          (is (= true (deref entered 2000 ::timeout))
+              "the remote worker owns a dequeued batch before it fails")
+          (dotimes [index 10]
+            (trace/with-span [_ (sdk/tracer "oscope.pipeline-isolation")
+                              (str "local-" index)]))
+          (is (await! #(= 11 (reduce + (map count @local-batches))))
+              "local export completes while remote exporter I/O is blocked")
+          (is (= 8 (get-in (embedded/span-pipeline-stats lifecycle)
+                           [:remote :dropped-count]))
+              "only the two free remote queue slots accept later spans")
+          (is (zero? (get-in (embedded/span-pipeline-stats lifecycle)
+                             [:local :dropped-count])))
+          (deliver release true)
+          (is (= {:sdk {:ok? true}
+                  :span-pipelines
+                  {:local {:ok? true}
+                   :remote {:ok? false :failure :returned-false}}}
+                 (embedded/force-flush! lifecycle))
+              "a true OTLP flush cannot erase its failed background batch")
+          (is (= {:queue-size 0
+                  :attempted-span-count 11
+                  :exported-span-count 11
+                  :failed-span-count 0
+                  :dropped-count 0}
+                 (:local (embedded/span-pipeline-stats lifecycle))))
+          (is (= {:queue-size 0
+                  :attempted-span-count 3
+                  :exported-span-count 0
+                  :failed-span-count 3
+                  :dropped-count 8}
+                 (:remote (embedded/span-pipeline-stats lifecycle))))
+          (let [stopped (embedded/stop! lifecycle)]
+            (is (= {:ok? true} (get-in stopped [:telemetry :sdk])))
+            (is (= {:ok? true}
+                   (get-in stopped [:telemetry :span-pipelines :local])))
+            (is (= {:ok? false :failure :returned-false}
+                   (get-in stopped [:telemetry :span-pipelines :remote])))
+            (is (= :closed (:status stopped))))
+          (is (= 3 @remote-export-calls))
+          (is (= 2 @remote-flushes)
+              "force-flush and shutdown both attempt the exporter callback")
+          (is (= 1 @local-shutdowns))
+          (is (= 1 @remote-shutdowns))
+          (is (= [:source-close :checkpoint :connection-close] @events))
+          (finally
+            (deliver release true)
+            (when (sdk/tracer-provider)
+              (embedded/stop! lifecycle))))))))
 
 (deftest dual-span-pipelines-preserve-one-canonical-span-and-private-credentials
   (let [events (atom [])
