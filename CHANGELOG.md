@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retain scalar, per-destination delivery counts for embedded span pipelines.
+  Background remote export failures remain visible through later flush and
+  shutdown results without blocking healthy local delivery or cleanup.
+
 - Qualify approved Boolean span filtering through the standalone browser path.
   False values remain distinct through OTLP ingestion, schema-bound saved URLs,
   exporter-owned filtering, and typed display; the view now shows the conserved

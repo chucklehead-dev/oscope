@@ -559,8 +559,12 @@ remote collector cannot block local ingestion:
               :schedule-delay-ms 1000}}}))
 
 (embedded/span-pipeline-stats runtime)
-;; => {:local {:queue-size 0 :dropped-count 0}
-;;     :remote {:queue-size 0 :dropped-count 0}}
+;; => {:local {:queue-size 0
+;;             :attempted-span-count 12 :exported-span-count 12
+;;             :failed-span-count 0 :dropped-count 0}
+;;     :remote {:queue-size 0
+;;              :attempted-span-count 12 :exported-span-count 12
+;;              :failed-span-count 0 :dropped-count 0}}
 
 (embedded/force-flush! runtime)
 ;; => {:sdk {:ok? true}
@@ -579,10 +583,13 @@ supplement this closed embedded destination. Inline `:headers`, custom SDK
 `:exporter`, and custom SDK `:span-processors` are rejected before Oscope opens
 JDBC or starts a batch worker.
 
-`force-flush!` and `stop!` report a safe overall SDK marker beside closed
-per-destination outcomes. This keeps a log or metric lifecycle failure distinct
-from a local span-pipeline failure. False returns and throws are visible only as
-`{:ok? false :failure :returned-false}` or `:threw`. Terminal SDK and pipeline
+Delivery counts reported by `span-pipeline-stats` cover each processor's
+lifetime. Consequently, a failed background export remains visible to later
+`force-flush!` and `stop!` calls even when the exporter's own flush callback
+succeeds. `force-flush!` and `stop!` report a safe overall SDK marker beside
+closed per-destination outcomes. This keeps a log or metric lifecycle failure
+distinct from a local span-pipeline failure. False returns and throws are visible
+only as `{:ok? false :failure :returned-false}` or `:threw`. Terminal SDK and pipeline
 shutdown runs exactly once, so a telemetry failure is retained rather than
 pretended retryable; source retirement, the final Durable checkpoint or flush,
 and connection close still run. Only a failed query, persistence, or connection
@@ -933,7 +940,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 
 ## Exact dependency baselines
 
-- `casselc/otel` `ce702e761de49e538dba9815ec7567f21699ab73`
+- `casselc/otel` `87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0`
 - `chucklehead-dev/jolt-otel-clickhouse` `03b75ae1c6cdba107584827e950e2048ab322578`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
