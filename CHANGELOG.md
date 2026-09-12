@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify version 2 typed-attribute file configuration through the real
+  standalone loopback server and persistent local-path restart. Digest-pinned
+  install preserves Boolean, string, and full signed Int64 values plus every
+  typed coverage status; acquire-only startup reuses exact confirmed bindings,
+  rejects stale saved bindings, and performs no manifest read or schema DDL.
 - Add optional embedded dual span export with independently bounded local chDB
   and remote OTLP/HTTP JSON pipelines under one SDK owner. Terminal telemetry
   failures are reported without waiving query or Durable cleanup, logs and
