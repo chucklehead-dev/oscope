@@ -9,6 +9,32 @@
   ([connection plan {:keys [typed-span-descriptors typed-span-fields]}]
   (let [{:keys [selection request]} (query/validate-plan plan)]
     (case (:mode selection)
+      :typed-span-int64-aggregate
+      (let [binding (typed-query/resolve-binding typed-span-fields
+                                                  (:schema-binding request))]
+        (when-not (= typed-query/int64-aggregate-capability
+                     (explorer/supported-typed-span-int64-aggregates))
+          (throw
+           (ex-info
+            "oscope typed Int64 aggregate choices do not match the chDB explorer"
+            {:oscope.query/error true
+             :type ::incompatible-typed-span-int64-aggregate})))
+        (let [base-request
+              (-> request (dissoc :schema-binding)
+                  (assoc :signal :spans
+                         :attribute-key (:attribute-key binding)))
+              coverage
+              (explorer/typed-span-coverage
+               connection typed-span-descriptors
+               (-> base-request
+                   (select-keys [:signal :attribute-key :start-unix-nano
+                                 :end-unix-nano])
+                   (assoc :schema-binding binding)))
+              aggregates
+              (explorer/typed-span-int64-aggregates
+               connection typed-span-descriptors base-request)]
+          (assoc coverage :aggregates aggregates)))
+
       :typed-span-filter
       (let [binding (typed-query/resolve-binding typed-span-fields
                                                   (:schema-binding request))]

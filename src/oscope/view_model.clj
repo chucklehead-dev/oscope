@@ -506,18 +506,107 @@
                :rows rows}
        :empty-message (when (empty? rows) "No typed spans matched this bounded query window.")})))
 
+(def ^:private typed-int64-aggregate-base-row-keys
+  #{:attribute-key :field-id :manifest-version :signal :source :typed-status})
+
+(defn- typed-span-int64-aggregate-screen [plan result typed-span-fields]
+  (let [plan (query/validate-plan plan)
+        {:keys [schema-binding group-by aggregates limit] :as selection}
+        (:selection plan)
+        binding (typed-query/resolve-binding typed-span-fields schema-binding)
+        expected {:attribute-key (:attribute-key binding)
+                  :attribute-type :int64
+                  :field-id (:field-id binding)
+                  :manifest-version (:manifest-version binding)
+                  :signal :spans}
+        coverage (:coverage result)
+        counts (when (map? coverage) (mapv coverage coverage-order))
+        rows (:aggregates result)]
+    (when-not (and (= :int64 (:attribute-type binding))
+                   (map? result)
+                   (= #{:attribute-key :attribute-type :field-id
+                        :manifest-version :signal :coverage :aggregates}
+                      (set (keys result)))
+                   (= expected (select-keys result (keys expected)))
+                   (map? coverage) (= coverage-keys (set (keys coverage)))
+                   (every? #(and (integer? %) (not (neg? %))) counts)
+                   (integer? (:total coverage)) (not (neg? (:total coverage)))
+                   (= (:total coverage) (reduce + 0 counts))
+                   (vector? rows) (<= (count rows) limit))
+      (fail! ::invalid-typed-aggregate-result
+             "typed Int64 aggregate result does not match its schema binding" {}))
+    (let [expected-row-keys
+          (into typed-int64-aggregate-base-row-keys (concat group-by aggregates))
+          rows
+          (mapv
+           (fn [row]
+             (when-not
+              (and (map? row) (= expected-row-keys (set (keys row)))
+                   (= (:attribute-key binding) (:attribute-key row))
+                   (= (:field-id binding) (:field-id row))
+                   (= (:manifest-version binding) (:manifest-version row))
+                   (= :spans (:signal row)) (= :typed (:source row))
+                   (= 3 (:typed-status row))
+                   (every? #(valid-bounded-text? (get row %)) group-by)
+                   (every?
+                    (fn [aggregate]
+                      (let [value (get row aggregate)]
+                        (case aggregate
+                          :count (and (integer? value) (not (neg? value)))
+                          (:min :max) (typed-query/int64? value)
+                          :avg (finite-number? value)
+                          false)))
+                    aggregates))
+               (fail! ::invalid-typed-aggregate-row
+                      "typed Int64 aggregate row does not match its query" {}))
+             row)
+           rows)
+          visible (typed-query/visible-catalog typed-span-fields binding)]
+      {:oscope.view/version 1
+       :view :telemetry-typed-span-int64-aggregate
+       :status (if (seq rows) :ready :empty)
+       :title (str "Typed Int64 summary · " (:attribute-key binding))
+       :selection selection :query-plan plan :chart nil
+       :controls {:typed-span-fields (:fields visible)
+                  :typed-span-field-total (:total visible)
+                  :typed-span-fields-truncated? (:truncated? visible)
+                  :windows (keys query/windows)
+                  :limit {:value limit :minimum 1 :maximum query/max-result-limit}}
+       :coverage (conj
+                  (mapv (fn [status]
+                          {:status status :count (get coverage status)})
+                        coverage-order)
+                  {:status :total :count (:total coverage)})
+       :freshness-notice
+       "Coverage and aggregates are evaluated by two bounded live queries; concurrent ingestion can advance one between them. Only valid typed rows contribute to count, min, max, and avg."
+       :table {:columns
+               (vec (concat
+                     (map (fn [group] {:key group :label (title-case group)})
+                          group-by)
+                     (map (fn [aggregate]
+                            {:key aggregate :label (str/upper-case (name aggregate))})
+                          aggregates)))
+               :rows rows}
+       :empty-message
+       (when (empty? rows)
+         "No valid typed Int64 values matched this bounded range and window.")})))
+
 (defn screen
   ([plan rows] (screen plan rows {}))
   ([plan rows {:keys [typed-span-fields]}]
    (let [mode (get-in plan [:selection :mode])
          result (cond
+                  (= :typed-span-int64-aggregate mode)
+                  (typed-span-int64-aggregate-screen plan rows typed-span-fields)
                   (= :typed-span-filter mode)
                   (typed-span-filter-screen plan rows typed-span-fields)
                   (contains? #{:metric-series :counter-series
                                :cumulative-histogram-series} mode)
                   (metric-series-screen plan rows)
                   :else (distribution-screen plan rows))]
-     (if (and (seq typed-span-fields) (not= :typed-span-filter mode))
+     (if (and (seq typed-span-fields)
+              (not (contains? #{:typed-span-filter
+                                :typed-span-int64-aggregate} mode)))
        (let [{:keys [fields total truncated?]}
              (typed-query/visible-catalog typed-span-fields)]
          (-> result

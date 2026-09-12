@@ -99,8 +99,10 @@
     :aggregates :window :limit})
 (def ^:private typed-span-filter-selection-keys
   #{:mode :schema-binding :operator :value :window :limit})
+(def ^:private typed-span-int64-aggregate-selection-keys
+  #{:mode :schema-binding :predicate :group-by :aggregates :window :limit})
 
-(declare fail! quantile-aggregate?)
+(declare fail! quantile-aggregate? valid-closed-vector?)
 
 (defn normalize-typed-span-filter-selection [selection]
   (when-not (map? selection)
@@ -128,6 +130,55 @@
       (fail! ::invalid-limit "oscope result limit is outside the explorer cap" {:limit limit}))
     {:mode :typed-span-filter :schema-binding schema-binding :operator operator
      :value value :window window :limit limit}))
+
+(defn normalize-typed-span-int64-aggregate-selection [selection]
+  (when-not (map? selection)
+    (fail! ::invalid-selection
+           "oscope typed Int64 aggregate selection must be a map" {}))
+  (when-let [unknown
+             (seq (remove typed-span-int64-aggregate-selection-keys
+                          (keys selection)))]
+    (fail! ::unsupported-selection-key
+           "oscope typed Int64 aggregate contains unsupported keys"
+           {:keys (error/sorted-keys unknown)}))
+  (let [{:keys [schema-binding predicate group-by aggregates window limit]}
+        selection
+        {:keys [predicate-keys] :as capability}
+        typed-query/int64-aggregate-capability]
+    (when-not (and (typed-query/binding? schema-binding)
+                   (= :int64 (:attribute-type schema-binding)))
+      (fail! ::invalid-schema-binding
+             "typed Int64 aggregate requires an exact Int64 schema binding" {}))
+    (when-not (and (map? predicate) (seq predicate)
+                   (every? (set predicate-keys) (keys predicate))
+                   (every? typed-query/int64? (vals predicate)))
+      (fail! ::invalid-typed-predicate
+             "typed Int64 aggregate requires bounded gte or lt predicates" {}))
+    (when (and (contains? predicate :gte) (contains? predicate :lt)
+               (not (< (:gte predicate) (:lt predicate))))
+      (fail! ::invalid-typed-predicate
+             "typed Int64 aggregate range must be non-empty and half-open" {}))
+    (when-not (valid-closed-vector? group-by (:group-by capability) 1)
+      (fail! ::invalid-group-by
+             "typed Int64 aggregate supports optional service grouping" {}))
+    (when-not (and (valid-closed-vector? aggregates
+                                         (:aggregates capability)
+                                         (count (:aggregates capability)))
+                   (seq aggregates))
+      (fail! ::invalid-aggregates
+             "typed Int64 aggregate must select one or more supported aggregates" {}))
+    (when-not (contains? windows window)
+      (fail! ::unsupported-window "oscope query window is not supported"
+             {:window window}))
+    (when-not (and (integer? limit) (<= 1 limit max-result-limit))
+      (fail! ::invalid-limit "oscope result limit is outside the explorer cap"
+             {:limit limit}))
+    {:mode :typed-span-int64-aggregate
+     :schema-binding schema-binding
+     :predicate (select-keys predicate predicate-keys)
+     :group-by (vec (filter (set group-by) (:group-by capability)))
+     :aggregates (vec (filter (set aggregates) (:aggregates capability)))
+     :window window :limit limit}))
 
 (defn- fail! [type message data]
   (throw (ex-info message (assoc data :oscope.query/error true :type type))))
@@ -375,6 +426,8 @@
 (defn normalize-selection [selection]
   (case (:mode selection)
     :typed-span-filter (normalize-typed-span-filter-selection selection)
+    :typed-span-int64-aggregate
+    (normalize-typed-span-int64-aggregate-selection selection)
     :metric-series (normalize-metric-series-selection selection)
     :counter-series (normalize-counter-series-selection selection)
     :cumulative-histogram-series
@@ -390,6 +443,16 @@
         (normalize-selection selection)
         start (max 0 (- end-unix-nano (window-nanos window)))]
     (case (:mode selected)
+      :typed-span-int64-aggregate
+      {:oscope.query/version 1
+       :selection selected
+       :request {:schema-binding (:schema-binding selected)
+                 :predicate (:predicate selected)
+                 :group-by (:group-by selected)
+                 :aggregates (:aggregates selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
       :typed-span-filter
       {:oscope.query/version 1
        :selection selected

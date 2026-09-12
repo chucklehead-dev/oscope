@@ -152,6 +152,21 @@
   (into {} (map (juxt :status :count))
         (:coverage (screen source binding value))))
 
+(defn- aggregate-selection [binding]
+  {:mode :typed-span-int64-aggregate :schema-binding binding
+   :predicate {:gte -9223372036854775808}
+   :group-by [] :aggregates [:count :min :max :avg]
+   :window :1h :limit 10})
+
+(defn- aggregate-screen [source binding]
+  ((:load-command source) [:typed-aggregate (:field-id binding)]
+   (aggregate-selection binding)))
+
+(defn- aggregate-result [source binding]
+  (let [screen (aggregate-screen source binding)]
+    {:coverage (into {} (map (juxt :status :count)) (:coverage screen))
+     :rows (get-in screen [:table :rows])}))
+
 (defn- catalog-by-key [catalog]
   (into {} (map (juxt :attribute-key identity)) catalog))
 
@@ -245,7 +260,10 @@
               results (checked-results lifecycle bindings)
               exact-coverage (coverage (:source lifecycle)
                                        (get bindings "typed.exact")
-                                       (get values "typed.exact"))]
+                                       (get values "typed.exact"))
+              exact-aggregate
+              (aggregate-result (:source lifecycle)
+                                (get bindings "typed.exact"))]
           (is (some? descriptors))
           (is (identical? descriptors
                           (:typed-span-descriptors (:source lifecycle))))
@@ -255,6 +273,26 @@
                   :historical-untyped-fallback 1
                   :historical-untyped-unavailable 1}
                  exact-coverage))
+          (is (= {:valid 1 :present-empty 0 :absent 1 :invalid 1
+                  :historical-untyped-fallback 1
+                  :historical-untyped-unavailable 1 :total 5}
+                 (:coverage exact-aggregate)))
+          (is (= 1 (count (:rows exact-aggregate))))
+          (is (= {:count 1 :min (get values "typed.exact")
+                  :max (get values "typed.exact")}
+                 (select-keys (first (:rows exact-aggregate))
+                              [:count :min :max])))
+          (is (= (double (get values "typed.exact"))
+                 (:avg (first (:rows exact-aggregate)))))
+          (let [response
+                (request!
+                 (:port lifecycle)
+                 (str "/oscope"
+                      (web/selection-query-string
+                       (aggregate-selection (get bindings "typed.exact")))) nil)]
+            (is (= 200 (:status response)))
+            (is (.contains (String. (:body response) "UTF-8")
+                           "Typed Int64 summary")))
           (is (= 1 (:present-empty
                     (coverage (:source lifecycle)
                               (get bindings "typed.note") ""))))
@@ -286,6 +324,9 @@
                      (coverage (:source restarted)
                                (get bindings "typed.exact")
                                (get values "typed.exact"))))
+              (is (= exact-aggregate
+                     (aggregate-result (:source restarted)
+                                       (get bindings "typed.exact"))))
               (is (= 1 (:present-empty
                         (coverage (:source restarted)
                                   (get bindings "typed.note") ""))))
