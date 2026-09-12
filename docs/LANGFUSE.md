@@ -37,7 +37,8 @@ a secret-injected environment variable:
 ```
 
 `CHECKOUT_LANGFUSE_OTLP_HEADERS` must contain ordinary comma-separated OTLP
-headers. For Langfuse v4 the required shape is:
+headers. The public Langfuse v4 compatibility and OpenTelemetry documentation,
+checked on 2026-09-12, specifies this shape:
 
 ```text
 Authorization=Basic REDACTED,x-langfuse-ingestion-version=4
@@ -47,6 +48,12 @@ Build the Basic value from the Langfuse public and secret keys in the deployment
 secret manager. Do not put it in an EDN file, command line, checked-in script, or
 URL. Oscope resolves the variable only inside the private exporter; lifecycle
 results contain neither its name nor its value.
+
+See Langfuse's [version compatibility](https://langfuse.com/docs/compatibility)
+and [OpenTelemetry integration](https://langfuse.com/integrations/native/opentelemetry)
+pages for the current hosted and self-hosted contract. Those public documents
+support the profile used here; they are not evidence that this repository's
+opt-in gate has passed against a particular project.
 
 This is still normal OpenTelemetry instrumentation. Langfuse-specific span
 fields such as `langfuse.observation.type`, input, output, or model name are
@@ -77,9 +84,9 @@ test/langfuse_interop.sh
 ```
 
 Do not paste real credentials into shell history; the values above are only
-placeholders. The same gate works with a self-hosted v4 base URL. Ingestion is
-asynchronous, so it polls the Observations API for up to 90 seconds instead of
-treating an ingestion HTTP 2xx response as proof of semantic storage.
+placeholders. The same gate is designed for a self-hosted v4 base URL.
+Ingestion is asynchronous, so it polls the Observations API for up to 90 seconds
+instead of treating an ingestion HTTP 2xx response as proof of semantic storage.
 
 The gate prints only a pass marker and the non-secret trace ID. Failures are
 reduced to a fixed message; endpoint URLs, authorization headers, response
