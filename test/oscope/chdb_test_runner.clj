@@ -3,11 +3,13 @@
             [oscope.chdb-integration-test]
             [oscope.http-export-integration-test]
             [oscope.server-integration-test]
-            [oscope.typed-schema-chdb-integration-test]))
+            [oscope.typed-schema-chdb-integration-test]
+            [oscope.typed-standalone-restart-integration-test]))
 (defn -main [& _]
   (let [{:keys [fail error]}
         (test/run-tests 'oscope.chdb-integration-test
                         'oscope.http-export-integration-test
                         'oscope.server-integration-test
-                        'oscope.typed-schema-chdb-integration-test)]
+                        'oscope.typed-schema-chdb-integration-test
+                        'oscope.typed-standalone-restart-integration-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))
