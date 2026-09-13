@@ -6,6 +6,12 @@
   source and runtime-version provenance. The already-qualified chDB and aspect
   pack revisions remain unchanged.
 
+- Qualify typed standalone ingestion by exporting one canonical span directly
+  and encoding that same span through the real OTLP loopback socket. The
+  persisted ClickStack semantic and promoted columns must match for Boolean
+  false, empty string, zero, exact large Int64, and signed Int64 boundaries;
+  the existing absent, invalid, historical, and read-only restart cases remain.
+
 - Pin `jolt-otel-clickhouse` to its validate-once typed descriptor capability,
   preserving connection identity checks while removing repeated immutable
   registry and catalog validation from each typed query access.
