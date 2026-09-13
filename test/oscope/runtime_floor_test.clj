@@ -19,7 +19,8 @@
        (str/includes? workflow (str "--version " runtime-floor))
        (str/includes? workflow (str "\"jolt v" runtime-floor "\""))
        (not (str/includes? workflow "/jolt/v0.8.3/install"))
-       (not (str/includes? workflow "--version 0.8.3"))))
+       (not (str/includes? workflow "--version 0.8.3"))
+       (not (str/includes? workflow "\"jolt v0.8.3\""))))
 
 (defn- qualification-at-floor? [deps workflows]
   (and (= runtime-floor (:jolt/min-version deps))

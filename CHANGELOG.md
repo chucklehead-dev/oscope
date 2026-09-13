@@ -99,7 +99,7 @@
   and canonical crypto stack while retaining the existing opt-in schema
   boundary.
 - Bound the standalone HTTP dispatcher to its configured workers and waiting
-  capacity despite Jolt 0.8.3's advisory ThreadPoolExecutor queue model; excess
+  capacity despite Jolt 0.8.6's advisory ThreadPoolExecutor queue model; excess
   connections are closed before handler execution, and ordered shutdown drains
   admitted work before terminating the owned pool.
 - Add the first versioned file-backed configuration slice for the standalone
