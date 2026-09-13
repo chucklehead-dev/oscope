@@ -11,7 +11,11 @@
             [oscope.server-main :as server-main]))
 
 (def ^:private failure-details
-  {::control/lease-held
+  {:otel.exporter.chdb.schema/migration-failed
+   {:category :schema-migration
+    :message "the telemetry schema migration could not be applied"
+    :action "preserve the store and inspect internal migration diagnostics before retrying"}
+   ::control/lease-held
    {:category :lease-held
     :message "another writer still holds the Durable lease"
     :action "wait for lease expiry, or force takeover only after proving the old process is gone"}
