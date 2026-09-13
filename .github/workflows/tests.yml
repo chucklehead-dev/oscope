@@ -77,6 +77,8 @@ jobs:
         run: test "$(jolt --version)" = "jolt v0.8.6"
       - name: Install checksum-pinned chDB asset
         run: jolt -Srepro -M -m jdbc.chdb.install
+      - name: Qualify typed direct and loopback socket ingestion
+        run: jolt -Srepro -M:test-typed-socket
       - name: Install browser test dependencies
         run: npm ci
       - name: Install Chromium and system dependencies

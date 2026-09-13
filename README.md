@@ -958,7 +958,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `casselc/otel` `87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0`
-- `chucklehead-dev/jolt-otel-clickhouse` `05d50af479bd60588cb30d282598a505dbafaafe`
+- `chucklehead-dev/jolt-otel-clickhouse` `812957b85ea3717b28ad0e7a101a483f8a5f6deb`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
 - `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`
@@ -969,6 +969,13 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
 - `jolt-lang/glimmer-gtk` `ce79d45698d36ccf496397bb85974e3cce6abfd8`
 - `casselc/data.json` `932444043c0c06f9e295ba4963419b2481e9dd07`
+
+The hosted headless gate inspects the resolved classpath and rejects the prior
+ClickHouse exporter coordinate instead of trusting this list or `deps.edn`
+alone. The browser lane separately runs the typed standalone integration
+through both direct export and a real loopback OTLP socket; it needs no
+credentials or external service. Durable CI retains the embedded local/remote
+pipeline isolation gate.
 
 The pinned ClickHouse exporter owns the required Jolt DB bootstrap at its
 public explorer entrypoint. A clean oscope consumer therefore needs no hidden
