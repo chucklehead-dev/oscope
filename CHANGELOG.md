@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin woven Durable CI to the merged Jolt 0.8.6 aspect compiler, with exact
+  source and runtime-version provenance. The already-qualified chDB and aspect
+  pack revisions remain unchanged.
+
 - Pin `jolt-otel-clickhouse` to its validate-once typed descriptor capability,
   preserving connection identity checks while removing repeated immutable
   registry and catalog validation from each typed query access.

@@ -960,6 +960,8 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
 - `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`
+- `casselc/jolt` `f00bc93bdd8274b14087b74272aadeffb60e0447`
+  (woven Durable compiler, `jolt v0.8.6-5-gf00bc93b`)
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`
 - `casselc/glitter` `f4e3eb83015566e4cadaedd7f5e8ad80dc57404f`
 - `casselc/glimmer` `6dab5597dc0d912793fe175d0d3cbb9e75f11426`
