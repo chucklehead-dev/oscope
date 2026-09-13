@@ -9,10 +9,12 @@
             [oscope.server :as server]
             [oscope.typed-schema-config :as typed-schema-config]
             [oscope.ui.web :as web]
+            [otel.otlp.encode :as otlp-encode]
             [otel.exporter.chdb.attribute-manifest :as manifest]
             [otel.exporter.chdb.attribute-projection :as projection]
             [otel.exporter.chdb.attribute-registry-installer :as installer]
             [otel.exporter.chdb.schema :as schema]
+            [otel.sdk.export :as export]
             [teensyp.client :as client]))
 
 (def ^:private selector
@@ -22,6 +24,7 @@
 (def ^:private values
   {"typed.ready" false
    "typed.note" ""
+   "typed.zero" 0
    "typed.exact" 9007199254740993
    "typed.minimum" -9223372036854775808
    "typed.maximum" 9223372036854775807})
@@ -123,6 +126,21 @@
     (span now 5 "80000000000000000000000000000000" "8000000000000000"
           "typed.absent" [])]))
 
+(defn- equivalence-span [now]
+  {:name "typed.direct-socket-equivalence"
+   :kind :internal
+   :start-time-unix-nano (- now 7000000)
+   :end-time-unix-nano (- now 6000000)
+   :span-context {:trace-id "90000000000000000000000000000000"
+                  :span-id "9000000000000000"
+                  :trace-flags 1}
+   :resource {:attributes {"service.name" "oscope-typed-restart"}}
+   :scope {:name "oscope.typed-restart" :version "1" :attributes {}}
+   :attributes values
+   :events []
+   :links []
+   :status {:code :unset}})
+
 (defn- approved-manifest []
   (manifest/compile-manifest
    (assoc selector :fragments
@@ -134,7 +152,8 @@
                     {:signal :spans :table "otel_traces"
                      :location :span-attributes :key key :type type})
                   [["typed.ready" :boolean] ["typed.note" :string]
-                   ["typed.exact" :int64] ["typed.minimum" :int64]
+                   ["typed.zero" :int64] ["typed.exact" :int64]
+                   ["typed.minimum" :int64]
                    ["typed.maximum" :int64]])}])))
 
 (defn- selection [binding value]
@@ -180,6 +199,19 @@
           [id key type (:version identity)])
         (projection/confirmed-span-fields
          (:typed-span-descriptors lifecycle) (:connection lifecycle)))))
+
+(defn- semantic-rows-for-trace [lifecycle trace-id]
+  (let [typed-columns
+        (mapcat (fn [{:keys [physical]}]
+                  [(:value-column physical) (:status-column physical)])
+                (projection/confirmed-span-fields
+                 (:typed-span-descriptors lifecycle) (:connection lifecycle)))
+        columns (concat schema/clickstack-trace-insert-columns typed-columns)
+        projection (str/join ", " (map #(str "`" % "`") columns))]
+    (jdbc/fetch (:connection lifecycle)
+                [(str "SELECT " projection
+                      " FROM otel_traces WHERE TraceId = ?")
+                 trace-id])))
 
 (defn- checked-results [lifecycle bindings]
   (into {}
@@ -341,6 +373,26 @@
                 (is (= 409 (:status response)))
                 (is (.contains (String. (:body response) "UTF-8")
                                "Typed schema changed")))
+              (let [source (equivalence-span now)
+                    trace-id (get-in source [:span-context :trace-id])]
+                (is (export/export-spans! (:exporter restarted) [source]))
+                (let [direct-rows
+                      (semantic-rows-for-trace restarted trace-id)]
+                  (is (= 1 (count direct-rows))
+                      (str "the direct control must persist exactly one "
+                           "semantic row before socket ingestion"))
+                  (is (= 200
+                         (:status
+                          (post! (:port restarted)
+                                 (otlp-encode/traces-request [source])))))
+                  (let [socket-rows
+                        (semantic-rows-for-trace restarted trace-id)]
+                    (is (= 2 (count socket-rows))
+                        (str "direct export and real socket ingestion must "
+                             "each persist one semantic row"))
+                    (is (every? #(= (first direct-rows) %) socket-rows)
+                        (str "direct export and real socket ingestion must "
+                             "persist the same semantic columns")))))
               (stop-twice! restarted)))))
       (finally
         (doseq [lifecycle [@acquire* @install* @historical*]]
