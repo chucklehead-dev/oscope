@@ -13,7 +13,7 @@
   {:otel "87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0"
    :jolt-http "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"
    :jolt-chdb "dbc2db22130c7e783739c79bc24691dcbba21906"
-   :jolt-otel-clickhouse "03b75ae1c6cdba107584827e950e2048ab322578"
+   :jolt-otel-clickhouse "05d50af479bd60588cb30d282598a505dbafaafe"
    :jolt-otel-viewer "5723a7c28c3bb3ae7cb27f9856b90463e77df523"
    :malli "0.20.1"
    :data-json "932444043c0c06f9e295ba4963419b2481e9dd07"})

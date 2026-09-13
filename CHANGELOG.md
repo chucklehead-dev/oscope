@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin `jolt-otel-clickhouse` to its validate-once typed descriptor capability,
+  preserving connection identity checks while removing repeated immutable
+  registry and catalog validation from each typed query access.
+
 - Counterbalance typed query/storage comparisons across optional fresh-process
   repetitions. Reports now retain each repetition and actual mode order, keep a
   one-process run explicitly unbalanced, and reject missing, duplicate, biased,
