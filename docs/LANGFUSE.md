@@ -115,6 +115,13 @@ file. Do not create or store a combined-header secret:
 
 File and environment modes are mutually exclusive, and an ambient combined
 header is rejected. The same gate is designed for a self-hosted v4 base URL.
+The repository's `langfuse-interop` workflow is manual-only and uses the
+protected `langfuse-interop` GitHub environment. Configure its
+`LANGFUSE_BASE_URL` environment variable and `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY` environment secrets, then dispatch the workflow when a
+real interoperability qualification is wanted. Ordinary push and pull-request
+CI uses dummy credentials only and never calls Langfuse.
+
 Ingestion is asynchronous, so it polls the Observations API for up to 90 seconds
 instead of treating an ingestion HTTP 2xx response as proof of semantic storage.
 

@@ -1,0 +1,50 @@
+name: langfuse-interop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: langfuse-interop
+    env:
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.6
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout canonical chDB native qualification
+        uses: actions/checkout@v4
+        with:
+          repository: chucklehead-dev/jolt-chdb
+          ref: dbc2db22130c7e783739c79bc24691dcbba21906
+          path: .qualification/jolt-chdb
+          persist-credentials: false
+      - name: Install Jolt v0.8.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/jolt-bin"
+          curl -fsSL \
+            https://raw.githubusercontent.com/jolt-lang/jolt/f3041a0e32ba0db1b92bd69b8ecb7b40f8b2e115/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.6 \
+              --checksum 3dab6373f2028efaf7a0e41231fc316de866e55454023c037e9d5981be6358c2
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Assert Jolt version
+        shell: bash
+        run: test "$(jolt --version)" = "jolt v0.8.6"
+      - name: Qualify pinned chDB native ABI and asset
+        working-directory: .qualification/jolt-chdb
+        run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb"
+      - name: Qualify Oscope and Langfuse interoperability
+        env:
+          JOLT_CHDB_LIB: ${{ runner.temp }}/chdb/native/libchdb.so
+          OSCOPE_LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          OSCOPE_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          OSCOPE_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: test/langfuse_interop_env.sh

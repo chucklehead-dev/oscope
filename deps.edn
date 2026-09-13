@@ -180,6 +180,7 @@
          test-typed-socket "jolt -M:test-typed-socket"
          test-langfuse "test/langfuse_interop.sh"
          test-langfuse-env "test/langfuse_interop_env_test.sh"
+         test-langfuse-workflow "test/langfuse_workflow_test.sh"
          test-readers "jolt -M:test-readers"
          test-durable "jolt -M:test-durable"
          test-durable-dev "jolt -M:test-durable-dev"
