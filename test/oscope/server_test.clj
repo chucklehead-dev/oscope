@@ -160,6 +160,12 @@
      (export-logs! [_ _] true)
      (shutdown-log-exporter! [_] (retire! :logs) true))))
 
+(defn- assert-public-result-safe! [result canary]
+  (let [values (tree-seq coll? seq result)]
+    (is (not-any? #(instance? Throwable %) values))
+    (is (not-any? #(and (string? %) (str/includes? % canary)) values))
+    (is (not (str/includes? (pr-str result) canary)))))
+
 (deftest standalone-shares-one-connection-and-retires-in-order
   (let [events (atom [])
         conn (reify java.io.Closeable
@@ -502,6 +508,36 @@
         (is (= [:ingress-stop-attempt :ingress-stop-attempt :oscope
                 :spans :logs :metrics :connection]
                @events))))))
+
+(deftest shutdown-results-replace-secret-bearing-throwables
+  (let [canary "standalone-lifecycle-secret"
+        attempts (atom 0)
+        conn (reify java.io.Closeable (close [_] nil))
+        exporter (fake-exporter (atom []))
+        source {:close! (fn [] nil)}]
+    (with-redefs [jdbc/connection (constantly conn)
+                  chdb-export/exporter (constantly exporter)
+                  live/open! (constantly source)
+                  otlp/handler (fn [_] (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _] {:port 9199})
+                  http/stop-server
+                  (fn [_]
+                    (when (= 1 (swap! attempts inc))
+                      (throw (ex-info (str canary "-message")
+                                      {:path (str "/private/" canary)
+                                       :headers {"authorization" canary}
+                                       :attribute-value canary}
+                                      (Exception. (str canary "-cause"))))))]
+      (let [lifecycle (server/start! {:port 0})
+            failed (server/stop! lifecycle)]
+        (is (= {:status :closing
+                :phase :open
+                :errors [{:type :oscope.error/lifecycle-operation-threw
+                          :operation :stop-ingress}]}
+               failed))
+        (assert-public-result-safe! failed canary)
+        (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))))))
 
 (deftest terminal-owner-drives-retryable-shutdown-or-fails-visibly
   (let [attempts (atom 0)]

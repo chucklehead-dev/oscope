@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace thrown standalone and embedded shutdown errors with a closed public
+  lifecycle descriptor. Retry phase and operation remain visible, while the
+  Throwable, message, cause, ex-data, stack, headers, paths, credentials, and
+  telemetry attribute values cannot escape through lifecycle results.
+
 - Qualify typed standalone ingestion by exporting one canonical span directly
   and encoding that same span through the real OTLP loopback socket. The
   persisted ClickStack semantic and promoted columns must match for Boolean
