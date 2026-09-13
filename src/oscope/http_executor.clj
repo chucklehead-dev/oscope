@@ -9,7 +9,7 @@
   "Create a fixed handler pool with `workers` running slots and at most
   `queue-capacity` additional admitted tasks.
 
-  Jolt 0.8.3 models ThreadPoolExecutor's ArrayBlockingQueue constructor, but
+  Jolt 0.8.6 models ThreadPoolExecutor's ArrayBlockingQueue constructor, but
   its executor still uses an unbounded internal queue. The Executor wrapper is
   therefore the portable rejection boundary: one token covers each running or
   waiting task, and a failed `offer` rejects synchronously before the delegate

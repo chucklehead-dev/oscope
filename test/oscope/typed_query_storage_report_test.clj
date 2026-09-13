@@ -41,7 +41,7 @@
   {:source-sha "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
    :source-sha-source :clean-worktree-runner :runtime :jolt
    :source-worktree-state :clean
-   :jolt-version "v0.8.3" :clojure-version "1.11.0-jolt"
+   :jolt-version "v0.8.6" :clojure-version "1.11.0-jolt"
    :scheme-version "10.4.1" :machine-type "ta6le" :os-name "Linux"
    :os-arch "amd64" :native-chdb-version "26.7.0"
    :declared-chdb-version "26.7.0" :dependency-pins report/dependency-pins

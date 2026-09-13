@@ -1,6 +1,6 @@
 {:paths ["src"]
 
- :jolt/min-version "0.8.3"
+ :jolt/min-version "0.8.6"
 
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"

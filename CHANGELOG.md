@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Raise the source, standalone, browser, and hosted runtime floor to Jolt
+  0.8.6, with version-keyed caches and a causal regression control. The
+  existing Durable library and aspect/compiler pins remain fixed until their
+  separate protocol/model qualification stack is complete.
+
 - Pin `jolt-otel-clickhouse` to its validate-once typed descriptor capability,
   preserving connection identity checks while removing repeated immutable
   registry and catalog validation from each typed query access.

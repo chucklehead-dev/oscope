@@ -30,15 +30,15 @@ jobs:
           test -n "$ROLE_ARN"
           test -n "$BUCKET"
           test -n "$REGION"
-      - name: Install Jolt v0.8.3
+      - name: Install Jolt v0.8.6
         run: |
           set -euo pipefail
           install_dir="$RUNNER_TEMP/jolt-bin"
-          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.3/install \
-            | bash -s -- --dir "$install_dir" --version 0.8.3
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.6/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.6
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
-        run: test "$(jolt --version)" = "jolt v0.8.3"
+        run: test "$(jolt --version)" = "jolt v0.8.6"
       - name: Qualify pinned Durable native ABI and asset
         working-directory: .qualification/jolt-chdb
         run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb-durable"

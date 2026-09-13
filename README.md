@@ -126,11 +126,11 @@ response. OTLP, Plotje, and export-specific admission limits still apply after
 this connection-level bound.
 
 Oscope enforces this limit with a small admission wrapper around its owned
-`ThreadPoolExecutor`. Jolt 0.8.3 accepts an `ArrayBlockingQueue` in that
-executor's constructor, but treats its capacity as advisory and otherwise
-queues tasks without a bound. The wrapper rejects before submission, while the
-ordinary shutdown path first stops jolt-http ingress and drains admitted work,
-then terminates the owned pool.
+`ThreadPoolExecutor`. At Oscope's Jolt 0.8.6 runtime floor, the modeled
+`ArrayBlockingQueue` constructor still treats its capacity as advisory and
+otherwise queues tasks without a bound. The wrapper rejects before submission,
+while the ordinary shutdown path first stops jolt-http ingress and drains
+admitted work, then terminates the owned pool.
 
 ### Storage modes and recovery guarantees
 
@@ -940,15 +940,17 @@ binary reads the same ABI descriptor used during compilation. The woven lane
 uses a release-mode build and the same real loopback transport as the unwoven
 integration.
 
-oscope now requires Jolt v0.8.3 or newer, matching the pinned Durable control
-plane. Older app builders may incorrectly inherit `jolt.ffi` from the compiler
-image and produce a binary with an unbound `jolt.ffi/errno`. The standalone
-smoke builds and starts the real receiver long enough to reject that artifact
-class:
+Oscope requires Jolt v0.8.6 or newer for source execution and ordinary
+standalone builds. The separately pinned aspect-capable compiler and Durable
+libraries remain at their currently qualified revisions until the next
+protocol/model qualification stack advances them together. Older app builders
+may incorrectly inherit `jolt.ffi` from the compiler image and produce a binary
+with an unbound `jolt.ffi/errno`. The standalone smoke builds and starts the
+real receiver long enough to reject that artifact class:
 
 ```sh
 env JOLT_CHDB_LIB=/path/to/libchdb.so \
-    JOLT_BIN=/path/to/jolt-v0.8.3-or-newer \
+    JOLT_BIN=/path/to/jolt-v0.8.6-or-newer \
     JOLT_TOOLCHAIN=/path/to/jolt-with-chez-10.4.1 \
     test/standalone_build_smoke.sh
 ```
