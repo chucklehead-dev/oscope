@@ -3,6 +3,7 @@
   (:require [jdbc.chdb.durable :as durable]
             [jdbc.core :as jdbc]
             [jolt.host :as host]
+            [oscope.error :as error]
             [oscope.live :as live]
             [oscope.typed-schema :as typed-schema]
             [otel.exporter.chdb :as chdb-export]
@@ -150,14 +151,22 @@
                      :status (:status result)})))
   true)
 
-(defn- stop-result [state error]
+(defn- lifecycle-operation [phase checkpoint-on-close?]
+  (case phase
+    :open :shutdown-sdk
+    :retiring-oscope :close-source
+    :persisting (if checkpoint-on-close? :checkpoint :flush)
+    :closing-connection :close-connection
+    :lifecycle))
+
+(defn- stop-result [state failure]
   (cond-> {:status (if (= :closed (:phase state)) :closed :closing)
            :phase (:phase state)}
     (:span-pipeline-shutdown state)
     (assoc :telemetry
            {:sdk (:sdk-shutdown state)
             :span-pipelines (:span-pipeline-shutdown state)})
-    error (assoc :errors [error])))
+    failure (assoc :errors [failure])))
 
 (defn- sdk-operation! [operation sdk-handle pipeline-results]
   (try
@@ -216,7 +225,12 @@
           (swap! state assoc :connection-closed? true :phase :closed))
         (stop-result @state nil)
         (catch Throwable error
-          (stop-result @state error))))))
+          (let [current @state]
+            (stop-result current
+                         (error/lifecycle-failure
+                          (lifecycle-operation (:phase current)
+                                               checkpoint-on-close?)
+                          error))))))))
 
 (defn start!
   "Start an in-process OTel SDK, Durable chDB writer, and oscope query source.
