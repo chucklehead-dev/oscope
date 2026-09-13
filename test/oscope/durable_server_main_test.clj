@@ -234,7 +234,8 @@
 
 (deftest startup-failures-have-bounded-operator-diagnostics
   (doseq [[type category]
-          [[::control/lease-held :lease-held]
+          [[:otel.exporter.chdb.schema/migration-failed :schema-migration]
+           [::control/lease-held :lease-held]
            [::control/lease-fenced :lease-fenced]
            [::head/corrupt :corrupt-head]
            [::durable/engine-incompatible :engine-incompatible]
@@ -260,23 +261,27 @@
     (is (not (re-find #"secret|private|password" (pr-str diagnostic))))))
 
 (deftest main-prints-and-throws-only-bounded-diagnostics
-  (let [failure (wrapped-error ::control/lease-held)
-        caught (atom nil)
-        output
-        (with-out-str
-          (binding [*err* *out*]
-            (with-redefs [durable-main/env-options (constantly {})
-                          server-main/run! (fn [_] (throw failure))]
-              (try
-                (durable-main/-main)
-                (catch Throwable error
-                  (reset! caught error))))))]
-    (is (not (identical? failure @caught)))
-    (is (nil? (ex-cause @caught)))
-    (is (= {:oscope.durable-server/error true :category :lease-held}
-           (ex-data @caught)))
-    (is (re-find #"failed \[lease-held\]" output))
-    (is (re-find #"operator action:" output))
-    (is (not (re-find #"secret|private|password"
-                      (str output " " (ex-message @caught) " "
-                           (pr-str (ex-data @caught))))))))
+  (doseq [[type category]
+          [[::control/lease-held :lease-held]
+           [:otel.exporter.chdb.schema/migration-failed :schema-migration]]]
+    (let [failure (wrapped-error type)
+          caught (atom nil)
+          output
+          (with-out-str
+            (binding [*err* *out*]
+              (with-redefs [durable-main/env-options (constantly {})
+                            server-main/run! (fn [_] (throw failure))]
+                (try
+                  (durable-main/-main)
+                  (catch Throwable error
+                    (reset! caught error))))))]
+      (is (not (identical? failure @caught)))
+      (is (nil? (ex-cause @caught)))
+      (is (= {:oscope.durable-server/error true :category category}
+             (ex-data @caught)))
+      (is (re-find (re-pattern (str "failed \\[" (name category) "\\]"))
+                   output))
+      (is (re-find #"operator action:" output))
+      (is (not (re-find #"secret|private|password"
+                        (str output " " (ex-message @caught) " "
+                             (pr-str (ex-data @caught)))))))))
