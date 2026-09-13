@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: casselc/jolt
-          ref: 5d56b9e5d295fe0968df07e535c45353050611f7
+          ref: f00bc93bdd8274b14087b74272aadeffb60e0447
           path: .qualification/jolt
           fetch-depth: 0
           submodules: recursive
@@ -134,7 +134,7 @@ jobs:
       - name: Assert aspect compiler version
         run: >-
           test "$(.qualification/jolt/bin/jolt --version)"
-          = "jolt v0.8.3-41-g5d56b9e5"
+          = "jolt v0.8.6-5-gf00bc93b"
       - name: Qualify pinned Durable native ABI and asset
         working-directory: .qualification/jolt-chdb
         run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb-durable"

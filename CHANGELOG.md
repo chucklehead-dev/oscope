@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin woven Durable CI to the merged Jolt 0.8.6 aspect compiler, with exact
+  source and runtime-version provenance. The already-qualified chDB and aspect
+  pack revisions remain unchanged.
+
 - Qualify typed standalone ingestion by exporting one canonical span directly
   and encoding that same span through the real OTLP loopback socket. The
   persisted ClickStack semantic and promoted columns must match for Boolean

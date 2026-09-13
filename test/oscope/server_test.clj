@@ -21,6 +21,12 @@
   (let [readme (str/replace (slurp "README.md") #"\s+" " ")
         durable-sha "dbc2db22130c7e783739c79bc24691dcbba21906"
         aspect-sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"
+        compiler-sha "f00bc93bdd8274b14087b74272aadeffb60e0447"
+        compiler-version "jolt v0.8.6-5-gf00bc93b"
+        compiler-current?
+        (fn [workflow]
+          (and (str/includes? workflow compiler-sha)
+               (str/includes? workflow compiler-version)))
         s3-workflow (slurp ".github/workflows/durable-s3-e2e.yml")
         aws-workflow (slurp ".github/workflows/durable-aws.yml")]
     (is (= "chdb:./oscope-data" server/default-db-spec))
@@ -42,6 +48,17 @@
     (is (str/includes? aws-workflow durable-sha))
     (is (str/includes? readme aspect-sha))
     (is (str/includes? s3-workflow aspect-sha))
+    (is (str/includes? readme compiler-sha))
+    (is (str/includes? readme compiler-version))
+    (is (compiler-current? s3-workflow))
+    (is (false?
+         (compiler-current?
+          (str/replace s3-workflow compiler-sha
+                       "5d56b9e5d295fe0968df07e535c45353050611f7"))))
+    (is (false?
+         (compiler-current?
+          (str/replace s3-workflow compiler-version
+                       "jolt v0.8.3-41-g5d56b9e5"))))
     (is (str/includes?
          readme
          "docs/durable/protocol-v1.mdx"))
