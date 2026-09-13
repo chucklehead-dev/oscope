@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Raise the source, standalone, browser, and hosted runtime floor to Jolt
+  0.8.6, with version-keyed caches and a causal regression control. The
+  existing Durable library and aspect-pack pins remain fixed until their
+  separate protocol/model qualification stack is complete.
+
 - Classify exporter migration-application startup failures with a closed
   operator category while keeping SQL, exception messages and data, paths,
   credentials, and telemetry values out of public diagnostics.
@@ -103,7 +108,7 @@
   and canonical crypto stack while retaining the existing opt-in schema
   boundary.
 - Bound the standalone HTTP dispatcher to its configured workers and waiting
-  capacity despite Jolt 0.8.3's advisory ThreadPoolExecutor queue model; excess
+  capacity despite Jolt 0.8.6's advisory ThreadPoolExecutor queue model; excess
   connections are closed before handler execution, and ordered shutdown drains
   admitted work before terminating the owned pool.
 - Add the first versioned file-backed configuration slice for the standalone

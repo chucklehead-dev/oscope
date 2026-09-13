@@ -19,7 +19,7 @@
     (wait-for! started-b "second worker entered its task")))
 
 (deftest jolt-thread-pool-capacity-is-an-explicit-negative-control
-  ;; Jolt 0.8.3 retains this task even though the constructor receives a
+  ;; Jolt 0.8.6 retains this task even though the constructor receives a
   ;; one-element ArrayBlockingQueue. Keep the control beside the wrapper proof:
   ;; removing wrapper admission makes the next test fail for the demonstrated
   ;; reason instead of merely asserting an implementation detail.
