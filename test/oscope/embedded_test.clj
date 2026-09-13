@@ -1,5 +1,6 @@
 (ns oscope.embedded-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
             [jdbc.chdb.durable]
             [jdbc.core :as jdbc]
             [jolt.host :as host]
@@ -19,6 +20,12 @@
       (pred) true
       (< attempt 1000) (do (Thread/sleep 2) (recur (inc attempt)))
       :else false)))
+
+(defn- assert-public-result-safe! [result canary]
+  (let [values (tree-seq coll? seq result)]
+    (is (not-any? #(instance? Throwable %) values))
+    (is (not-any? #(and (string? %) (str/includes? % canary)) values))
+    (is (not (str/includes? (pr-str result) canary)))))
 
 (deftest embedded-runtime-shares-one-writer-and-retires-in-order
   (let [events (atom [])
@@ -115,6 +122,41 @@
         (is (= [:sdk-stop :source-close :checkpoint :checkpoint
                 :connection-close]
                @events))))))
+
+(deftest embedded-shutdown-results-replace-secret-bearing-throwables
+  (let [canary "embedded-lifecycle-secret"
+        source-attempts (atom 0)
+        connection (reify java.io.Closeable (close [_] nil))]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (constantly connection)
+                  chdb-export/exporter (constantly ::exporter)
+                  sdk/init! (constantly ::sdk-handle)
+                  sdk/shutdown! (constantly true)
+                  live/open!
+                  (constantly
+                   {:close!
+                    (fn []
+                      (when (= 1 (swap! source-attempts inc))
+                        (throw
+                         (ex-info (str canary "-message")
+                                  {:path (str "/private/" canary)
+                                   :headers {"authorization" canary}
+                                   :attribute-value canary}
+                                  (Exception. (str canary "-cause"))))))})
+                  jdbc.chdb.durable/checkpoint!
+                  (constantly {:status :committed})]
+      (let [lifecycle (embedded/start! {:db-spec ::durable})
+            failed (embedded/stop! lifecycle)]
+        (is (= {:status :closing
+                :phase :retiring-oscope
+                :errors [{:type :oscope.error/lifecycle-operation-threw
+                          :operation :close-source}]}
+               failed))
+        (assert-public-result-safe! failed canary)
+        (is (= {:status :closed :phase :closed}
+               (embedded/stop! lifecycle)))))))
 
 (deftest embedded-runtime-rejects-conflicting-sdk-ownership-before-opening
   (let [opened? (atom false)]

@@ -7,6 +7,11 @@
   existing Durable library and aspect-pack pins remain fixed until their
   separate protocol/model qualification stack is complete.
 
+- Replace thrown standalone and embedded shutdown errors with a closed public
+  lifecycle descriptor. Retry phase and operation remain visible, while the
+  Throwable, message, cause, ex-data, stack, headers, paths, credentials, and
+  telemetry attribute values cannot escape through lifecycle results.
+
 - Pin woven Durable CI to the merged Jolt 0.8.6 aspect compiler, with exact
   source and runtime-version provenance. The already-qualified chDB and aspect
   pack revisions remain unchanged.

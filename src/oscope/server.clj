@@ -5,6 +5,7 @@
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
             [oscope.config :as config]
+            [oscope.error :as error]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
@@ -112,10 +113,19 @@
                       {:oscope.server/error true :face face})))
     true))
 
-(defn- stop-result [state error]
+(defn- lifecycle-operation [phase]
+  (case phase
+    :open :stop-ingress
+    :stopping-http-executor :stop-http-executor
+    :retiring-oscope :close-source
+    :closing-exporters :close-exporter
+    :closing-connection :close-connection
+    :lifecycle))
+
+(defn- stop-result [state failure]
   (cond-> {:status (if (= :closed (:phase state)) :closed :closing)
            :phase (:phase state)}
-    error (assoc :errors [error])))
+    failure (assoc :errors [failure])))
 
 (defn- require-durability-status! [operation allowed result]
   (let [status (:status result)]
@@ -177,7 +187,10 @@
           (swap! state assoc :connection-closed? true :phase :closed))
         (stop-result @state nil)
         (catch Throwable error
-          (stop-result @state error))))))
+          (let [current @state]
+            (stop-result current
+                         (error/lifecycle-failure
+                          (lifecycle-operation (:phase current)) error))))))))
 
 (defn start!
   "Start one loopback server backed by one shared embedded chDB connection.
