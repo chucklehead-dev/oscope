@@ -7,6 +7,10 @@
   existing Durable library and aspect-pack pins remain fixed until their
   separate protocol/model qualification stack is complete.
 
+- Classify exporter migration-application startup failures with a closed
+  operator category while keeping SQL, exception messages and data, paths,
+  credentials, and telemetry values out of public diagnostics.
+
 - Replace thrown standalone and embedded shutdown errors with a closed public
   lifecycle descriptor. Retry phase and operation remain visible, while the
   Throwable, message, cause, ex-data, stack, headers, paths, credentials, and
