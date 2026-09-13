@@ -9,7 +9,7 @@
 (def ^:private aspect-sha
   "3773a67801bdcbd63c6484f95fa07a4b8afddb72")
 (def ^:private aspect-compiler-sha
-  "5d56b9e5d295fe0968df07e535c45353050611f7")
+  "f00bc93bdd8274b14087b74272aadeffb60e0447")
 
 (defn- release-workflow-at-floor? [workflow]
   (and (str/includes?
