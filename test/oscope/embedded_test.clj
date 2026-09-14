@@ -92,6 +92,29 @@
                 :sdk-stop :source-close :checkpoint :connection-close]
                @events))))))
 
+(deftest embedded-local-only-never-reads-remote-env-or-constructs-otlp-exporter
+  (let [connection (reify java.io.Closeable (close [_]))
+        source {:close! (fn [])}]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  host/getenv (fn [name]
+                                (throw (ex-info "remote environment read"
+                                                {:name name})))
+                  otlp/exporter (fn [_]
+                                  (throw (ex-info "remote exporter constructed" {})))
+                  jdbc/connection (constantly connection)
+                  chdb-export/exporter (constantly ::local-exporter)
+                  live/open! (constantly source)
+                  sdk/init! (constantly ::sdk-handle)
+                  sdk/shutdown! (constantly true)
+                  jdbc.chdb.durable/checkpoint!
+                  (constantly {:status :committed})]
+      (let [lifecycle (embedded/start! {:db-spec ::durable})]
+        (is (= ::local-exporter (:exporter lifecycle)))
+        (is (= {:status :closed :phase :closed}
+               (embedded/stop! lifecycle)))))))
+
 (deftest embedded-runtime-retries-an-unconfirmed-persistence-boundary
   (let [attempts (atom 0)
         events (atom [])

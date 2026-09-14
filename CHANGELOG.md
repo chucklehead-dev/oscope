@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Consume exporter-confirmed resource, instrumentation-scope, and span
+  attribute descriptors as distinct typed fields. Catalogs, queries, results,
+  controls, and saved URLs retain the attribute location; legacy four-part
+  bindings canonicalize only when they still identify one span field. Scope
+  history reports unavailable instead of pretending a generic fallback exists,
+  and local-only startup tests poison remote exporter and secret-env access.
+
 - Add a strict non-sourcing Langfuse credential wrapper for owner-only local
   files or separately injected CI variables. It derives the Basic header over
   standard input, removes raw keys before launching the existing gate, rejects

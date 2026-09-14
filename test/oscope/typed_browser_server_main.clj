@@ -21,7 +21,16 @@
                  :key "game.score" :type :int64}
                 {:signal :spans :table "otel_traces"
                  :location :span-attributes
-                 :key "game.ready" :type :boolean}]}]}))
+                 :key "game.ready" :type :boolean}
+                {:signal :spans :table "otel_traces"
+                 :location :resource-attributes
+                 :key "demo.shared" :type :string}
+                {:signal :spans :table "otel_traces"
+                 :location :scope-attributes
+                 :key "demo.shared" :type :string}
+                {:signal :spans :table "otel_traces"
+                 :location :span-attributes
+                 :key "demo.shared" :type :string}]}]}))
 
 (defn- req-attribute [key kind value]
   {"key" key "value" {kind value}})
@@ -31,16 +40,22 @@
     {"resourceSpans"
      [{"resource"
        {"attributes" [(req-attribute "service.name" "stringValue"
-                                      "oscope-typed-history")]}
+                                      "oscope-typed-history")
+                       (req-attribute "demo.shared" "stringValue"
+                                      "historical-resource")]}
        "scopeSpans"
-       [{"scope" {"name" "oscope.browser.typed-history"}
+       [{"scope" {"name" "oscope.browser.typed-history"
+                   "attributes" [(req-attribute "demo.shared" "stringValue"
+                                                "historical-scope")]}
          "spans"
          [{"traceId" "91000000000000000000000000000000"
            "spanId" "9100000000000000" "name" "historical.fallback"
            "startTimeUnixNano" (str (- now 4000000))
            "endTimeUnixNano" (str (- now 3000000))
            "attributes" [(req-attribute "game.score" "intValue" "7")
-                          (req-attribute "game.ready" "boolValue" true)]}
+                          (req-attribute "game.ready" "boolValue" true)
+                          (req-attribute "demo.shared" "stringValue"
+                                         "historical-span")]}
           {"traceId" "92000000000000000000000000000000"
            "spanId" "9200000000000000" "name" "historical.unavailable"
            "startTimeUnixNano" (str (- now 2000000))

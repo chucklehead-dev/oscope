@@ -21,7 +21,21 @@
   (and (integer? value) (<= int64-min value int64-max)))
 
 (def binding-keys
+  #{:field-id :attribute-key :attribute-type :attribute-location
+    :manifest-version})
+
+(def legacy-binding-keys
   #{:field-id :attribute-key :attribute-type :manifest-version})
+
+(def attribute-locations
+  [:resource-attributes :scope-attributes :span-attributes])
+
+(defn location-label [location]
+  (case location
+    :resource-attributes "Resource"
+    :scope-attributes "Scope"
+    :span-attributes "Span"
+    "Unknown"))
 
 (defn operators-for [attribute-type]
   (get-in filter-capability [:operators attribute-type]))
@@ -32,9 +46,9 @@
 (defn- fail! [type message]
   (throw (ex-info message {:oscope.typed-query/error true :type type})))
 
-(defn binding? [value]
+(defn- binding-shape? [value expected-keys]
   (and (map? value)
-       (= binding-keys (set (keys value)))
+       (= expected-keys (set (keys value)))
        (string? (:field-id value))
        (re-matches field-id-pattern (:field-id value))
        (string? (:attribute-key value))
@@ -43,14 +57,29 @@
        (integer? (:manifest-version value))
        (<= 1 (:manifest-version value) int64-max)))
 
+(defn binding? [value]
+  (and (binding-shape? value binding-keys)
+       (contains? (set attribute-locations) (:attribute-location value))))
+
+(defn legacy-binding? [value]
+  (binding-shape? value legacy-binding-keys))
+
 (defn resolve-binding
   "Require a serialized logical binding to equal the startup-confirmed catalog."
   [catalog binding]
-  (when-not (binding? binding)
+  (when-not (or (binding? binding) (legacy-binding? binding))
     (fail! ::invalid-binding "typed schema binding is invalid"))
-  (or (some #(when (= binding %) %) catalog)
-      (fail! ::stale-binding
-             "typed schema binding is no longer available")))
+  (if (binding? binding)
+    (or (some #(when (= binding %) %) catalog)
+        (fail! ::stale-binding
+               "typed schema binding is no longer available"))
+    (let [matches (filterv #(= binding (select-keys % legacy-binding-keys))
+                           catalog)]
+      (if (and (= 1 (count matches))
+               (= :span-attributes (:attribute-location (first matches))))
+        (first matches)
+        (fail! ::stale-binding
+               "legacy typed schema binding is no longer available as one span field")))))
 
 (defn resolve-field-id [catalog field-id]
   (when-not (and (string? field-id) (re-matches field-id-pattern field-id))

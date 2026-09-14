@@ -41,6 +41,8 @@
         (is (= [:ddl ::connection "ALTER TABLE owned"] (nth @events 2)))
         (is (= [:observe ::connection "DESCRIBE TABLE otel_traces"]
                (nth @events 3)))
+        (is (= 1 (count (filter #(= :observe (first %)) @events)))
+            "three logical attribute locations observe one physical table")
         (is (identical? descriptor-set (:descriptor-set result)))
         (is (= #{:descriptor-set :installation} (set (keys result))))
         (is (= false

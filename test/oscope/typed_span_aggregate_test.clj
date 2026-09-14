@@ -14,7 +14,8 @@
 (def now 2000000000000000000)
 (def int64-binding
   {:field-id "attribute_11111111111111111111"
-   :attribute-key "game.score" :attribute-type :int64 :manifest-version 3})
+   :attribute-key "game.score" :attribute-type :int64
+   :attribute-location :span-attributes :manifest-version 3})
 (def catalog [int64-binding])
 
 (def selection
@@ -33,10 +34,12 @@
 
 (def result
   {:attribute-key "game.score" :attribute-type :int64
+   :attribute-location :span-attributes
    :field-id (:field-id int64-binding) :manifest-version 3 :signal :spans
    :coverage coverage
    :aggregates
-   [{:attribute-key "game.score" :field-id (:field-id int64-binding)
+   [{:attribute-key "game.score" :attribute-location :span-attributes
+     :field-id (:field-id int64-binding)
      :manifest-version 3 :signal :spans :source :typed :typed-status 3
      :service-name "naval-battle" :count 3 :min -4 :max 99 :avg 47.5}]})
 
@@ -52,6 +55,8 @@
            (:request plan)))
     (doseq [invalid [(assoc selection :schema-binding
                             (dissoc int64-binding :manifest-version))
+                     (assoc selection :schema-binding
+                            (dissoc int64-binding :attribute-location))
                      (assoc selection :predicate {:gte 5 :lt 5})
                      (assoc selection :predicate {})
                      (assoc selection :group-by [:span-name])
@@ -76,6 +81,7 @@
                               :typed-span-fields catalog})))
       (is (= [:coverage :aggregate] (mapv first @calls)))
       (is (= {:signal :spans :attribute-key "game.score"
+              :attribute-location :span-attributes
               :predicate {:gte -10 :lt 100}
               :group-by [:service-name]
               :aggregates [:count :min :max :avg]
@@ -83,6 +89,7 @@
               :end-unix-nano now :limit 12}
              (nth (second @calls) 3)))
       (is (= {:signal :spans :attribute-key "game.score"
+              :attribute-location :span-attributes
               :schema-binding int64-binding
               :start-unix-nano (- now (get query/windows :1h))
               :end-unix-nano now}
@@ -121,12 +128,15 @@
     (is (str/includes? (:freshness-notice screen) "two bounded live queries"))
     (let [html (web/render-page screen)]
       (is (str/includes? html "historical-untyped-unavailable"))
-      (is (str/includes? html "Typed Int64 span aggregate"))
+      (is (str/includes? html "Typed Int64 trace attribute aggregate"))
       (is (str/includes? html "Maximum, exclusive")))))
 
 (deftest aggregate-screen-rejects-unconserved-coverage-and-open-rows
   (let [plan (query/compile-query selection now)]
     (doseq [invalid [(assoc result :untrusted "extra")
+                     (assoc result :attribute-location :scope-attributes)
+                     (assoc-in result [:aggregates 0 :attribute-location]
+                               :resource-attributes)
                      (assoc-in result [:coverage :total] 23)
                      (assoc-in result [:coverage :unknown] 0)
                      (update-in result [:aggregates 0] dissoc :typed-status)
@@ -144,6 +154,7 @@
     (is (= selection parsed))
     (doseq [part ["typed-attribute-key=game.score"
                   "typed-attribute-type=int64"
+                  "typed-attribute-location=span-attributes"
                   "typed-manifest-version=3"
                   "typed-gte=-10" "typed-lt=100"
                   "aggregate-count=1" "aggregate-min=1"
@@ -177,6 +188,7 @@
     (doseq [part ["typed-field-id=attribute_11111111111111111111"
                   "typed-attribute-key=game.score"
                   "typed-attribute-type=int64"
+                  "typed-attribute-location=span-attributes"
                   "typed-manifest-version=3" "live=1"]]
       (is (str/includes? location part)))
     (let [canonical-response
@@ -195,6 +207,7 @@
       (is (= 1 @loads))
       (doseq [part ["typed-attribute-key=game.score"
                     "typed-attribute-type=int64"
+                    "typed-attribute-location=span-attributes"
                     "typed-manifest-version=3"]]
         (is (str/includes? (get-in filter-response [:headers "Location"])
                            part))))))

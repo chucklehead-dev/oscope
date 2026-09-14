@@ -419,7 +419,7 @@
    :historical-untyped-unavailable])
 (def ^:private coverage-keys (conj (set coverage-order) :total))
 (def ^:private typed-row-keys
-  #{:attribute-key :attribute-type :attribute-value :field-id
+  #{:attribute-key :attribute-type :attribute-location :attribute-value :field-id
     :manifest-version :parent-span-id :service-name :signal :source :span-id
     :span-name :timestamp-unix-nano :trace-id :typed-status})
 
@@ -432,6 +432,7 @@
         binding (typed-query/resolve-binding typed-span-fields schema-binding)
         expected {:attribute-key (:attribute-key binding)
                   :attribute-type (:attribute-type binding)
+                  :attribute-location (:attribute-location binding)
                   :field-id (:field-id binding)
                   :manifest-version (:manifest-version binding)
                   :signal :spans}]
@@ -454,6 +455,8 @@
                                       (= (:manifest-version binding) (:manifest-version row))
                                       (= (:attribute-key binding) (:attribute-key row))
                                       (= (:attribute-type binding) (:attribute-type row))
+                                      (= (:attribute-location binding)
+                                         (:attribute-location row))
                                       (= :typed (:source row))
                                       (= :spans (:signal row))
                                       (integer? (:timestamp-unix-nano row))
@@ -485,7 +488,8 @@
           visible (typed-query/visible-catalog typed-span-fields binding)]
       {:oscope.view/version 1 :view :telemetry-typed-span-filter
        :status (if (seq rows) :ready :empty)
-       :title (str "Typed spans · " (:attribute-key binding))
+       :title (str "Typed spans · " (:attribute-key binding) " · "
+                   (typed-query/location-label (:attribute-location binding)))
        :selection selection :query-plan plan :chart nil
        :controls {:typed-span-fields (:fields visible)
                   :typed-span-field-total (:total visible)
@@ -509,7 +513,8 @@
        :empty-message (when (empty? rows) "No typed spans matched this bounded query window.")})))
 
 (def ^:private typed-int64-aggregate-base-row-keys
-  #{:attribute-key :field-id :manifest-version :signal :source :typed-status})
+  #{:attribute-key :attribute-location :field-id :manifest-version
+    :signal :source :typed-status})
 
 (defn- typed-span-int64-aggregate-screen [plan result typed-span-fields]
   (let [plan (query/validate-plan plan)
@@ -518,6 +523,7 @@
         binding (typed-query/resolve-binding typed-span-fields schema-binding)
         expected {:attribute-key (:attribute-key binding)
                   :attribute-type :int64
+                  :attribute-location (:attribute-location binding)
                   :field-id (:field-id binding)
                   :manifest-version (:manifest-version binding)
                   :signal :spans}
@@ -526,7 +532,7 @@
         rows (:aggregates result)]
     (when-not (and (= :int64 (:attribute-type binding))
                    (map? result)
-                   (= #{:attribute-key :attribute-type :field-id
+                   (= #{:attribute-key :attribute-type :attribute-location :field-id
                         :manifest-version :signal :coverage :aggregates}
                       (set (keys result)))
                    (= expected (select-keys result (keys expected)))
@@ -545,6 +551,7 @@
              (when-not
               (and (map? row) (= expected-row-keys (set (keys row)))
                    (= (:attribute-key binding) (:attribute-key row))
+                   (= (:attribute-location binding) (:attribute-location row))
                    (= (:field-id binding) (:field-id row))
                    (= (:manifest-version binding) (:manifest-version row))
                    (= :spans (:signal row)) (= :typed (:source row))
@@ -567,7 +574,8 @@
       {:oscope.view/version 1
        :view :telemetry-typed-span-int64-aggregate
        :status (if (seq rows) :ready :empty)
-       :title (str "Typed Int64 summary · " (:attribute-key binding))
+       :title (str "Typed Int64 summary · " (:attribute-key binding) " · "
+                   (typed-query/location-label (:attribute-location binding)))
        :selection selection :query-plan plan :chart nil
        :controls {:typed-span-fields (:fields visible)
                   :typed-span-field-total (:total visible)
