@@ -56,8 +56,10 @@
       (into {}
             (map (juxt :name :type))
             (jdbc/fetch connection (str "DESCRIBE TABLE " table)))})
-   (sort-by (juxt (comp str :signal) :table)
-            identity/physically-supported-targets)))
+   (->> identity/physically-supported-targets
+        (map #(select-keys % [:signal :table]))
+        distinct
+        (sort-by (juxt (comp str :signal) :table)))))
 
 (defn- options-mode [options]
   (or (:mode options) :install))
