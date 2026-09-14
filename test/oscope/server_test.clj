@@ -36,7 +36,7 @@
     (is (zero? (count (re-seq #"Proposed, not implemented" readme))))
     (is (str/includes?
          readme
-         "`OSCOPE_DURABLE_ROOT=/absolute/path jolt -M:durable-server-dev`"))
+         "`jolt -M:durable-server-dev --config config/oscope-durable.example.edn`"))
     (is (str/includes?
          readme
          "Available with a qualified chDB Durable V1 native library."))
