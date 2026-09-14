@@ -81,9 +81,29 @@
                @exporter-options))
         (is (= exporter (:exporter @installed-options)))
         (is (= #{:spans :logs} (:signals lifecycle)))
+        (is (= {:oscope.embedded.status/version 1
+                :phase :open
+                :span-pipelines
+                {:mode :direct-local
+                 :local {:availability :unavailable
+                         :queue-size :unavailable
+                         :attempted-span-count :unavailable
+                         :exported-span-count :unavailable
+                         :failed-span-count :unavailable
+                         :dropped-count :unavailable}
+                 :remote {:availability :unavailable
+                          :queue-size :unavailable
+                          :attempted-span-count :unavailable
+                          :exported-span-count :unavailable
+                          :failed-span-count :unavailable
+                          :dropped-count :unavailable}}
+                :durable {:view-current? :unavailable
+                          :last-successful-persistence :unavailable}}
+               (embedded/status lifecycle)))
         (is (true? (embedded/force-flush! lifecycle)))
         (is (= {:status :closed :phase :closed}
                (embedded/stop! lifecycle)))
+        (is (= :closed (:phase (embedded/status lifecycle))))
         (is (false? (embedded/force-flush! lifecycle)))
         (is (= {:status :closed :phase :closed}
                (embedded/stop! lifecycle)))
@@ -91,6 +111,34 @@
                 :exporter-open :source-open :sdk-start :sdk-flush
                 :sdk-stop :source-close :checkpoint :connection-close]
                @events))))))
+
+(deftest embedded-status-excludes-arbitrary-lifecycle-values
+  (let [canary "embedded-status-secret"
+        connection (reify java.io.Closeable (close [_]))]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (constantly connection)
+                  chdb-export/exporter (constantly ::exporter)
+                  live/open! (constantly {:close! (fn [])})
+                  sdk/init! (constantly ::sdk-handle)
+                  sdk/shutdown! (constantly true)
+                  jdbc.chdb.durable/checkpoint!
+                  (constantly {:status :committed})]
+      (let [lifecycle (embedded/start! {:db-spec canary})]
+        (try
+          ;; This state remains public only for backward-compatible local-only
+          ;; lifecycles. Poison it to prove status copies a closed phase enum.
+          (swap! (:state lifecycle) assoc :phase canary)
+          (let [snapshot (embedded/status lifecycle)]
+            (is (= :unknown (:phase snapshot)))
+            (is (not (str/includes? (pr-str snapshot) canary)))
+            (is (= #{:oscope.embedded.status/version :phase
+                     :span-pipelines :durable}
+                   (set (keys snapshot)))))
+          (finally
+            (swap! (:state lifecycle) assoc :phase :open)
+            (embedded/stop! lifecycle)))))))
 
 (deftest embedded-local-only-never-reads-remote-env-or-constructs-otlp-exporter
   (let [connection (reify java.io.Closeable (close [_]))
@@ -199,7 +247,8 @@
                 {:db-spec ::durable
                  :sdk-options {:span-processors [::caller-owned]}})))
   (is (thrown? Exception (embedded/stop! nil)))
-  (is (thrown? Exception (embedded/force-flush! {}))))
+  (is (thrown? Exception (embedded/force-flush! {})))
+  (is (thrown? Exception (embedded/status nil))))
 
 (defn- test-exporter [batches shutdowns]
   (reify
@@ -282,6 +331,22 @@
               "only the two free remote queue slots accept later spans")
           (is (zero? (get-in (embedded/span-pipeline-stats lifecycle)
                              [:local :dropped-count])))
+          (let [snapshot (embedded/status lifecycle)]
+            (is (= :open (:phase snapshot)))
+            (is (= :available
+                   (get-in snapshot [:span-pipelines :local :availability])))
+            (is (= 11
+                   (get-in snapshot
+                           [:span-pipelines :local :exported-span-count])))
+            (is (= :available
+                   (get-in snapshot [:span-pipelines :remote :availability])))
+            (is (= 2
+                   (get-in snapshot [:span-pipelines :remote :queue-size])))
+            (is (= 8
+                   (get-in snapshot [:span-pipelines :remote :dropped-count])))
+            (is (= {:view-current? :unavailable
+                    :last-successful-persistence :unavailable}
+                   (:durable snapshot))))
           (deliver release true)
           (is (= {:sdk {:ok? true}
                   :span-pipelines
@@ -314,6 +379,7 @@
           (is (= 1 @local-shutdowns))
           (is (= 1 @remote-shutdowns))
           (is (= [:source-close :checkpoint :connection-close] @events))
+          (is (= :closed (:phase (embedded/status lifecycle))))
           (finally
             (deliver release true)
             (when (sdk/tracer-provider)
@@ -394,6 +460,37 @@
                (:parent-span-id (-> @remote-batches first first))))
         (is (= #{:local :remote}
                (set (keys (embedded/span-pipeline-stats lifecycle)))))
+        (let [canary "pipeline-status-secret"
+              snapshot
+              (with-redefs
+               [export/pipeline-stats
+                (constantly
+                 {:local {:queue-size 1
+                          :attempted-span-count 2
+                          :exported-span-count 2
+                          :failed-span-count 0
+                          :dropped-count 0
+                          :endpoint canary}
+                  :remote {:queue-size canary
+                           :attempted-span-count 2
+                           :exported-span-count 2
+                           :failed-span-count 0
+                           :dropped-count 0}})]
+                (embedded/status lifecycle))]
+          (is (= {:availability :available
+                  :queue-size 1
+                  :attempted-span-count 2
+                  :exported-span-count 2
+                  :failed-span-count 0
+                  :dropped-count 0}
+                 (get-in snapshot [:span-pipelines :local])))
+          (is (= :unavailable
+                 (get-in snapshot [:span-pipelines :remote :availability])))
+          (is (every? #(= :unavailable %)
+                      (vals (dissoc
+                             (get-in snapshot [:span-pipelines :remote])
+                             :availability))))
+          (is (not (str/includes? (pr-str snapshot) canary))))
         (is (= {:status :closed
                 :phase :closed
                 :telemetry
