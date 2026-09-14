@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Report the protected Langfuse gate's failure through a closed set of stage,
+  status, and bounded observation-count categories. Terminal summaries retain
+  no endpoints, trace IDs, headers, credentials, bodies, exception details, or
+  arbitrary values, so operators can distinguish export from semantic-readback
+  failures without weakening the gate's redaction boundary.
+
 - Pin merged `casselc/otel` HTTP-provider convergence so complete
   Content-Length and chunked TLS responses finish without waiting for a later
   raw transport close. The selected transport still rejects truncated and
