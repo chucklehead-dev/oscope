@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Pin merged `casselc/otel` HTTP-provider convergence so complete
+  Content-Length and chunked TLS responses finish without waiting for a later
+  raw transport close. The selected transport still rejects truncated and
+  close-delimited responses that omit TLS `close_notify`; a resolved-classpath
+  control rejects the prior OTel and HTTP provider pair.
+
 - Align the protected Langfuse workflow's GitHub variable and secret context
   names with the documented `OSCOPE_LANGFUSE_*` inputs, and reject the stale
   short-name mapping with a causal workflow-policy mutation.

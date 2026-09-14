@@ -10,7 +10,7 @@
 (def modes #{:typed :string-fallback})
 (def operations #{:int64-filter :boolean-filter :int64-aggregate})
 (def dependency-pins
-  {:otel "87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0"
+  {:otel "0c50b0f8254713ce9df8a3f201f345b1854000b8"
    :jolt-http "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"
    :jolt-chdb "dbc2db22130c7e783739c79bc24691dcbba21906"
    :jolt-otel-clickhouse "419f7575d986683bd3f2abf28f837786f95b4134"

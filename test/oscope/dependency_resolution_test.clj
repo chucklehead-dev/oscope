@@ -10,7 +10,27 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
+       "0c50b0f8254713ce9df8a3f201f345b1854000b8/"))
+
+(def ^:private prior-otel-root
+  (str "https___github.com_casselc_otel.git/"
        "87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0/"))
+
+(def ^:private http-provider-root
+  (str "https___github.com_casselc_http-client.git/"
+       "eab6b78d5957f88690faf6768360572a3f185341/"))
+
+(def ^:private prior-http-provider-root
+  (str "https___github.com_casselc_http-client.git/"
+       "9cb5801e8c5929387715aa6713c33b2c21fd9a2a/"))
+
+(def ^:private prior-otel-coordinate
+  (str "{:deps {oscope.mutation/prior-otel "
+       "{:git/url \"https://github.com/casselc/otel.git\" "
+       ":git/sha \"87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0\"} "
+       "oscope.mutation/prior-http-provider "
+       "{:git/url \"https://github.com/casselc/http-client.git\" "
+       ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
 (def ^:private prior-exporter-root
   (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
@@ -36,6 +56,10 @@
     (and (seq roots)
          (every? #(str/includes? % expected-root) roots))))
 
+(defn- includes-coordinate? [classpath dependency expected-root]
+  (some #(str/includes? % expected-root)
+        (dependency-roots classpath dependency)))
+
 (defn- dependency-report [extra-args]
   (let [jolt-bin (or (System/getenv "JOLT_BIN") "jolt")
         child (process/process (into [jolt-bin "-Srepro"]
@@ -56,7 +80,9 @@
     (when (map? result)
       (is (exact-resolution? (:out result) "jolt-otel-clickhouse.git"
                              exporter-root))
-      (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root)))))
+      (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root))
+      (is (exact-coordinate? (:out result) "casselc_http-client.git"
+                             http-provider-root)))))
 
 (deftest prior-exporter-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-exporter-coordinate])]
@@ -69,3 +95,20 @@
         (is (false? (exact-resolution? (:out result)
                                        "jolt-otel-clickhouse.git"
                                        exporter-root)))))))
+
+(deftest prior-otel-coordinate-is-a-causal-red-control
+  (let [result (dependency-report ["-Sdeps" prior-otel-coordinate])]
+    (is (successful-report? result))
+    (when (map? result)
+      (testing "the real mutation adds the prior OTel and HTTP provider roots"
+        (is (includes-coordinate? (:out result) "casselc_otel.git"
+                                  prior-otel-root))
+        (is (includes-coordinate? (:out result) "casselc_http-client.git"
+                                  prior-http-provider-root)))
+      (testing "the reviewed OTel-root oracle rejects that resolution"
+        (is (false? (exact-coordinate? (:out result)
+                                       "casselc_otel.git"
+                                       otel-root)))
+        (is (false? (exact-coordinate? (:out result)
+                                       "casselc_http-client.git"
+                                       http-provider-root)))))))
