@@ -13,7 +13,7 @@
          :git/sha "dbc2db22130c7e783739c79bc24691dcbba21906"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "05d50af479bd60588cb30d282598a505dbafaafe"}
+         :git/sha "812957b85ea3717b28ad0e7a101a483f8a5f6deb"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
@@ -52,6 +52,10 @@
     {:git/url "https://github.com/casselc/glitter.git"
      :git/sha "f4e3eb83015566e4cadaedd7f5e8ad80dc57404f"}}
    :main-opts ["-m" "oscope.chdb-test-runner"]}
+
+  :test-typed-socket
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.typed-socket-test-runner"]}
 
   :test-langfuse
   {:extra-paths ["test"]
@@ -173,6 +177,7 @@
  :tasks {test "jolt -M:test"
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"
+         test-typed-socket "jolt -M:test-typed-socket"
          test-langfuse "test/langfuse_interop.sh"
          test-readers "jolt -M:test-readers"
          test-durable "jolt -M:test-durable"

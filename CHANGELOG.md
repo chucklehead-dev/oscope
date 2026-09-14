@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Align the ClickHouse exporter pin with its merged current OTel dependency.
+  Hosted checks reject the prior exporter coordinate from the resolved
+  classpath, compare typed direct export with real loopback OTLP ingestion, and
+  retain independent local/remote pipeline failure coverage.
+
 - Raise the source, standalone, browser, and hosted runtime floor to Jolt
   0.8.6, with version-keyed caches and a causal regression control. The
   existing Durable library and aspect-pack pins remain fixed until their
