@@ -127,7 +127,8 @@
            (:coverage screen)))
     (is (str/includes? (:freshness-notice screen) "two bounded live queries"))
     (let [html (web/render-page screen)]
-      (is (str/includes? html "historical-untyped-unavailable"))
+      (is (str/includes? html "Historical value unavailable"))
+      (is (str/includes? html "game.score (Int64) - Span"))
       (is (str/includes? html "Typed Int64 trace attribute aggregate"))
       (is (str/includes? html "Maximum, exclusive")))))
 

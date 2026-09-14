@@ -161,6 +161,16 @@
       (is (nil? (:chart screen)))
       (is (= value (get-in screen [:table :rows 0 :attribute-value])))
       (is (= display (get-in screen [:table :rows 0 :display-value])))
+      (is (str/includes? (:title screen)
+                         (case (:attribute-type binding)
+                           :boolean "Boolean"
+                           :int64 "Int64"
+                           :string "String")))
+      (is (str/includes? (get-in screen [:table :columns 3 :label])
+                         (case (:attribute-type binding)
+                           :boolean "Boolean"
+                           :int64 "Int64"
+                           :string "String")))
       (is (str/includes? (:freshness-notice screen) "two bounded live queries"))
       (is (= [{:status :valid :count 1}
               {:status :present-empty :count 1}
@@ -170,6 +180,28 @@
               {:status :historical-untyped-unavailable :count 5}
               {:status :total :count 16}]
              (:coverage screen))))))
+
+(deftest typed-web-uses-human-coverage-language-and-explicit-field-types
+  (let [screen (view-model/screen
+                (query/compile-query (selection bool-binding false) now)
+                (result bool-binding false)
+                {:typed-span-fields catalog})
+        html (web/render-page screen)]
+    (doseq [text ["game.ready (Boolean) - Span"
+                  "Valid typed value"
+                  "Present empty string"
+                  "Attribute absent"
+                  "Invalid typed value"
+                  "Historical fallback value"
+                  "Historical value unavailable"
+                  "All rows classified by this bounded coverage query."]]
+      (is (str/includes? html text) text))
+    (is (not (str/includes? html "historical-untyped-unavailable")))
+    (is (not (str/includes? html "historical-untyped-fallback")))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported typed coverage status"
+         (web/render-page
+          (assoc-in screen [:coverage 0 :status] :unreviewed-category))))))
 
 (deftest int64-web-values-remain-exact-decimal-text-until-bounded-parsing
   (doseq [[operator value] [[:eq 9007199254740993]

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Render typed field types and coverage in user-facing language. Filter results
+  now identify Boolean, Int64, or String values explicitly, while the conserved
+  coverage table explains valid, empty, absent, invalid, fallback, and
+  unavailable historical rows without exposing internal status keywords.
+
 - Qualify the embedded typed-attribute path through the real SDK, Durable
   writer, exporter projection, and live query stack. The approved manifest is
   consumed only at startup; ingestion and query state share the exact opaque

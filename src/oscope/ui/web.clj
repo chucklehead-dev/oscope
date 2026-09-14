@@ -355,8 +355,34 @@
     :else (render-distribution-controls controls selection action live?)))
 
 (defn- typed-field-label [field]
-  (str (:attribute-key field) " - "
-       (typed-query/location-label (:attribute-location field))))
+  (str (:attribute-key field) " ("
+       (typed-query/type-label (:attribute-type field))
+       ") - " (typed-query/location-label (:attribute-location field))))
+
+(def ^:private typed-coverage-display
+  {:valid
+   ["Valid typed value" "The attribute has the approved type and is available to typed queries."]
+   :present-empty
+   ["Present empty string" "The String attribute is present, valid, and empty."]
+   :absent
+   ["Attribute absent" "The attribute is not present on this row."]
+   :invalid
+   ["Invalid typed value" "The stored value does not match the approved type."]
+   :historical-untyped-fallback
+   ["Historical fallback value" "Older data can be read only through its untyped fallback value."]
+   :historical-untyped-unavailable
+   ["Historical value unavailable" "Older data has no typed value or usable fallback value."]
+   :total
+   ["Total rows" "All rows classified by this bounded coverage query."]})
+
+(defn- display-typed-coverage [coverage]
+  (mapv (fn [{:keys [status] :as row}]
+          (let [[label meaning] (get typed-coverage-display status)]
+            (when-not (and label meaning)
+              (throw (ex-info "unsupported typed coverage status"
+                              {:oscope.ui/error true :status status})))
+            (assoc row :status-label label :meaning meaning)))
+        coverage))
 (defn- render-typed-controls [controls selection action]
   (let [fields (:typed-span-fields controls)
         mode (:mode selection)]
@@ -623,9 +649,12 @@
           (when coverage
             (str "<section class=\"panel\" aria-labelledby=\"typed-coverage-title\">"
                  "<h3 id=\"typed-coverage-title\">Typed value coverage</h3>"
-                 (render-table {:columns [{:key :status :label "Status"}
+                 "<p>Every row is assigned to exactly one typed-availability category.</p>"
+                 (render-table {:columns [{:key :status-label :label "Status"}
+                                          {:key :meaning :label "Meaning"}
                                           {:key :count :label "Rows"}]
-                                :rows coverage}) "</section>"))
+                                :rows (display-typed-coverage coverage)})
+                 "</section>"))
           (if chart
             (str "<div class=\"grid"
                  (when (contains? #{:telemetry-metric-series

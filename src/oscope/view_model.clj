@@ -488,7 +488,8 @@
           visible (typed-query/visible-catalog typed-span-fields binding)]
       {:oscope.view/version 1 :view :telemetry-typed-span-filter
        :status (if (seq rows) :ready :empty)
-       :title (str "Typed spans · " (:attribute-key binding) " · "
+       :title (str "Typed " (typed-query/type-label (:attribute-type binding))
+                   " spans · " (:attribute-key binding) " · "
                    (typed-query/location-label (:attribute-location binding)))
        :selection selection :query-plan plan :chart nil
        :controls {:typed-span-fields (:fields visible)
@@ -506,7 +507,11 @@
        :table {:columns [{:key :timestamp-unix-nano :label "Timestamp (Unix ns)"}
                          {:key :service-name :label "Service"}
                          {:key :span-name :label "Span"}
-                         {:key :display-value :label "Typed value"}
+                         {:key :display-value
+                          :label (str "Typed "
+                                      (typed-query/type-label
+                                       (:attribute-type binding))
+                                      " value")}
                          {:key :trace-id :label "Trace ID"}
                          {:key :span-id :label "Span ID"}]
                :rows rows}
