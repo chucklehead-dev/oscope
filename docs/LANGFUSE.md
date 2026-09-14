@@ -74,17 +74,47 @@ two-span nested trace, and requires both of these readbacks:
 2. Langfuse's v2 Observations API returns the same two observations with the
    expected names, parent, observation types, input, and output.
 
-Set the following through a secret-aware runner, then execute the script:
+For local use, create a non-executable, absolute-path file readable only by its
+owner. Its format is exactly three newline-terminated `NAME=value` lines, with
+no `export`, quotes, whitespace, comments, blank lines, duplicate keys, or
+additional names:
 
 ```sh
-export JOLT_CHDB_LIB=/absolute/path/to/qualified/libchdb.so
-export OSCOPE_LANGFUSE_BASE_URL=https://cloud.langfuse.com
-export OSCOPE_LANGFUSE_OTLP_HEADERS='Authorization=Basic REDACTED,x-langfuse-ingestion-version=4'
-test/langfuse_interop.sh
+chmod 600 /absolute/path/to/langfuse.env
+test/langfuse_interop_env.sh /absolute/path/to/langfuse.env
 ```
 
-Do not paste real credentials into shell history; the values above are only
-placeholders. The same gate is designed for a self-hosted v4 base URL.
+```text
+OSCOPE_LANGFUSE_BASE_URL=https://cloud.langfuse.com
+OSCOPE_LANGFUSE_PUBLIC_KEY=pk-lf-REDACTED
+OSCOPE_LANGFUSE_SECRET_KEY=sk-lf-REDACTED
+```
+
+Keep `JOLT_CHDB_LIB` set separately to the absolute qualified native library.
+The wrapper reads the file as data rather than sourcing it, rejects unsafe file
+permissions, and passes neither raw key to its child environment or arguments.
+It builds the required Basic authorization header through `base64` standard
+input, exports only the base URL and combined header, then calls the existing
+interop gate. On GitHub Actions it registers both derived values with the
+runner's masking command before starting Jolt, because GitHub's automatic
+secret masking need not recognize a base64 transformation. Do not paste real
+credentials into shell history.
+
+CI can inject the same three values separately and call the wrapper without a
+file. Do not create or store a combined-header secret:
+
+```yaml
+- name: Qualify Oscope and Langfuse interoperability
+  env:
+    JOLT_CHDB_LIB: ${{ runner.temp }}/chdb/native/libchdb.so
+    OSCOPE_LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+    OSCOPE_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+    OSCOPE_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+  run: test/langfuse_interop_env.sh
+```
+
+File and environment modes are mutually exclusive, and an ambient combined
+header is rejected. The same gate is designed for a self-hosted v4 base URL.
 Ingestion is asynchronous, so it polls the Observations API for up to 90 seconds
 instead of treating an ingestion HTTP 2xx response as proof of semantic storage.
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a strict non-sourcing Langfuse credential wrapper for owner-only local
+  files or separately injected CI variables. It derives the Basic header over
+  standard input, removes raw keys before launching the existing gate, rejects
+  ambiguous or malformed inputs, and has causal non-execution/redaction tests.
+
 - Align the ClickHouse exporter pin with its merged current OTel dependency.
   Hosted checks reject the prior exporter coordinate from the resolved
   classpath, compare typed direct export with real loopback OTLP ingestion, and
