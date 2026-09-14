@@ -1,15 +1,26 @@
 (ns oscope.config-cli
   "Small side-effect boundary around the pure oscope.config model."
-  (:require [oscope.config :as config]
+  (:require [clojure.string :as str]
+            [oscope.config :as config]
             [oscope.typed-schema-config :as typed-schema-config]
             [oscope.typed-schema-runtime :as typed-schema-runtime]))
 
 (def environment-names
   ["OSCOPE_CONFIG" "OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_CHDB_SPEC"
-   "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"])
+   "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"
+   "XDG_CONFIG_HOME" "APPDATA" "HOME"])
 
 (defn system-environment []
   (into {} (map (fn [name] [name (System/getenv name)])) environment-names))
+
+(defn system-properties []
+  {"os.name" (System/getProperty "os.name")
+   "user.home" (System/getProperty "user.home")})
+
+(defn config-file? [path]
+  (try
+    (.isFile (java.io.File. path))
+    (catch Throwable _ false)))
 
 (defn parse-args [arguments]
   (loop [remaining arguments result {:check-config? false :layer {}}]
@@ -43,10 +54,76 @@
                         {:oscope.config/error true})))
       result)))
 
+(defn- nonblank [value]
+  (when-not (str/blank? value) value))
+
+(defn- append-path [root separator suffix]
+  (str root
+       (when-not (if (= separator "\\")
+                   (or (.endsWith ^String root "/")
+                       (.endsWith ^String root "\\"))
+                   (.endsWith ^String root "/"))
+         separator)
+       suffix))
+
+(defn- unix-absolute? [path]
+  (and path (.startsWith ^String path "/")))
+
+(defn- windows-absolute? [path]
+  (and path
+       (or (.startsWith ^String path "\\\\")
+           (boolean (re-find #"(?i)^[a-z]:[\\\\/]" path)))))
+
+(defn default-config-path
+  "Return the platform user-config candidate, without checking the filesystem.
+
+  XDG_CONFIG_HOME wins on Unix-like systems when it is absolute. Relative XDG
+  roots are ignored so discovery can never become an implicit cwd lookup."
+  [environment properties]
+  (let [os-name (str/lower-case (or (get properties "os.name") ""))
+        environment-home (nonblank (get environment "HOME"))
+        property-home (nonblank (get properties "user.home"))
+        unix-home (or (when (unix-absolute? environment-home) environment-home)
+                      (when (unix-absolute? property-home) property-home))
+        windows-home
+        (or (when (windows-absolute? environment-home) environment-home)
+            (when (windows-absolute? property-home) property-home))
+        xdg-root (nonblank (get environment "XDG_CONFIG_HOME"))
+        absolute-xdg (when (and xdg-root
+                                (.isAbsolute (java.io.File. xdg-root)))
+                       xdg-root)]
+    (cond
+      (str/includes? os-name "windows")
+      (when-let [root (or (let [appdata (nonblank (get environment "APPDATA"))]
+                          (when (windows-absolute? appdata) appdata))
+                          (when windows-home
+                            (append-path windows-home "\\" "AppData\\Roaming")))]
+        (append-path root "\\" "oscope\\config.edn"))
+
+      absolute-xdg
+      (append-path absolute-xdg "/" "oscope/config.edn")
+
+      (or (str/includes? os-name "mac")
+          (str/includes? os-name "darwin"))
+      (when unix-home
+        (append-path unix-home "/" "Library/Application Support/oscope/config.edn"))
+
+      :else
+      (when unix-home
+        (append-path unix-home "/" ".config/oscope/config.edn")))))
+
 (defn config-path
-  "Choose an explicit CLI path, then OSCOPE_CONFIG. No cwd file is implicit."
-  [parsed environment]
-  (or (:config parsed) (not-empty (get environment "OSCOPE_CONFIG"))))
+  "Choose --config, then OSCOPE_CONFIG, then a present user-default file.
+
+  Discovery never considers the working directory. The four-argument form is
+  the pure boundary used by causal tests."
+  ([parsed environment]
+   (config-path parsed environment (system-properties) config-file?))
+  ([parsed environment properties present?]
+   (or (:config parsed)
+       (nonblank (get environment "OSCOPE_CONFIG"))
+       (when-let [candidate (default-config-path environment properties)]
+         (when (present? candidate) candidate)))))
 
 (defn- load-config* [arguments environment environment-layer
                      read-text read-manifest-bytes]

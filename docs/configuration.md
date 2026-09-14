@@ -5,13 +5,28 @@ The same options apply to the `-M:native-server` launcher.
 Configuration precedence is, from strongest to weakest:
 
 ```text
-command line > environment > explicit file > defaults
+command line > environment > selected file > defaults
 ```
 
-Pass a file with `--config PATH`, or set `OSCOPE_CONFIG`. Oscope does not load a
-file from the working directory implicitly. `--check-config` validates the
+Pass a file with `--config PATH`, or set `OSCOPE_CONFIG`. When neither is set,
+Oscope uses a platform user-config file only if that exact file already exists:
+
+- `$XDG_CONFIG_HOME/oscope/config.edn`, or
+  `$HOME/.config/oscope/config.edn`, on Linux and other Unix-like systems;
+- `$XDG_CONFIG_HOME/oscope/config.edn` when XDG is explicitly configured on
+  macOS, otherwise `$HOME/Library/Application Support/oscope/config.edn`;
+- `%APPDATA%\oscope\config.edn` on Windows, with the usual
+  `%USERPROFILE%\AppData\Roaming`-equivalent user-home fallback.
+
+Relative XDG, home, and application-data roots are ignored, and Oscope never
+looks for a configuration file in the working directory. An explicit
+`--config` still wins over `OSCOPE_CONFIG`, and both explicit selectors are
+read-or-error contracts rather than optional discovery.
+
+`--check-config` applies the same selection and precedence, validates the
 combined configuration, prints deterministic redacted diagnostic EDN, and
-exits before opening a database or listener. The diagnostic output is
+exits before opening a database or listener. Neither the selected path nor
+sensitive configuration values enter that output. The diagnostic output is
 parseable for tooling, but conspicuous `<redacted>` placeholders deliberately
 make it unsuitable as a reusable configuration file.
 

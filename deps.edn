@@ -23,7 +23,11 @@
          :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}
 
  :aliases
- {:test-headless
+ {:test-config
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.config-test-runner"]}
+
+  :test-headless
   {:extra-paths ["test"]
    :extra-deps
    {io.github.chucklehead-dev/jolt-hegel
@@ -175,6 +179,7 @@
    :main-opts ["-m" "oscope.typed-check"]}}
 
  :tasks {test "jolt -M:test"
+         test-config "jolt -M:test-config"
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"
          test-typed-socket "jolt -M:test-typed-socket"

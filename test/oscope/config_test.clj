@@ -12,7 +12,8 @@
 
 (deftest standalone-environment-contract-is-local-only-and-closed
   (is (= ["OSCOPE_CONFIG" "OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_CHDB_SPEC"
-          "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"]
+          "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"
+          "XDG_CONFIG_HOME" "APPDATA" "HOME"]
          cli/environment-names))
   (is (not-any? #(re-find #"(?i)langfuse|otlp|header|secret|endpoint" %)
                 cli/environment-names))
@@ -21,7 +22,8 @@
                 "LANGFUSE_BASE_URL" "http://network-must-not-run.invalid"
                 "OTEL_EXPORTER_OTLP_HEADERS" "authorization=poison"
                 "OTEL_EXPORTER_OTLP_ENDPOINT" "http://network.invalid"}
-        resolved (cli/load-config [] poison)]
+        resolved (with-redefs [cli/config-file? (constantly false)]
+                   (cli/load-config [] poison))]
     (is (= config/defaults (:config resolved)))
     (is (not (str/includes? (pr-str resolved) "poison")))))
 
@@ -76,14 +78,136 @@
     (is (nil? (get-in resolved
                       [:provenance [:typed-attributes :registry :lineage]])))))
 
-(deftest explicit-file-selection-has-no-cwd-fallback
-  (is (nil? (cli/config-path (cli/parse-args []) {})))
+(deftest explicit-and-discovered-file-selection-has-no-cwd-fallback
+  (let [linux {"os.name" "Linux" "user.home" "/home/test"}
+        default "/home/test/.config/oscope/config.edn"
+        xdg "/private/xdg/oscope/config.edn"]
+    (is (nil? (cli/config-path (cli/parse-args []) {} linux
+                               (constantly false))))
+    (is (= default
+           (cli/config-path (cli/parse-args []) {} linux #{default})))
+    (is (= xdg
+           (cli/config-path (cli/parse-args [])
+                            {"XDG_CONFIG_HOME" "/private/xdg"}
+                            linux #{xdg})))
+    ;; A relative XDG root must not turn discovery into a cwd lookup.
+    (is (= default
+           (cli/config-path (cli/parse-args [])
+                            {"XDG_CONFIG_HOME" "relative"}
+                            linux #{default}))))
   (is (= "/env.edn"
-         (cli/config-path (cli/parse-args [])
-                          {"OSCOPE_CONFIG" "/env.edn"})))
+         (cli/config-path
+          (cli/parse-args []) {"OSCOPE_CONFIG" "/env.edn"}
+          {} (fn [_] (throw (ex-info "discovery must not run" {}))))))
   (is (= "/cli.edn"
-         (cli/config-path (cli/parse-args ["--config" "/cli.edn"])
-                          {"OSCOPE_CONFIG" "/env.edn"}))))
+         (cli/config-path
+          (cli/parse-args ["--config" "/cli.edn"])
+          {"OSCOPE_CONFIG" "/env.edn"} {}
+          (fn [_] (throw (ex-info "discovery must not run" {})))))))
+
+(deftest platform-user-config-candidates-are-explicit
+  (is (= "/xdg/oscope/config.edn"
+         (cli/default-config-path
+          {"XDG_CONFIG_HOME" "/xdg" "HOME" "/home/ignored"}
+          {"os.name" "Linux" "user.home" "/property/ignored"})))
+  (is (= "/home/operator/.config/oscope/config.edn"
+         (cli/default-config-path
+          {} {"os.name" "Linux" "user.home" "/home/operator"})))
+  (is (= "/Users/operator/Library/Application Support/oscope/config.edn"
+         (cli/default-config-path
+          {} {"os.name" "Mac OS X" "user.home" "/Users/operator"})))
+  (is (= "C:\\Users\\operator\\AppData\\Roaming\\oscope\\config.edn"
+         (cli/default-config-path
+          {"APPDATA" "C:\\Users\\operator\\AppData\\Roaming"}
+          {"os.name" "Windows 11" "user.home" "C:\\Users\\operator"})))
+  (is (nil? (cli/default-config-path
+             {"HOME" "relative" "XDG_CONFIG_HOME" "relative"}
+             {"os.name" "Linux" "user.home" "also-relative"})))
+  (is (nil? (cli/default-config-path
+             {"APPDATA" "relative"}
+             {"os.name" "Windows 11" "user.home" "also-relative"})))
+  (is (= "/property/home/.config/oscope/config.edn"
+         (cli/default-config-path
+          {"HOME" "relative"}
+          {"os.name" "Linux" "user.home" "/property/home"})))
+  (is (= "C:\\PropertyHome\\AppData\\Roaming\\oscope\\config.edn"
+         (cli/default-config-path
+          {"HOME" "/msys/home" "APPDATA" "relative"}
+          {"os.name" "Windows 11" "user.home" "C:\\PropertyHome"}))))
+
+(deftest discovered-file-load-preserves-precedence-check-and-redaction
+  (let [candidate "/private/xdg/oscope/config.edn"
+        private-value "/private/tenant/database"
+        reads (atom [])]
+    (with-redefs [cli/system-properties
+                  (fn [] {"os.name" "Linux" "user.home" "/home/ignored"})
+                  cli/config-file? #{candidate}]
+      (let [resolved
+            (cli/load-config
+             ["--check-config" "--port" "7000"]
+             {"XDG_CONFIG_HOME" "/private/xdg" "OSCOPE_PORT" "6000"}
+             (fn [path]
+               (swap! reads conj path)
+               (config/encode
+                (assoc config/defaults
+                       :server (assoc (:server config/defaults) :port 5000)
+                       :storage {:type :local-path :path private-value})))
+             (fn [_ _] (throw (ex-info "manifest reader must not run" {}))))]
+        (is (= [candidate] @reads))
+        (is (= 7000 (get-in resolved [:config :server :port])))
+        (is (= :cli (get-in resolved [:provenance [:server :port]])))
+        (is (:check-config? resolved))
+        (let [output (cli/check-output resolved)]
+          (is (not (str/includes? output candidate)))
+          (is (not (str/includes? output private-value)))
+          (is (str/includes? output "<redacted>")))))))
+
+(deftest absent-user-config-does-not-read-or-change-defaults
+  (with-redefs [cli/system-properties
+                (fn [] {"os.name" "Linux" "user.home" "/home/operator"})
+                cli/config-file? (constantly false)]
+    (let [resolved
+          (cli/load-config
+           [] {}
+           (fn [_] (throw (ex-info "absent file must not be read" {})))
+           (fn [_ _] (throw (ex-info "manifest reader must not run" {}))))]
+      (is (= config/defaults (:config resolved)))
+      (is (= :default
+             (get-in resolved [:provenance [:storage :path]]))))))
+
+(deftest discovered-file-failures-do-not-leak-paths-or-values
+  (let [candidate "/private/xdg/oscope/config.edn"
+        canary "discovery-secret-canary"]
+    (with-redefs [cli/system-properties
+                  (fn [] {"os.name" "Linux" "user.home" "/home/ignored"})
+                  cli/config-file? #{candidate}]
+      (doseq [reader [(fn [_]
+                        (throw (ex-info (str canary " " candidate)
+                                        {:path candidate :secret canary})))
+                      (fn [_]
+                        (str "{:version 2 :unknown \"" canary "\"}"))]]
+        (let [error (try (cli/load-config [] {"XDG_CONFIG_HOME" "/private/xdg"}
+                                             reader)
+                         nil
+                         (catch Throwable error error))
+              rendered (pr-str [(ex-message error) (ex-data error)])]
+          (is (:oscope.config/error (ex-data error)))
+          (is (not (str/includes? rendered candidate)))
+          (is (not (str/includes? rendered canary))))))))
+
+(deftest explicit-config-causally-defeats-present-discovery
+  (let [read-path (atom nil)]
+    (with-redefs [cli/system-properties
+                  (fn [] {"os.name" "Linux" "user.home" "/home/operator"})
+                  cli/config-file? (constantly true)]
+      (cli/load-config
+       ["--config" "/explicit/config.edn"]
+       {"OSCOPE_CONFIG" "/environment/config.edn"
+        "XDG_CONFIG_HOME" "/xdg"}
+       (fn [path]
+         (reset! read-path path)
+         (config/encode config/defaults)))
+      (is (= "/explicit/config.edn" @read-path)))))
 
 (deftest cli-overrides-environment-and-file
   (let [resolved (cli/load-config

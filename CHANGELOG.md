@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Discover an existing platform user configuration when neither `--config` nor
+  `OSCOPE_CONFIG` selects a file. XDG, macOS, and Windows defaults remain
+  optional and read-only; relative roots never become working-directory
+  lookups, explicit selectors keep precedence, and `--check-config` diagnostics
+  retain their path and secret redaction. Refs #33.
+
 - Render typed field types and coverage in user-facing language. Filter results
   now identify Boolean, Int64, or String values explicitly, while the conserved
   coverage table explains valid, empty, absent, invalid, fallback, and
