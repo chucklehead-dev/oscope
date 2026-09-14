@@ -3,6 +3,7 @@
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
+            [jdbc.chdb.durable.backend :as backend]
             [jdbc.core :as jdbc]
             [oscope.config :as config]
             [oscope.config-cli :as config-cli]
@@ -15,6 +16,7 @@
             [otel.exporter.chdb.attribute-registry-installer :as installer]
             [otel.exporter.chdb.schema :as schema]
             [otel.sdk.export :as export]
+            [otel.resource :as resource]
             [teensyp.client :as client]))
 
 (def ^:private selector
@@ -83,6 +85,9 @@
 
 (defn- post! [port payload]
   (request! port "/v1/traces" (json/write-str payload)))
+
+(defn- post-logs! [port payload]
+  (request! port "/v1/logs" (json/write-str payload)))
 
 (defn- attribute [key kind value]
   {"key" key "value" {kind value}})
@@ -173,6 +178,30 @@
               {:signal :spans :table "otel_traces"
                :location :span-attributes
                :key "typed.shared" :type :string}])}])))
+
+(defn- approved-log-manifest []
+  (manifest/compile-manifest
+   {:dataset-id "oscope-standalone" :application-id "typed-log"
+    :lineage "typed-log-v1" :version 1
+    :fragments
+    [{:schema manifest/reviewed-fragment-schema
+      :authority :runtime-reviewed
+      :source "test/typed-log.edn"
+      :entries
+      [{:signal :logs :table "otel_logs" :location :log-attributes
+        :key "job.attempt" :type :int64}]}]}))
+
+(defn- typed-log-record []
+  {:timestamp-unix-nano 1700000000000000000
+   :observed-time-unix-nano 1700000000000000001
+   :trace-id "11111111111111111111111111111111"
+   :span-id "2222222222222222" :trace-flags 1
+   :severity-number 9 :severity-text "INFO"
+   :body {"job" "archive"} :event-name "oscope.typed.log"
+   :resource (resource/resource {:service.name "oscope-typed-log"})
+   :scope {:name "oscope.typed-log" :version "1"}
+   :attributes {"job.attempt" 9007199254740993
+                "fallback" "retained"}})
 
 (defn- selection [binding value]
   {:mode :typed-span-filter :schema-binding binding
@@ -453,3 +482,42 @@
         (delete-tree! root)
         (delete-tree! root)
         (is (not (.exists root)))))))
+
+(deftest standalone-log-capability-crosses-real-socket-and-retains-fallback
+  (let [registry (backend/memory-backend)
+        lifecycle (server/start!
+                   {:port 0 :db-spec "chdb::memory:"
+                    :typed-schema
+                    {:approved-manifest (approved-log-manifest)
+                     :registry-backend registry}})]
+    (try
+      (let [descriptor-set (:typed-log-descriptors lifecycle)
+            field (first
+                   (projection/confirmed-log-fields
+                    descriptor-set (:connection lifecycle)))
+            value-key (keyword (get-in field [:physical :value-column]))
+            status-key (keyword (get-in field [:physical :status-column]))
+            record (typed-log-record)]
+        (is (some? descriptor-set))
+        (is (nil? (:typed-span-descriptors lifecycle)))
+        (is (nil? (:typed-span-fields (:source lifecycle)))
+            "typed log ingestion must not fabricate a typed log viewer")
+        (is (= 200
+               (:status
+                (post-logs! (:port lifecycle)
+                            (otlp-encode/logs-request [record])))))
+        (let [rows
+              (jdbc/fetch
+               (:connection lifecycle)
+               ["select * from otel_logs where EventName=?"
+                "oscope.typed.log"])
+              row (first rows)]
+          (is (= 1 (count rows)))
+          (is (= 9007199254740993 (get row value-key)))
+          (is (= 3 (get row status-key)))
+          (is (= {"job.attempt" "9007199254740993"
+                  "fallback" "retained"}
+                 (:logattributes row))
+              "the generic compatibility map remains the fallback surface")))
+      (finally
+        (stop-twice! lifecycle)))))

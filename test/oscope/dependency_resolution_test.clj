@@ -6,7 +6,7 @@
 
 (def ^:private exporter-root
   (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
-       "419f7575d986683bd3f2abf28f837786f95b4134/"))
+       "96e68eddbe897e566ec3a7564609c49b0794e59d/"))
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"

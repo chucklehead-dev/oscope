@@ -755,6 +755,10 @@
                     (is (identical? typed-options options))
                     (swap! events conj :schema-installed)
                     {:descriptor-set descriptor-set})
+                  typed-schema/descriptor-options
+                  (fn [context]
+                    (is (identical? descriptor-set (:descriptor-set context)))
+                    {:typed-span-descriptors descriptor-set})
                   jdbc.chdb.durable/checkpoint!
                   (fn [_]
                     (swap! events conj :checkpoint)
@@ -789,6 +793,44 @@
         (is (identical? descriptor-set
                         (:typed-span-descriptors lifecycle)))
         (is (= {:status :closed :phase :closed} (embedded/stop! lifecycle)))))))
+
+(deftest embedded-routes-log-capability-only-to-log-export
+  (let [descriptor-set (Object.)
+        connection (reify java.io.Closeable (close [_]))
+        exporter-options (atom nil)
+        source-options (atom nil)]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (constantly connection)
+                  jdbc.chdb.durable/connection-role (constantly :writer)
+                  typed-schema/install!
+                  (fn [& _] {:descriptor-set descriptor-set})
+                  typed-schema/descriptor-options
+                  (fn [_] {:typed-log-descriptors descriptor-set})
+                  jdbc.chdb.durable/checkpoint!
+                  (constantly {:status :committed})
+                  chdb-export/exporter
+                  (fn [options]
+                    (reset! exporter-options options)
+                    ::exporter)
+                  live/open!
+                  (fn [options]
+                    (reset! source-options options)
+                    {:close! (fn [])})
+                  sdk/init! (constantly ::sdk-handle)
+                  sdk/shutdown! (constantly true)]
+      (let [lifecycle
+            (embedded/start! {:db-spec ::durable
+                              :typed-schema (typed-schema-options)})]
+        (is (identical? descriptor-set
+                        (:typed-log-descriptors @exporter-options)))
+        (is (nil? (:typed-span-descriptors @exporter-options)))
+        (is (= {:connection connection :ensure-schema? false} @source-options))
+        (is (identical? descriptor-set (:typed-log-descriptors lifecycle)))
+        (is (nil? (:typed-span-descriptors lifecycle)))
+        (is (= {:status :closed :phase :closed}
+               (embedded/stop! lifecycle)))))))
 
 (deftest embedded-schema-failure-closes-before-exporter-or-sdk
   (let [events (atom [])

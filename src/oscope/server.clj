@@ -205,10 +205,9 @@
                   ((:checkpoint! durability) conn)))
              source
              (live/open!
-              (cond-> {:connection conn :ensure-schema? false}
-                schema-context
-                (assoc :typed-span-descriptors
-                       (:descriptor-set schema-context))))
+              (typed-schema/source-options
+               {:connection conn :ensure-schema? false}
+               schema-context))
              _ (reset! source* source)
              editor-handler (visualization-editor/handler source)
              app-handler (handler {:otlp-handler
@@ -254,8 +253,7 @@
                              :connection-closed? false})
                :lock (Object.)}
                schema-context
-               (assoc :typed-span-descriptors
-                      (:descriptor-set schema-context)))]
+               (merge (typed-schema/descriptor-options schema-context)))]
          (assoc lifecycle :stop! #(stop-lifecycle! lifecycle)))
        (catch Throwable error
          (when-let [server @server*]

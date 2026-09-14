@@ -126,9 +126,41 @@
                        ::acquisition-failed))))]
       (confirmed-context kind activation))))
 
+(defn descriptor-options
+  "Route one confirmed physical-target capability to its signal consumer.
+
+  The exporter owns this closed target vocabulary. Oscope inspects only the
+  immutable target attached to the installer-issued capability; telemetry
+  input cannot select this route."
+  [schema-context]
+  (when schema-context
+    (let [descriptor-set (:descriptor-set schema-context)
+          record (:record (installer/descriptor-set-data descriptor-set))
+          fields (get-in record [:manifest :fields])]
+      (cond
+        (and (seq fields) (every? identity/trace-attribute-target? fields))
+        {:typed-span-descriptors descriptor-set}
+
+        (and (seq fields)
+             (every? #(= identity/log-attribute-target
+                          (identity/target-of %))
+                     fields))
+        {:typed-log-descriptors descriptor-set}
+
+        :else
+        (fail! "oscope typed schema activated an unsupported export target"
+               ::unsupported-export-target)))))
+
 (defn exporter-options [options schema-context]
   (if schema-context
-    (assoc options
-           :create-schema? false
-           :typed-span-descriptors (:descriptor-set schema-context))
+    (merge options {:create-schema? false} (descriptor-options schema-context))
     options))
+
+(defn source-options
+  "Attach only query-capable trace descriptors to an Oscope live source.
+
+  Log capabilities remain exporter-only until a separately reviewed typed-log
+  query/view contract exists."
+  [options schema-context]
+  (merge options (select-keys (descriptor-options schema-context)
+                              [:typed-span-descriptors])))
