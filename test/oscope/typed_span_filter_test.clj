@@ -194,8 +194,15 @@
                   "Invalid typed value"
                   "Historical fallback value"
                   "Historical value unavailable"
+                  "Rows whose attribute has the approved type and is available to typed queries."
+                  "Rows with a valid empty String value; non-String fields normally report zero here."
+                  "Rows where the attribute is not present."
+                  "Rows whose stored value does not match the approved type."
+                  "Older rows readable only through an untyped fallback value."
+                  "Older rows with no typed value or usable fallback value."
                   "All rows classified by this bounded coverage query."]]
       (is (str/includes? html text) text))
+    (is (not (str/includes? html "The String attribute")))
     (is (not (str/includes? html "historical-untyped-unavailable")))
     (is (not (str/includes? html "historical-untyped-fallback")))
     (is (thrown-with-msg?

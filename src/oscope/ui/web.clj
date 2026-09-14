@@ -361,17 +361,17 @@
 
 (def ^:private typed-coverage-display
   {:valid
-   ["Valid typed value" "The attribute has the approved type and is available to typed queries."]
+   ["Valid typed value" "Rows whose attribute has the approved type and is available to typed queries."]
    :present-empty
-   ["Present empty string" "The String attribute is present, valid, and empty."]
+   ["Present empty string" "Rows with a valid empty String value; non-String fields normally report zero here."]
    :absent
-   ["Attribute absent" "The attribute is not present on this row."]
+   ["Attribute absent" "Rows where the attribute is not present."]
    :invalid
-   ["Invalid typed value" "The stored value does not match the approved type."]
+   ["Invalid typed value" "Rows whose stored value does not match the approved type."]
    :historical-untyped-fallback
-   ["Historical fallback value" "Older data can be read only through its untyped fallback value."]
+   ["Historical fallback value" "Older rows readable only through an untyped fallback value."]
    :historical-untyped-unavailable
-   ["Historical value unavailable" "Older data has no typed value or usable fallback value."]
+   ["Historical value unavailable" "Older rows with no typed value or usable fallback value."]
    :total
    ["Total rows" "All rows classified by this bounded coverage query."]})
 
