@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify the embedded typed-attribute path through the real SDK, Durable
+  writer, exporter projection, and live query stack. The approved manifest is
+  consumed only at startup; ingestion and query state share the exact opaque
+  installer-confirmed descriptor capability and retain no manifest value.
+
 - Route versioned `:durable-local` and `:durable-s3` files through the existing
   Durable standalone owner. The launcher shares config precedence and redacted
   check-only handling, retains the legacy environment surface, resolves S3
