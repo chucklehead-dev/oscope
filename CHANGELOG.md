@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Complete the managed-config store qualification with an independent-process
+  restart through the normal XDG loader, plus causal controls that demonstrate
+  why direct live-file writes and pre-delete/non-atomic replacement fallbacks
+  violate the prior-file preservation contract. Refs #91.
+
 - Add the closed, revisioned foundation for a private managed configuration
   store. Only the canonical platform user path is eligible for writes;
   explicitly selected command-line and environment files remain read-only.

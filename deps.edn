@@ -31,6 +31,10 @@
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.managed-config-worker"]}
 
+  :test-managed-config-load-worker
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.managed-config-load-worker"]}
+
   :test-headless
   {:extra-paths ["test"]
    :extra-deps

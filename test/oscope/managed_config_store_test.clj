@@ -179,6 +179,40 @@
         (is (public-result? result))
         (is (nil? @(:temp state)))))))
 
+(deftest preservation-oracle-rejects-a-direct-live-file-write-mutant
+  (let [before (encoded (document 4318))
+        state (state before)
+        base (fake-operations state)
+        mutant (assoc base
+                      :write! (fn [_ bytes]
+                                ;; Forbidden mutant: bypass the private temp.
+                                (reset! (:live state) bytes))
+                      :force-file! (fn [_]
+                                     (throw (ex-info "mutant stops here" {}))))
+        managed (store/managed-store [] {} properties (constantly true) mutant)
+        prior (:revision (store/snapshot! managed))
+        result (store/replace! managed prior (document 4319))]
+    (is (= :force-failed (:reason result)))
+    (is (not= (seq before) (seq @(:live state)))
+        "the prior-file preservation oracle rejects direct live writes")))
+
+(deftest preservation-oracle-rejects-a-predelete-fallback-mutant
+  (let [before (encoded (document 4318))
+        state (state before)
+        base (fake-operations state)
+        mutant (assoc base :atomic-replace!
+                      (fn [_ _ _]
+                        ;; Forbidden mutant: delete first, then fail before the
+                        ;; replacement can be installed.
+                        (reset! (:live state) nil)
+                        (throw (ex-info "non-atomic fallback failed" {}))))
+        managed (store/managed-store [] {} properties (constantly true) mutant)
+        prior (:revision (store/snapshot! managed))
+        result (store/replace! managed prior (document 4319))]
+    (is (= :atomic-replace-failed (:reason result)))
+    (is (not= (seq before) (seq @(:live state)))
+        "the prior-file preservation oracle rejects pre-delete fallbacks")))
+
 (deftest cleanup-failure-never-masks-a-primary-failure
   (let [before (encoded (document 4318))
         state (state before)
