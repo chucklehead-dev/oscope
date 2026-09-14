@@ -112,6 +112,11 @@ redacted configuration without opening storage or a listener:
 jolt -M:server --config config/oscope.example.edn --check-config
 ```
 
+Without `--config` or `OSCOPE_CONFIG`, Oscope optionally discovers the existing
+platform user config (for example `$XDG_CONFIG_HOME/oscope/config.edn` or
+`$HOME/.config/oscope/config.edn` on Linux). It never creates that file and
+never loads a working-directory config implicitly.
+
 `OSCOPE_HOST` is accepted only as `127.0.0.1`; jolt-http's current transport
 bind is intentionally loopback-only. The receiver accepts uncompressed
 `application/json`, caps the consumed request body at 1 MiB, and admits one
