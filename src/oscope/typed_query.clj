@@ -37,6 +37,13 @@
     :span-attributes "Span"
     "Unknown"))
 
+(defn type-label [attribute-type]
+  (case attribute-type
+    :boolean "Boolean"
+    :int64 "Int64"
+    :string "String"
+    "Unknown"))
+
 (defn operators-for [attribute-type]
   (get-in filter-capability [:operators attribute-type]))
 

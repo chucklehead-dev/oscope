@@ -1,6 +1,21 @@
 const {test, expect} = require("@playwright/test");
 const {emitTypedBoolean, emitTypedInt64, emitTypedLocations} = require("./helpers");
 
+const coverageLabels = {
+  valid: "Valid typed value",
+  empty: "Present empty string",
+  absent: "Attribute absent",
+  invalid: "Invalid typed value",
+  fallback: "Historical fallback value",
+  unavailable: "Historical value unavailable",
+  total: "Total rows",
+};
+
+async function coverageCount(coverage, label) {
+  const row = coverage.getByRole("row", {name: new RegExp(`^${label} `)});
+  return Number(await row.getByRole("cell").last().textContent());
+}
+
 test("summarizes exact typed Int64 ranges with honest historical coverage", async ({page, request, baseURL}) => {
   await emitTypedInt64(request, baseURL);
   await page.goto("/oscope");
@@ -28,20 +43,17 @@ test("summarizes exact typed Int64 ranges with honest historical coverage", asyn
   expect(canonical.searchParams.has("aggregate-min")).toBe(false);
 
   const coverage = page.getByRole("region", {name: "Typed value coverage"});
-  await expect(coverage.getByRole("row", {name: /historical-untyped-unavailable 1/})).toBeVisible();
-  const coverageRows = await coverage.locator("tbody tr").evaluateAll((rows) =>
-    rows.map((row) => Array.from(row.cells, (cell) => cell.textContent.trim())));
-  const counts = new Map(coverageRows.map(([status, count]) =>
-    [status.replace(/^:/, ""), Number(count)]));
-  const statuses = [
-    "valid", "present-empty", "absent", "invalid",
-    "historical-untyped-fallback", "historical-untyped-unavailable",
-  ];
-  expect(counts.get("valid")).toBe(3);
-  expect(counts.get("invalid")).toBe(1);
-  expect(counts.get("historical-untyped-fallback")).toBe(1);
-  expect(counts.get("historical-untyped-unavailable")).toBe(1);
-  expect(counts.get("total")).toBe(statuses.reduce((sum, status) => sum + counts.get(status), 0));
+  await expect(coverage.getByRole("row", {name: /^Historical value unavailable .* 1$/})).toBeVisible();
+  const counts = {};
+  for (const [key, label] of Object.entries(coverageLabels)) {
+    counts[key] = await coverageCount(coverage, label);
+  }
+  expect(counts.valid).toBe(3);
+  expect(counts.invalid).toBe(1);
+  expect(counts.fallback).toBe(1);
+  expect(counts.unavailable).toBe(1);
+  expect(counts.total).toBe(["valid", "empty", "absent", "invalid", "fallback", "unavailable"]
+    .reduce((sum, status) => sum + counts[status], 0));
   const results = page.locator("#oscope-screen > section.panel").last();
   await expect(results.getByRole("row", {name: /oscope-typed-alpha 2/})).toBeVisible();
   await expect(results).not.toContainText("oscope-typed-beta");
@@ -83,24 +95,21 @@ test("filters and displays false with an exact saved Boolean binding", async ({p
   await expect(results.getByRole("row")).toHaveCount(3);
 
   const coverage = page.getByRole("region", {name: "Typed value coverage"});
-  const coverageRows = await coverage.locator("tbody tr").evaluateAll((rows) =>
-    rows.map((row) => Array.from(row.cells, (cell) => cell.textContent.trim())));
-  const counts = new Map(coverageRows.map(([status, count]) =>
-    [status.replace(/^:/, ""), Number(count)]));
-  const statuses = [
-    "valid", "present-empty", "absent", "invalid",
-    "historical-untyped-fallback", "historical-untyped-unavailable",
-  ];
-  expect(counts.get("valid")).toBe(3);
-  expect(counts.get("invalid")).toBe(1);
-  expect(counts.get("historical-untyped-fallback")).toBe(1);
-  expect(counts.get("historical-untyped-unavailable")).toBe(1);
-  expect(counts.get("absent")).toBeGreaterThanOrEqual(1);
-  expect(counts.get("total")).toBe(statuses.reduce((sum, status) => sum + counts.get(status), 0));
+  const counts = {};
+  for (const [key, label] of Object.entries(coverageLabels)) {
+    counts[key] = await coverageCount(coverage, label);
+  }
+  expect(counts.valid).toBe(3);
+  expect(counts.invalid).toBe(1);
+  expect(counts.fallback).toBe(1);
+  expect(counts.unavailable).toBe(1);
+  expect(counts.absent).toBeGreaterThanOrEqual(1);
+  expect(counts.total).toBe(["valid", "empty", "absent", "invalid", "fallback", "unavailable"]
+    .reduce((sum, status) => sum + counts[status], 0));
 
   await page.reload();
   expect(page.url()).toBe(savedURL);
-  await expect(page.getByRole("heading", {name: "Typed spans · game.ready · Span"})).toBeVisible();
+  await expect(page.getByRole("heading", {name: "Typed Boolean spans · game.ready · Span"})).toBeVisible();
   await expect(page.getByRole("form", {name: "Typed boolean trace attribute filter"})
     .getByLabel("Value")).toHaveValue("false");
   await expect(results.getByRole("row", {name: /ready\.false\.first false/})).toBeVisible();
@@ -118,9 +127,9 @@ test("filters and displays false with an exact saved Boolean binding", async ({p
 test("keeps equal resource, scope, and span keys distinct", async ({page, request, baseURL}) => {
   await emitTypedLocations(request, baseURL);
   for (const [label, location, value] of [
-    ["demo.shared - Resource", "resource-attributes", "resource-value"],
-    ["demo.shared - Scope", "scope-attributes", "scope-value"],
-    ["demo.shared - Span", "span-attributes", "span-value"],
+    ["demo.shared (String) - Resource", "resource-attributes", "resource-value"],
+    ["demo.shared (String) - Scope", "scope-attributes", "scope-value"],
+    ["demo.shared (String) - Span", "span-attributes", "span-value"],
   ]) {
     await page.goto("/oscope");
     const form = page.getByRole("form", {name: "Typed string trace attribute filter"});
@@ -129,11 +138,11 @@ test("keeps equal resource, scope, and span keys distinct", async ({page, reques
     await form.getByRole("button", {name: "Filter typed spans"}).click();
     const canonical = new URL(page.url());
     expect(canonical.searchParams.get("typed-attribute-location")).toBe(location);
-    await expect(page.getByRole("heading", {name: new RegExp(`Typed spans .* ${label.split(" - ")[1]}`)})).toBeVisible();
+    await expect(page.getByRole("heading", {name: new RegExp(`Typed String spans .* ${label.split(" - ")[1]}`)})).toBeVisible();
     await expect(page.locator("#oscope-screen > section.panel").last()).toContainText(value);
     if (location === "scope-attributes") {
       await expect(page.getByRole("region", {name: "Typed value coverage"})
-        .getByRole("row", {name: /historical-untyped-unavailable [1-9]/})).toBeVisible();
+        .getByRole("row", {name: /^Historical value unavailable .* [1-9][0-9]*$/})).toBeVisible();
     }
   }
 });
