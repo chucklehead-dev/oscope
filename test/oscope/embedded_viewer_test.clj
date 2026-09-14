@@ -99,12 +99,14 @@
                   (fn [_] (constantly {:status 200}))
                   http/run-server
                   (fn [& _]
-                    (swap! events-seen conj :listener-failed)
-                    (throw (ex-info "bind failed" {})))]
+                    (swap! events-seen conj :listener-start)
+                    {:port nil})
+                  http/stop-server
+                  (fn [_] (swap! events-seen conj :listener-stop))]
       (is (thrown? Exception
                    (viewer/start!
                     {:source ::source :connection ::connection})))
-      (is (= [:listener-failed :workers-stop] @events-seen))))
+      (is (= [:listener-start :listener-stop :workers-stop] @events-seen))))
   (let [attempts (atom 0)
         events-seen (atom [])
         executor {:executor ::executor}]

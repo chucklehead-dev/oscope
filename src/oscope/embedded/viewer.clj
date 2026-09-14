@@ -94,6 +94,10 @@
                        :executor (:executor owned-http-executor))
              _ (reset! server* listener)
              actual-port (:port listener)
+             _ (when-not (and (integer? actual-port)
+                              (<= 1 actual-port 65535))
+                 (invalid! "oscope viewer listener returned an invalid port"
+                           ::invalid-bound-port))
              _ (reset! authority* (str host ":" actual-port))
              internal {:server listener
                        :http-executor owned-http-executor
