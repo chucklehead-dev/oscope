@@ -36,6 +36,85 @@
                         (:boolValue value) (:doubleValue value))]))
         (:attributes span)))
 
+(deftest live-gate-diagnostics-retain-only-allowlisted-categories
+  (is (= "PASS: Oscope and Langfuse preserved the qualified nested trace"
+         (interop/success-line)))
+  (doseq [[stage label]
+          [[:config-loaded "config-loaded"]
+           [:local-ingest "local-ingest"]
+           [:local-readback "local-readback"]
+           [:remote-export-flush "remote-export/flush"]
+           [:remote-observation "remote-observation"]
+           [:semantic-compare "semantic-compare"]
+           [:cleanup "cleanup"]]]
+    (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+                "[stage=" label " status=failure]")
+           (interop/diagnostic-line {:stage stage :status :failure}))))
+  (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+              "[stage=remote-export/flush status=failure]")
+         (interop/diagnostic-line
+          {:stage :remote-export-flush
+           :status :failure
+           :endpoint "https://credential@example.invalid"
+           :headers {"Authorization" "Basic secret"}
+           :body "private response"})))
+  (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+              "[stage=remote-observation status=timeout "
+              "matching-count=none]")
+         (interop/diagnostic-line
+          {:stage :remote-observation
+           :status :timeout
+           :matching-count :none
+           :cause (ex-info "private nested cause" {})})))
+  (is (= "FAIL: Oscope/Langfuse semantic interoperability gate failed [stage=unknown]"
+         (interop/diagnostic-line
+          {:stage "https://credential@example.invalid"
+           :status :not-an-enum
+           :reason "Basic secret"
+           :matching-count "private response"})))
+  (let [canary "langfuse-diagnostic-canary"
+        line (interop/diagnostic-line
+              {:stage :remote-observation
+               :status :failure
+               :reason canary
+               :endpoint canary
+               :headers {"Authorization" canary}
+               :body canary
+               :exception-message canary})]
+    (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+                "[stage=remote-observation status=failure]")
+           line))
+    (is (not (.contains line canary)))))
+
+(deftest live-gate-preserves-primary-stage-across-cleanup-failure
+  (let [run-with-cleanup (ns-resolve 'oscope.langfuse-interop
+                                     'run-with-cleanup!)
+        later-cleanup-ran? (atom false)
+        primary (ex-info "discarded primary detail"
+                         {:stage :remote-export-flush :status :failure})
+        primary-result
+        (try
+          (run-with-cleanup
+           #(throw primary)
+           [#(throw (ex-info "discarded cleanup detail"
+                             {:credential "langfuse-cleanup-canary"}))
+            #(reset! later-cleanup-ran? true)])
+          (catch Throwable error error))
+        cleanup-result
+        (try
+          (run-with-cleanup
+           (constantly :completed)
+           [#(throw (ex-info "discarded cleanup-only detail"
+                             {:credential "langfuse-cleanup-canary"}))])
+          (catch Throwable error error))]
+    (is @later-cleanup-ran?)
+    (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+                "[stage=remote-export/flush status=failure]")
+           (interop/diagnostic-line (ex-data primary-result))))
+    (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+                "[stage=cleanup status=failure]")
+           (interop/diagnostic-line (ex-data cleanup-result))))))
+
 (deftest live-readback-boundary-retains-only-asserted-observation-fields
   (let [listener
         (http/run-server

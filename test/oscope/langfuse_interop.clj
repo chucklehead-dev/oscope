@@ -14,9 +14,106 @@
 
 (def ^:private observation-deadline-ms 90000)
 
+(def ^:private diagnostic-prefix
+  "FAIL: Oscope/Langfuse semantic interoperability gate failed")
+
+(def ^:private success-summary
+  "PASS: Oscope and Langfuse preserved the qualified nested trace")
+
+(def ^:private diagnostic-stage-labels
+  {:config-loaded "config-loaded"
+   :local-ingest "local-ingest"
+   :local-readback "local-readback"
+   :remote-export-flush "remote-export/flush"
+   :remote-observation "remote-observation"
+   :semantic-compare "semantic-compare"
+   :cleanup "cleanup"})
+
+(def ^:private diagnostic-statuses
+  #{:success :failure :timeout})
+
+(def ^:private diagnostic-matching-counts
+  #{:none :one :multiple})
+
 (defn- fail! [message data]
   ;; Never retain endpoint URLs, headers, response bodies, or nested causes.
   (throw (ex-info message (assoc data :oscope.langfuse-interop/error true))))
+
+(defn- matching-count [count]
+  (cond
+    (not (number? count)) nil
+    (zero? count) :none
+    (= 1 count) :one
+    :else :multiple))
+
+(defn- diagnostic-view [data]
+  (let [stage (if (contains? diagnostic-stage-labels (:stage data))
+                (:stage data)
+                :unknown)
+        status (let [candidate (:status data)]
+                 (when (contains? diagnostic-statuses candidate) candidate))
+        count (when (= :remote-observation stage)
+                (let [candidate (or (:matching-count data)
+                                    (some-> (:matching-observation-count data)
+                                            matching-count))]
+                  (when (contains? diagnostic-matching-counts candidate)
+                    candidate)))]
+    (cond-> {:stage stage}
+      status (assoc :status status)
+      count (assoc :matching-count count))))
+
+(defn diagnostic-line
+  "Render only allowlisted failure categories; never interpolate raw failures."
+  [data]
+  (let [{:keys [stage status matching-count]} (diagnostic-view data)]
+    (str diagnostic-prefix " [stage="
+         (get diagnostic-stage-labels stage "unknown")
+         (when status (str " status=" (name status)))
+         (when matching-count (str " matching-count=" (name matching-count)))
+         "]")))
+
+(defn success-line
+  "Render the generic success summary without retaining generated trace IDs."
+  []
+  success-summary)
+
+(defn- stage-error [stage error]
+  ;; Retain no cause and rebuild ex-data from bounded diagnostic categories.
+  (let [data (or (ex-data error) {})]
+    (ex-info diagnostic-prefix
+             (assoc (diagnostic-view
+                     {:stage stage
+                      :status (if (contains? diagnostic-statuses (:status data))
+                                (:status data)
+                                :failure)
+                      :matching-observation-count
+                      (:matching-observation-count data)})
+                    :oscope.langfuse-interop/error true))))
+
+(defn- at-stage! [stage thunk]
+  (try
+    (thunk)
+    (catch Throwable error
+      (throw (stage-error stage error)))))
+
+(defn- run-with-cleanup! [operation cleanup-thunks]
+  (let [outcome (try
+                  {:value (operation)}
+                  (catch Throwable error {:error error}))
+        cleanup-error
+        (reduce
+         (fn [first-error cleanup]
+           (try
+             (cleanup)
+             first-error
+             (catch Throwable error
+               (or first-error error))))
+         nil
+         cleanup-thunks)]
+    (cond
+      (:error outcome) (throw (:error outcome))
+      cleanup-error (throw (stage-error :cleanup cleanup-error))
+      :else (:value outcome))))
 
 (defn- required-env! [name]
   (let [value (host/getenv name)]
@@ -80,18 +177,18 @@
 
 (defn- await-observations! [url headers ids]
   (let [deadline (+ (System/currentTimeMillis) observation-deadline-ms)]
-    (loop [last-status nil]
-      (let [{:keys [status rows]} (observation-response url headers
-                                                       (:trace-id ids))
+    (loop []
+      (let [{:keys [rows]} (observation-response url headers
+                                                (:trace-id ids))
             exact (vec (filter #(= (:trace-id ids) (:traceId %)) rows))]
         (cond
           (= 2 (count exact)) exact
           (< (System/currentTimeMillis) deadline)
-          (do (Thread/sleep 1000) (recur status))
+          (do (Thread/sleep 1000) (recur))
           :else
           (fail! "Langfuse observations did not become semantically readable"
-                 {:last-status (or status last-status) :matching-observation-count
-                  (count exact)}))))))
+                 {:status :timeout
+                  :matching-observation-count (count exact)}))))))
 
 (defn- verify-remote! [ids observations]
   (let [by-id (into {} (map (juxt :id identity)) observations)
@@ -116,39 +213,55 @@
     true))
 
 (defn run! []
-  (let [{:keys [traces-url observations-url headers]} (config!)
-        local (server/start! {:port 0 :db-spec "chdb::memory:"})
+  (let [{:keys [traces-url observations-url headers]}
+        (at-stage! :config-loaded config!)
+        local (at-stage! :local-ingest
+                         #(server/start! {:port 0 :db-spec "chdb::memory:"}))
         runtime* (atom nil)]
-    (try
-      (let [local-exporter
-            (otlp/exporter
-             {:endpoint (str "http://127.0.0.1:" (:port local))
-              :environment? false :timeout-ms 10000 :max-retries 0})
-            runtime (gate/dual-sdk! {:local-exporter local-exporter
-                                     :remote-url traces-url
-                                     :remote-headers headers})
-            _ (reset! runtime* runtime)
-            ids (gate/emit-nested-trace!)]
-        (when-not (= {:local {:ok? true} :remote {:ok? true}}
-                     (export/force-flush-pipelines! (:pipelines runtime)))
-          (fail! "dual span export did not flush both destinations" {}))
-        (when-not (= (expected-local ids)
-                     (local-identities (:connection local) (:trace-id ids)))
-          (fail! "standalone Oscope did not read back the canonical trace" {}))
-        (verify-remote! ids (await-observations! observations-url headers ids))
-        ids)
-      (finally
+    (run-with-cleanup!
+     (fn []
+       (let [local-exporter
+             (at-stage!
+              :local-ingest
+              #(otlp/exporter
+                {:endpoint (str "http://127.0.0.1:" (:port local))
+                 :environment? false :timeout-ms 10000 :max-retries 0}))
+             runtime
+             (at-stage! :remote-export-flush
+                        #(gate/dual-sdk! {:local-exporter local-exporter
+                                         :remote-url traces-url
+                                         :remote-headers headers}))
+             _ (reset! runtime* runtime)
+             ids (at-stage! :local-ingest gate/emit-nested-trace!)]
+         (at-stage!
+          :remote-export-flush
+          #(when-not (= {:local {:ok? true} :remote {:ok? true}}
+                        (export/force-flush-pipelines! (:pipelines runtime)))
+             (fail! "dual span export did not flush both destinations" {})))
+         (at-stage!
+          :local-readback
+          #(when-not (= (expected-local ids)
+                        (local-identities (:connection local) (:trace-id ids)))
+             (fail! "standalone Oscope did not read back the canonical trace"
+                    {})))
+         (let [observations
+               (at-stage! :remote-observation
+                          #(await-observations! observations-url headers ids))]
+           (at-stage! :semantic-compare
+                      #(verify-remote! ids observations)))
+         ids))
+     [(fn []
         (when-let [runtime @runtime*]
-          (try (sdk/shutdown! (:handle runtime)) (catch Throwable _ nil)))
-        (server/stop! local)))))
+          (sdk/shutdown! (:handle runtime))))
+      #(server/stop! local)])))
 
 (defn -main [& _]
   (try
-    (let [ids (run!)]
-      (println (str "PASS: Oscope and Langfuse preserved nested trace "
-                    (:trace-id ids)))
+    (do
+      (run!)
+      (println (success-line))
       (System/exit 0))
-    (catch Throwable _
+    (catch Throwable error
       (binding [*out* *err*]
-        (println "FAIL: Oscope/Langfuse semantic interoperability gate failed"))
+        (println (diagnostic-line (ex-data error))))
       (System/exit 1))))
