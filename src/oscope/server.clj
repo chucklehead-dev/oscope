@@ -1,11 +1,11 @@
 (ns oscope.server
   "Standalone loopback OTLP/HTTP receiver and oscope viewer composition."
-  (:require [clojure.string :as str]
-            [db.jdbc]
+  (:require [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
             [oscope.config :as config]
             [oscope.error :as error]
+            [oscope.http-app :as http-app]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
@@ -19,11 +19,11 @@
             [otel.sdk.export :as export]
             [otel.sdk.logs :as logs]))
 
-(def default-host "127.0.0.1")
-(def default-port 4318)
+(def default-host http-app/default-host)
+(def default-port http-app/default-port)
 (def default-db-spec "chdb:./oscope-data")
-(def default-http-workers 2)
-(def default-http-queue-capacity 8)
+(def default-http-workers http-app/default-http-workers)
+(def default-http-queue-capacity http-app/default-http-queue-capacity)
 
 (defn- validate-http-executor-options!
   [http-workers http-queue-capacity]
@@ -38,71 +38,15 @@
                      :http-queue-capacity http-queue-capacity})))
   true)
 
-(def ^:private text-headers
-  {"Content-Type" "text/plain; charset=UTF-8"
-   "Cache-Control" "no-store"
-   "X-Content-Type-Options" "nosniff"})
-
-(defn- request-header [request header-name]
-  (let [target (str/lower-case header-name)]
-    (some (fn [[key value]]
-            (when (= target
-                     (str/lower-case
-                      (if (keyword? key) (name key) (str key))))
-              (str/trim (str value))))
-          (:headers request))))
-
-(defn- expected-authority [authority]
-  (if (fn? authority) (authority) authority))
-
-(defn- authority-response []
-  {:status 421
-   :headers (assoc text-headers "Connection" "close")
-   :body "misdirected request\n"})
-
 (defn handler
   "Compose receiver and viewer handlers without adding instrumentation.
 
   Absence of an OTel SDK, tracer, logger, or middleware in this namespace makes
   collector feedback impossible by construction."
-  [{:keys [otlp-handler oscope-handler workbench-handler events-handler
-           visualization-editor-handler authority]
-    :or {authority (str default-host ":" default-port)}}]
-  (fn [{:keys [request-method uri] :as request}]
-    (let [expected (expected-authority authority)]
-      (cond
-      ;; A loopback bind does not stop a hostile public hostname from resolving
-      ;; to 127.0.0.1. Require the exact numeric authority before any receiver,
-      ;; viewer, export, or health work so browser DNS rebinding cannot cross
-      ;; the standalone process boundary. A nil authority is the fail-closed
-      ;; startup state while an ephemeral listener's actual port is published.
-      (or (nil? expected)
-          (not= expected (request-header request "host")))
-      (authority-response)
-
-      (and otlp-handler (contains? receiver/receiver-paths uri))
-      (otlp-handler request)
-      (and workbench-handler
-           (workbench/handled-path? workbench/default-path uri))
-      (workbench-handler request)
-      (and events-handler
-           (events/handled-path? events/default-path uri))
-      (events-handler request)
-      (and visualization-editor-handler
-           (visualization-editor/handled-path?
-            visualization-editor/default-path uri))
-      (visualization-editor-handler request)
-      (web/handled-path? web/default-path uri)
-      (oscope-handler request)
-      (and (= :get request-method) (= "/healthz" uri))
-      {:status 200 :headers text-headers :body "ok\n"}
-      (and (= :get request-method) (= "/" uri))
-      {:status 303 :headers {"Location" (if workbench-handler
-                                           workbench/default-path
-                                           web/default-path)
-                             "Cache-Control" "no-store"}
-       :body ""}
-      :else {:status 404 :headers text-headers :body "not found"}))))
+  [options]
+  (http-app/handler
+   (cond-> options
+     (:otlp-handler options) (assoc :otlp-paths receiver/receiver-paths))))
 
 (defn- close-face! [face exporter]
   (let [closed? (case face

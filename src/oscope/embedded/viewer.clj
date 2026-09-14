@@ -2,8 +2,8 @@
   "Viewer-only HTTP lifecycle borrowing an existing embedded Oscope owner."
   (:require [jolt.http.server :as http]
             [oscope.error :as error]
+            [oscope.http-app :as http-app]
             [oscope.http-executor :as http-executor]
-            [oscope.server :as server]
             [oscope.ui.events :as events]
             [oscope.ui.visualization-editor :as visualization-editor]
             [oscope.ui.web :as web]
@@ -51,15 +51,15 @@
   ([owner] (start! owner {}))
   ([{:keys [source connection]} {:keys [host port http-workers
                                         http-queue-capacity]
-                                 :or {host server/default-host
+                                 :or {host http-app/default-host
                                       port 0
-                                      http-workers server/default-http-workers
+                                      http-workers http-app/default-http-workers
                                       http-queue-capacity
-                                      server/default-http-queue-capacity}}]
+                                      http-app/default-http-queue-capacity}}]
    (when-not (and source connection)
      (invalid! "oscope viewer requires an existing source and connection"
                ::invalid-owner))
-   (when-not (= server/default-host host)
+   (when-not (= http-app/default-host host)
      (invalid! "oscope viewer must bind to 127.0.0.1" ::invalid-host))
    (when-not (and (integer? port) (<= 0 port 65535))
      (invalid! "oscope viewer port must be between 0 and 65535" ::invalid-port))
@@ -76,7 +76,7 @@
                                     :queue-capacity http-queue-capacity})
              _ (reset! owned-http-executor* owned-http-executor)
              app-handler
-             (server/handler
+             (http-app/handler
               {:workbench-handler (workbench/handler connection)
                :events-handler (events/handler connection)
                :oscope-handler
