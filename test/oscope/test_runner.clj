@@ -5,6 +5,7 @@
             [oscope.config-test]
             [oscope.core-test]
             [oscope.embedded-query-test]
+            [oscope.embedded-viewer-test]
             [oscope.events-test]
             [oscope.http-executor-test]
             [oscope.live-test]
@@ -34,6 +35,7 @@
         (test/run-tests 'oscope.async-selection-test
                         'oscope.config-property-test 'oscope.config-test
                         'oscope.core-test 'oscope.embedded-query-test
+                        'oscope.embedded-viewer-test
                         'oscope.events-test 'oscope.live-test
                         'oscope.http-executor-test
                         'oscope.native-test 'oscope.native-server-test

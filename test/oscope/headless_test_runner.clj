@@ -13,6 +13,7 @@
             [oscope.durable-observability-test]
             [oscope.dependency-resolution-test]
             [oscope.embedded-query-test]
+            [oscope.embedded-viewer-test]
             [oscope.events-test]
             [oscope.http-executor-test]
             [oscope.langfuse-profile-test]
@@ -48,6 +49,7 @@
                         'oscope.durable-observability-test
                         'oscope.dependency-resolution-test
                         'oscope.embedded-query-test
+                        'oscope.embedded-viewer-test
                         'oscope.events-test
                         'oscope.http-executor-test
                         'oscope.langfuse-profile-test

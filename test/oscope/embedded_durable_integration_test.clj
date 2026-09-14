@@ -6,6 +6,7 @@
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
+            [oscope.embedded.viewer :as viewer]
             [oscope.embedded.query :as embedded-query]
             [oscope.live :as live]
             [oscope.sample-emitter :as sample]
@@ -74,6 +75,18 @@
       (sample/emit-scenario!)
       (is (true? (embedded/force-flush! lifecycle)))
       (assert-signals-visible! (:source lifecycle) "writer")
+      (let [viewer-lifecycle (viewer/start! lifecycle)]
+        (try
+          (is (pos? (:port viewer-lifecycle)))
+          (is (= (str "http://127.0.0.1:" (:port viewer-lifecycle)
+                      "/oscope/telemetry")
+                 (:url viewer-lifecycle)))
+          (finally
+            ;; The viewer retires its listener and request workers without
+            ;; closing the source, SDK, or Durable writer it borrowed.
+            (is (= {:status :closed :phase :closed}
+                   (viewer/stop! viewer-lifecycle))))))
+      (assert-signals-visible! (:source lifecycle) "after-viewer-stop")
       ;; This is the real counted-lock regression: the cadence runs on a Jolt
       ;; fiber, but the live source/JDBC query must execute on the facade's OS
       ;; thread rather than attempting to park the fiber while locks are held.

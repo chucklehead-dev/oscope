@@ -80,7 +80,8 @@
           (not= expected (request-header request "host")))
       (authority-response)
 
-      (contains? receiver/receiver-paths uri) (otlp-handler request)
+      (and otlp-handler (contains? receiver/receiver-paths uri))
+      (otlp-handler request)
       (and workbench-handler
            (workbench/handled-path? workbench/default-path uri))
       (workbench-handler request)
