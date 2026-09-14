@@ -86,6 +86,35 @@
            line))
     (is (not (.contains line canary)))))
 
+(deftest live-gate-preserves-primary-stage-across-cleanup-failure
+  (let [run-with-cleanup (ns-resolve 'oscope.langfuse-interop
+                                     'run-with-cleanup!)
+        later-cleanup-ran? (atom false)
+        primary (ex-info "discarded primary detail"
+                         {:stage :remote-export-flush :status :failure})
+        primary-result
+        (try
+          (run-with-cleanup
+           #(throw primary)
+           [#(throw (ex-info "discarded cleanup detail"
+                             {:credential "langfuse-cleanup-canary"}))
+            #(reset! later-cleanup-ran? true)])
+          (catch Throwable error error))
+        cleanup-result
+        (try
+          (run-with-cleanup
+           (constantly :completed)
+           [#(throw (ex-info "discarded cleanup-only detail"
+                             {:credential "langfuse-cleanup-canary"}))])
+          (catch Throwable error error))]
+    (is @later-cleanup-ran?)
+    (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+                "[stage=remote-export/flush status=failure]")
+           (interop/diagnostic-line (ex-data primary-result))))
+    (is (= (str "FAIL: Oscope/Langfuse semantic interoperability gate failed "
+                "[stage=cleanup status=failure]")
+           (interop/diagnostic-line (ex-data cleanup-result))))))
+
 (deftest live-readback-boundary-retains-only-asserted-observation-fields
   (let [listener
         (http/run-server

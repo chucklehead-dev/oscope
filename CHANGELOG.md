@@ -6,7 +6,8 @@
   status, and bounded observation-count categories. Terminal summaries retain
   no endpoints, trace IDs, headers, credentials, bodies, exception details, or
   arbitrary values, so operators can distinguish export from semantic-readback
-  failures without weakening the gate's redaction boundary.
+  failures without weakening the gate's redaction boundary. Cleanup always
+  runs, while a simultaneous cleanup failure cannot replace the primary stage.
 
 - Pin merged `casselc/otel` HTTP-provider convergence so complete
   Content-Length and chunked TLS responses finish without waiting for a later

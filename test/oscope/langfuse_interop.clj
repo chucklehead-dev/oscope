@@ -77,23 +77,43 @@
   []
   success-summary)
 
+(defn- stage-error [stage error]
+  ;; Retain no cause and rebuild ex-data from bounded diagnostic categories.
+  (let [data (or (ex-data error) {})]
+    (ex-info diagnostic-prefix
+             (assoc (diagnostic-view
+                     {:stage stage
+                      :status (if (contains? diagnostic-statuses (:status data))
+                                (:status data)
+                                :failure)
+                      :matching-observation-count
+                      (:matching-observation-count data)})
+                    :oscope.langfuse-interop/error true))))
+
 (defn- at-stage! [stage thunk]
   (try
     (thunk)
     (catch Throwable error
-      ;; Re-throw no cause and retain only bounded diagnostic categories.
-      (let [data (or (ex-data error) {})]
-        (throw
-         (ex-info diagnostic-prefix
-                  (assoc (diagnostic-view
-                          {:stage stage
-                           :status (if (contains? diagnostic-statuses
-                                                  (:status data))
-                                     (:status data)
-                                     :failure)
-                           :matching-observation-count
-                           (:matching-observation-count data)})
-                         :oscope.langfuse-interop/error true)))))))
+      (throw (stage-error stage error)))))
+
+(defn- run-with-cleanup! [operation cleanup-thunks]
+  (let [outcome (try
+                  {:value (operation)}
+                  (catch Throwable error {:error error}))
+        cleanup-error
+        (reduce
+         (fn [first-error cleanup]
+           (try
+             (cleanup)
+             first-error
+             (catch Throwable error
+               (or first-error error))))
+         nil
+         cleanup-thunks)]
+    (cond
+      (:error outcome) (throw (:error outcome))
+      cleanup-error (throw (stage-error :cleanup cleanup-error))
+      :else (:value outcome))))
 
 (defn- required-env! [name]
   (let [value (host/getenv name)]
@@ -198,40 +218,42 @@
         local (at-stage! :local-ingest
                          #(server/start! {:port 0 :db-spec "chdb::memory:"}))
         runtime* (atom nil)]
-    (try
-      (let [local-exporter
-            (at-stage!
-             :local-ingest
-             #(otlp/exporter
-               {:endpoint (str "http://127.0.0.1:" (:port local))
-                :environment? false :timeout-ms 10000 :max-retries 0}))
-            runtime
-            (at-stage! :remote-export-flush
-                       #(gate/dual-sdk! {:local-exporter local-exporter
-                                        :remote-url traces-url
-                                        :remote-headers headers}))
-            _ (reset! runtime* runtime)
-            ids (at-stage! :local-ingest gate/emit-nested-trace!)]
-        (at-stage!
-         :remote-export-flush
-         #(when-not (= {:local {:ok? true} :remote {:ok? true}}
-                       (export/force-flush-pipelines! (:pipelines runtime)))
-            (fail! "dual span export did not flush both destinations" {})))
-        (at-stage!
-         :local-readback
-         #(when-not (= (expected-local ids)
-                       (local-identities (:connection local) (:trace-id ids)))
-            (fail! "standalone Oscope did not read back the canonical trace" {})))
-        (let [observations
-              (at-stage! :remote-observation
-                         #(await-observations! observations-url headers ids))]
-          (at-stage! :semantic-compare
-                     #(verify-remote! ids observations)))
-        ids)
-      (finally
+    (run-with-cleanup!
+     (fn []
+       (let [local-exporter
+             (at-stage!
+              :local-ingest
+              #(otlp/exporter
+                {:endpoint (str "http://127.0.0.1:" (:port local))
+                 :environment? false :timeout-ms 10000 :max-retries 0}))
+             runtime
+             (at-stage! :remote-export-flush
+                        #(gate/dual-sdk! {:local-exporter local-exporter
+                                         :remote-url traces-url
+                                         :remote-headers headers}))
+             _ (reset! runtime* runtime)
+             ids (at-stage! :local-ingest gate/emit-nested-trace!)]
+         (at-stage!
+          :remote-export-flush
+          #(when-not (= {:local {:ok? true} :remote {:ok? true}}
+                        (export/force-flush-pipelines! (:pipelines runtime)))
+             (fail! "dual span export did not flush both destinations" {})))
+         (at-stage!
+          :local-readback
+          #(when-not (= (expected-local ids)
+                        (local-identities (:connection local) (:trace-id ids)))
+             (fail! "standalone Oscope did not read back the canonical trace"
+                    {})))
+         (let [observations
+               (at-stage! :remote-observation
+                          #(await-observations! observations-url headers ids))]
+           (at-stage! :semantic-compare
+                      #(verify-remote! ids observations)))
+         ids))
+     [(fn []
         (when-let [runtime @runtime*]
-          (try (sdk/shutdown! (:handle runtime)) (catch Throwable _ nil)))
-        (at-stage! :cleanup #(server/stop! local))))))
+          (sdk/shutdown! (:handle runtime))))
+      #(server/stop! local)])))
 
 (defn -main [& _]
   (try
