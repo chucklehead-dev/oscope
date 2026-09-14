@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a closed, versioned `oscope.embedded/status` snapshot for application
+  health endpoints. It reports lifecycle phase and bounded local/remote span
+  pipeline counters without exposing ownership-bearing objects, endpoints,
+  credentials, exceptions, or telemetry values. Durable freshness and the
+  last successful persistence boundary remain explicitly unavailable until a
+  public jolt-chdb capability can support those claims. Refs #77.
+
 - Add a viewer-only embedded lifecycle over an existing source and connection.
   It exposes the normal workbench, event, chart, and editor surfaces on an
   exact loopback authority without OTLP ingress, reports the actual ephemeral

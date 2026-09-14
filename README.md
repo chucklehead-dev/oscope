@@ -580,6 +580,16 @@ remote collector cannot block local ingestion:
 ;;              :attempted-span-count 12 :exported-span-count 12
 ;;              :failed-span-count 0 :dropped-count 0}}
 
+(embedded/status runtime)
+;; => {:oscope.embedded.status/version 1
+;;     :phase :open
+;;     :span-pipelines
+;;     {:mode :independent
+;;      :local {:availability :available, :queue-size 0, ...}
+;;      :remote {:availability :available, :queue-size 0, ...}}
+;;     :durable {:view-current? :unavailable
+;;               :last-successful-persistence :unavailable}}
+
 (embedded/force-flush! runtime)
 ;; => {:sdk {:ok? true}
 ;;     :span-pipelines
@@ -614,6 +624,17 @@ and connection close still run. Only a failed query, persistence, or connection
 boundary leaves the lifecycle `:closing` for a later `stop!` retry. Logs and
 metrics are intentionally local-only in this slice. This is generic OTLP/HTTP
 export; interoperability with a particular hosted product is not implied.
+
+`embedded/status` is the safe surface for a read-only application health
+endpoint. It returns a closed versioned map containing only lifecycle phase and
+bounded scalar counters for the local and remote span queues. Direct-local
+lifecycles and malformed or unavailable counter sources use explicit
+`:unavailable` values. Durable view freshness and the last successful
+persistence boundary are also `:unavailable`: the current public jolt-chdb API
+does not expose evidence for those claims, and Oscope does not infer them from
+an open connection. The snapshot never contains the dbspec, backend,
+connection, exporter, schema descriptors, endpoint, credentials, exceptions,
+or telemetry attribute values.
 
 To promote reviewed span attributes into typed ClickHouse columns, compile the
 approved manifest before startup and pass it with the registry backend. Oscope

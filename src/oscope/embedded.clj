@@ -20,6 +20,19 @@
         #{:endpoint :traces-url :headers-env :timeout-ms :max-retries
           :insecure?}))
 
+(def ^:private lifecycle-phases
+  #{:open :retiring-oscope :persisting :closing-connection :closed})
+
+(def ^:private pipeline-counter-keys
+  [:queue-size :attempted-span-count :exported-span-count
+   :failed-span-count :dropped-count])
+
+(def ^:private unavailable-pipeline-status
+  (assoc (zipmap pipeline-counter-keys (repeat :unavailable))
+         :availability :unavailable))
+
+(def ^:private max-status-counter 9223372036854775807)
+
 (defn- invalid! [message type & [data]]
   (throw (ex-info message
                   (merge {:oscope.embedded/error true :type type} data))))
@@ -167,6 +180,35 @@
            {:sdk (:sdk-shutdown state)
             :span-pipelines (:span-pipeline-shutdown state)})
     failure (assoc :errors [failure])))
+
+(defn- safe-counter? [value]
+  (and (integer? value) (<= 0 value max-status-counter)))
+
+(defn- safe-pipeline-status [stats]
+  (if (and (map? stats)
+           (every? #(safe-counter? (get stats %)) pipeline-counter-keys))
+    (assoc (select-keys stats pipeline-counter-keys)
+           :availability :available)
+    unavailable-pipeline-status))
+
+(defn- lifecycle-status [state pipelines]
+  (let [pipeline-stats
+        (when pipelines
+          (try
+            (export/pipeline-stats pipelines)
+            (catch Throwable _ nil)))]
+    {:oscope.embedded.status/version 1
+     :phase (let [phase (:phase @state)]
+              (if (contains? lifecycle-phases phase) phase :unknown))
+     :span-pipelines
+     {:mode (if pipelines :independent :direct-local)
+      :local (safe-pipeline-status (get pipeline-stats :local))
+      :remote (safe-pipeline-status (get pipeline-stats :remote))}
+     ;; jolt-chdb does not yet expose a public connection-status capability.
+     ;; Reporting a guessed generation or freshness would make a health check
+     ;; stronger than the persistence evidence available at this boundary.
+     :durable {:view-current? :unavailable
+               :last-successful-persistence :unavailable}}))
 
 (defn- sdk-operation! [operation sdk-handle pipeline-results]
   (try
@@ -358,8 +400,9 @@
                                         failure (assoc :failure failure))
                                  :span-pipelines results})
                               false)))
-              stats-fn (when pipelines #(export/pipeline-stats pipelines))]
-          (cond-> (assoc public-base :stop! stop-fn)
+              stats-fn (when pipelines #(export/pipeline-stats pipelines))
+              status-fn #(lifecycle-status (:state internal) pipelines)]
+          (cond-> (assoc public-base :stop! stop-fn :status-fn status-fn)
             pipelines (assoc :force-flush! flush-fn
                              :span-pipeline-stats stats-fn))))
       (catch Throwable error
@@ -398,6 +441,18 @@
     (stats-fn)
     (invalid! "oscope embedded lifecycle has no dual span pipelines"
               ::no-span-pipelines)))
+
+(defn status
+  "Return a closed, read-only operational snapshot for an embedded lifecycle.
+
+  The snapshot contains only lifecycle phase and bounded scalar span-pipeline
+  counters. Durable freshness remains explicitly unavailable until jolt-chdb
+  exposes a public status capability. Ownership-bearing objects, endpoints,
+  exceptions, and telemetry values are never returned."
+  [lifecycle]
+  (if-let [status-fn (:status-fn lifecycle)]
+    (status-fn)
+    (invalid! "invalid oscope embedded lifecycle" ::invalid-lifecycle)))
 
 (defn stop! [lifecycle]
   (if-let [stop-fn (:stop! lifecycle)]
