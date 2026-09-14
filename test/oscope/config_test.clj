@@ -105,6 +105,22 @@
           {"OSCOPE_CONFIG" "/env.edn"} {}
           (fn [_] (throw (ex-info "discovery must not run" {})))))))
 
+(deftest config-selection-retains-only-a-closed-public-origin
+  (let [properties {"os.name" "Linux" "user.home" "/home/operator"}
+        managed "/home/operator/.config/oscope/config.edn"]
+    (is (= {:origin :command-line :path "/cli.edn"}
+           (cli/config-selection (cli/parse-args ["--config" "/cli.edn"])
+                                 {"OSCOPE_CONFIG" "/env.edn"}
+                                 properties #{managed})))
+    (is (= {:origin :environment :path "/env.edn"}
+           (cli/config-selection (cli/parse-args [])
+                                 {"OSCOPE_CONFIG" "/env.edn"}
+                                 properties #{managed})))
+    (is (= {:origin :managed-user :path managed}
+           (cli/config-selection (cli/parse-args []) {} properties #{managed})))
+    (is (= {:origin :none}
+           (cli/config-selection (cli/parse-args []) {} properties #{})))))
+
 (deftest platform-user-config-candidates-are-explicit
   (is (= "/xdg/oscope/config.edn"
          (cli/default-config-path
@@ -154,6 +170,7 @@
                        :storage {:type :local-path :path private-value})))
              (fn [_ _] (throw (ex-info "manifest reader must not run" {}))))]
         (is (= [candidate] @reads))
+        (is (= :managed-user (:config-origin resolved)))
         (is (= 7000 (get-in resolved [:config :server :port])))
         (is (= :cli (get-in resolved [:provenance [:server :port]])))
         (is (:check-config? resolved))
@@ -172,6 +189,7 @@
            (fn [_] (throw (ex-info "absent file must not be read" {})))
            (fn [_ _] (throw (ex-info "manifest reader must not run" {}))))]
       (is (= config/defaults (:config resolved)))
+      (is (= :none (:config-origin resolved)))
       (is (= :default
              (get-in resolved [:provenance [:storage :path]]))))))
 
@@ -221,6 +239,7 @@
                     (is (= "/chosen" path))
                     file-document))]
     (is (:check-config? resolved))
+    (is (= :command-line (:config-origin resolved)))
     (is (= {:host "127.0.0.1" :port 7000
             :http-workers 2 :http-queue-capacity 8
             :db-spec "chdb::memory:"}
