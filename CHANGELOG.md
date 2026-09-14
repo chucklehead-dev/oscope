@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Consume exporter-confirmed resource, instrumentation-scope, and span
+  attribute descriptors as distinct typed fields. Catalogs, queries, results,
+  controls, and saved URLs retain the attribute location; legacy four-part
+  bindings canonicalize only when they still identify one span field. Scope
+  history reports unavailable instead of pretending a generic fallback exists,
+  and local-only startup tests poison remote exporter and secret-env access.
+
 - Align the ClickHouse exporter pin with its merged current OTel dependency.
   Hosted checks reject the prior exporter coordinate from the resolved
   classpath, compare typed direct export with real loopback OTLP ingestion, and

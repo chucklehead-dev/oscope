@@ -1,11 +1,11 @@
 const {test, expect} = require("@playwright/test");
-const {emitTypedBoolean, emitTypedInt64} = require("./helpers");
+const {emitTypedBoolean, emitTypedInt64, emitTypedLocations} = require("./helpers");
 
 test("summarizes exact typed Int64 ranges with honest historical coverage", async ({page, request, baseURL}) => {
   await emitTypedInt64(request, baseURL);
   await page.goto("/oscope");
 
-  const aggregate = page.getByRole("form", {name: "Typed Int64 span aggregate"});
+  const aggregate = page.getByRole("form", {name: "Typed Int64 trace attribute aggregate"});
   await aggregate.getByLabel("Minimum, inclusive").fill("10");
   await aggregate.getByLabel("Maximum, exclusive").fill("20");
   await aggregate.getByLabel("Group by").selectOption("service-name");
@@ -19,6 +19,7 @@ test("summarizes exact typed Int64 ranges with honest historical coverage", asyn
   expect(canonical.searchParams.get("typed-field-id")).toMatch(/^attribute_[0-9a-f]{20}$/);
   expect(canonical.searchParams.get("typed-attribute-key")).toBe("game.score");
   expect(canonical.searchParams.get("typed-attribute-type")).toBe("int64");
+  expect(canonical.searchParams.get("typed-attribute-location")).toBe("span-attributes");
   expect(canonical.searchParams.get("typed-manifest-version")).toBe("1");
   expect(canonical.searchParams.get("typed-gte")).toBe("10");
   expect(canonical.searchParams.get("typed-lt")).toBe("20");
@@ -60,7 +61,7 @@ test("filters and displays false with an exact saved Boolean binding", async ({p
   await emitTypedBoolean(request, baseURL);
   await page.goto("/oscope");
 
-  const form = page.getByRole("form", {name: "Typed boolean span filter"});
+  const form = page.getByRole("form", {name: "Typed boolean trace attribute filter"});
   await form.getByLabel("Value").selectOption("false");
   await form.getByRole("button", {name: "Filter typed spans"}).click();
 
@@ -69,6 +70,7 @@ test("filters and displays false with an exact saved Boolean binding", async ({p
   expect(canonical.searchParams.get("typed-field-id")).toMatch(/^attribute_[0-9a-f]{20}$/);
   expect(canonical.searchParams.get("typed-attribute-key")).toBe("game.ready");
   expect(canonical.searchParams.get("typed-attribute-type")).toBe("boolean");
+  expect(canonical.searchParams.get("typed-attribute-location")).toBe("span-attributes");
   expect(canonical.searchParams.get("typed-manifest-version")).toBe("1");
   expect(canonical.searchParams.get("typed-operator")).toBe("eq");
   expect(canonical.searchParams.get("typed-value")).toBe("false");
@@ -98,8 +100,8 @@ test("filters and displays false with an exact saved Boolean binding", async ({p
 
   await page.reload();
   expect(page.url()).toBe(savedURL);
-  await expect(page.getByRole("heading", {name: "Typed spans · game.ready"})).toBeVisible();
-  await expect(page.getByRole("form", {name: "Typed boolean span filter"})
+  await expect(page.getByRole("heading", {name: "Typed spans · game.ready · Span"})).toBeVisible();
+  await expect(page.getByRole("form", {name: "Typed boolean trace attribute filter"})
     .getByLabel("Value")).toHaveValue("false");
   await expect(results.getByRole("row", {name: /ready\.false\.first false/})).toBeVisible();
 
@@ -111,4 +113,27 @@ test("filters and displays false with an exact saved Boolean binding", async ({p
   const stale = await page.goto(canonical.toString());
   expect(stale.status()).toBe(409);
   await expect(page.getByRole("heading", {name: "Typed schema changed"})).toBeVisible();
+});
+
+test("keeps equal resource, scope, and span keys distinct", async ({page, request, baseURL}) => {
+  await emitTypedLocations(request, baseURL);
+  for (const [label, location, value] of [
+    ["demo.shared - Resource", "resource-attributes", "resource-value"],
+    ["demo.shared - Scope", "scope-attributes", "scope-value"],
+    ["demo.shared - Span", "span-attributes", "span-value"],
+  ]) {
+    await page.goto("/oscope");
+    const form = page.getByRole("form", {name: "Typed string trace attribute filter"});
+    await form.getByLabel("Typed trace attribute").selectOption({label});
+    await form.getByLabel("Value").fill(value);
+    await form.getByRole("button", {name: "Filter typed spans"}).click();
+    const canonical = new URL(page.url());
+    expect(canonical.searchParams.get("typed-attribute-location")).toBe(location);
+    await expect(page.getByRole("heading", {name: new RegExp(`Typed spans .* ${label.split(" - ")[1]}`)})).toBeVisible();
+    await expect(page.locator("#oscope-screen > section.panel").last()).toContainText(value);
+    if (location === "scope-attributes") {
+      await expect(page.getByRole("region", {name: "Typed value coverage"})
+        .getByRole("row", {name: /historical-untyped-unavailable [1-9]/})).toBeVisible();
+    }
+  }
 });

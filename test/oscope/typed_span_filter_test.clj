@@ -15,13 +15,16 @@
 (def now 2000000000000000000)
 (def bool-binding
   {:field-id "attribute_0123456789abcdefabcd"
-   :attribute-key "game.ready" :attribute-type :boolean :manifest-version 3})
+   :attribute-key "game.ready" :attribute-type :boolean
+   :attribute-location :span-attributes :manifest-version 3})
 (def string-binding
   {:field-id "attribute_abcdef0123456789abcd"
-   :attribute-key "game.phase" :attribute-type :string :manifest-version 3})
+   :attribute-key "game.phase" :attribute-type :string
+   :attribute-location :span-attributes :manifest-version 3})
 (def int64-binding
   {:field-id "attribute_11111111111111111111"
-   :attribute-key "game.score" :attribute-type :int64 :manifest-version 3})
+   :attribute-key "game.score" :attribute-type :int64
+   :attribute-location :span-attributes :manifest-version 3})
 (def catalog [bool-binding string-binding int64-binding])
 
 (defn- selection [binding value]
@@ -31,6 +34,7 @@
 (defn- result [binding value]
   {:attribute-key (:attribute-key binding)
    :attribute-type (:attribute-type binding)
+   :attribute-location (:attribute-location binding)
    :coverage {:valid 1 :present-empty 1 :absent 2 :invalid 3
               :historical-untyped-fallback 4
               :historical-untyped-unavailable 5 :total 16}
@@ -38,6 +42,7 @@
    :manifest-version 3 :signal :spans
    :matches [{:attribute-key (:attribute-key binding)
               :attribute-type (:attribute-type binding)
+              :attribute-location (:attribute-location binding)
               :attribute-value value :field-id (:field-id binding)
               :manifest-version 3 :parent-span-id "" :service-name "game"
               :signal :spans :source :typed :span-id "span"
@@ -52,15 +57,52 @@
                 (fn [descriptor target]
                   (is (= [::descriptors ::connection] [descriptor target]))
                   [{:id (:field-id bool-binding) :key "game.ready" :type :boolean
+                    :location :span-attributes
                     :identity {:version 3 :dataset-id "secret-dataset"}
                     :physical {:value-column "private_column"}
                     :provenance [{:source "private/path"}]}
                    {:id (:field-id int64-binding) :key "game.score"
-                    :type :int64 :identity {:version 3}}])]
+                    :type :int64 :location :span-attributes
+                    :identity {:version 3}}])]
     (let [actual (typed-catalog/acquire ::connection ::descriptors)]
       (is (= [bool-binding int64-binding] actual))
       (is (not (str/includes? (pr-str actual) "secret")))
       (is (not (str/includes? (pr-str actual) "private"))))))
+
+(deftest location-qualified-fields-remain-distinct-and-legacy-is-span-only
+  (let [shared (fn [id location]
+                 {:field-id id :attribute-key "service.version"
+                  :attribute-type :string :attribute-location location
+                  :manifest-version 3})
+        resource (shared "attribute_22222222222222222222" :resource-attributes)
+        scope (shared "attribute_33333333333333333333" :scope-attributes)
+        span (shared "attribute_44444444444444444444" :span-attributes)
+        located [resource scope span]]
+    (is (= scope (typed-query/resolve-binding located scope)))
+    (is (= span (typed-query/resolve-binding located
+                                             (dissoc span :attribute-location))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no longer unambiguous"
+                          (typed-query/resolve-binding
+                           located (dissoc resource :attribute-location))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no longer unambiguous"
+                          (typed-query/resolve-binding
+                           located (dissoc scope :attribute-location))))))
+
+(deftest confirmed-catalog-preserves-and-orders-attribute-locations
+  (with-redefs [projection/confirmed-span-fields
+                (fn [_ _]
+                  [{:id "attribute_44444444444444444444" :key "same"
+                    :type :string :location :span-attributes
+                    :identity {:version 3}}
+                   {:id "attribute_22222222222222222222" :key "same"
+                    :type :string :location :resource-attributes
+                    :identity {:version 3}}
+                   {:id "attribute_33333333333333333333" :key "same"
+                    :type :string :location :scope-attributes
+                    :identity {:version 3}}])]
+    (is (= [:resource-attributes :scope-attributes :span-attributes]
+           (mapv :attribute-location
+                 (typed-catalog/acquire ::connection ::descriptors))))))
 
 (deftest typed-plan-is-logical-and-executor-requires-the-exact-binding
   (doseq [[binding value operator]
@@ -86,7 +128,9 @@
                                {:typed-span-descriptors ::descriptors
                                 :typed-span-fields catalog})))
         (is (= ::descriptors (second @seen)))
-        (is (= (:attribute-key binding) (get-in @seen [2 :attribute-key]))))))
+        (is (= (:attribute-key binding) (get-in @seen [2 :attribute-key])))
+        (is (= (:attribute-location binding)
+               (get-in @seen [2 :attribute-location]))))))
   (let [plan (query/compile-query (selection (assoc bool-binding :manifest-version 2)
                                              false) now)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no longer available"
@@ -150,6 +194,9 @@
   (let [plan (query/compile-query (selection bool-binding false) now)
         base (result bool-binding false)]
     (doseq [invalid [(assoc-in base [:coverage :valid] -1)
+                     (assoc base :attribute-location :scope-attributes)
+                     (assoc-in base [:matches 0 :attribute-location]
+                               :resource-attributes)
                      (assoc-in base [:coverage :valid] 1.5)
                      (assoc-in base [:coverage :total] 17)
                      (assoc-in base [:coverage :unexpected] 0)
@@ -165,7 +212,9 @@
   (let [large (mapv (fn [index]
                       {:field-id (str "attribute_" (format "%020x" index))
                        :attribute-key (str "game.field." index)
-                       :attribute-type :string :manifest-version 3})
+                       :attribute-type :string
+                       :attribute-location :span-attributes
+                       :manifest-version 3})
                     (range 101))
         selected (last large)
         visible (typed-query/visible-catalog large selected)]
@@ -212,6 +261,7 @@
     (doseq [part ["typed-field-id=attribute_0123456789abcdefabcd"
                   "typed-attribute-key=game.ready"
                   "typed-attribute-type=boolean"
+                  "typed-attribute-location=span-attributes"
                   "typed-manifest-version=3"
                   "typed-operator=eq" "typed-value=false"]]
       (is (str/includes? location part)))
@@ -220,6 +270,35 @@
                     :query-string (subs location (inc (str/index-of location "?")))})]
       (is (= 200 (:status canonical)))
       (is (= 1 @loads)))))
+
+(deftest legacy-span-url-canonicalizes-but-nonspan-legacy-binding-is-rejected
+  (let [resource-binding
+        {:field-id "attribute_22222222222222222222"
+         :attribute-key "game.ready" :attribute-type :boolean
+         :attribute-location :resource-attributes :manifest-version 3}
+        handler
+        (web/handler
+         {:typed-span-fields [resource-binding bool-binding]
+          :load-command (fn [& _] (throw (AssertionError. "must redirect first")))})
+        legacy-params
+        {"mode" "typed-span-filter"
+         "typed-field-id" (:field-id bool-binding)
+         "typed-attribute-key" "game.ready"
+         "typed-attribute-type" "boolean"
+         "typed-manifest-version" "3"
+         "typed-operator" "eq" "typed-value" "false"
+         "window" "1h" "limit" "12"}
+        response (handler {:request-method :get :uri "/oscope"
+                           :query-params legacy-params})]
+    (is (= 303 (:status response)))
+    (is (str/includes? (get-in response [:headers "Location"])
+                       "typed-attribute-location=span-attributes"))
+    (is (= 409
+           (:status
+            (handler {:request-method :get :uri "/oscope"
+                      :query-params
+                      (assoc legacy-params
+                             "typed-field-id" (:field-id resource-binding))}))))))
 
 (deftest malformed-typed-web-filters-return-bounded-bad-requests
   (let [handler (web/handler {:typed-span-fields catalog

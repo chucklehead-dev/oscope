@@ -22,12 +22,14 @@
         (let [base-request
               (-> request (dissoc :schema-binding)
                   (assoc :signal :spans
-                         :attribute-key (:attribute-key binding)))
+                         :attribute-key (:attribute-key binding)
+                         :attribute-location (:attribute-location binding)))
               coverage
               (explorer/typed-span-coverage
                connection typed-span-descriptors
                (-> base-request
-                   (select-keys [:signal :attribute-key :start-unix-nano
+                   (select-keys [:signal :attribute-key :attribute-location
+                                 :start-unix-nano
                                  :end-unix-nano])
                    (assoc :schema-binding binding)))
               aggregates
@@ -46,7 +48,9 @@
         (explorer/typed-span-filtered-traces
          connection typed-span-descriptors
          (-> request (dissoc :schema-binding)
-             (assoc :signal :spans :attribute-key (:attribute-key binding)))))
+             (assoc :signal :spans
+                    :attribute-key (:attribute-key binding)
+                    :attribute-location (:attribute-location binding)))))
 
       :cumulative-histogram-series
       (do

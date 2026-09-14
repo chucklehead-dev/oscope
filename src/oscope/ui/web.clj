@@ -42,12 +42,16 @@
 (defn- keyword-param [params key allowed fallback]
   (or (some #(when (= (get params key) (name %)) %) allowed) fallback))
 (def ^:private serialized-typed-binding-params
-  #{"typed-attribute-key" "typed-attribute-type" "typed-manifest-version"})
+  #{"typed-attribute-key" "typed-attribute-type" "typed-attribute-location"
+    "typed-manifest-version"})
+(def ^:private legacy-serialized-typed-binding-params
+  (disj serialized-typed-binding-params "typed-attribute-location"))
 (defn- serialized-typed-binding? [params]
   (let [present (set (filter #(contains? params %)
                              serialized-typed-binding-params))]
     (when-not (or (empty? present)
-                  (= serialized-typed-binding-params present))
+                  (= serialized-typed-binding-params present)
+                  (= legacy-serialized-typed-binding-params present))
       (throw (ex-info "typed schema binding parameters must be complete"
                       {:oscope.ui/error true})))
     (seq present)))
@@ -77,8 +81,17 @@
            :attribute-type (keyword-param params "typed-attribute-type"
                                           (:types typed-query/filter-capability)
                                           nil)
+           :attribute-location
+           (keyword-param params "typed-attribute-location"
+                          typed-query/attribute-locations nil)
            :manifest-version (manifest-version-param params)}
-          (typed-query/resolve-field-id typed-span-fields field-id))]
+          (typed-query/resolve-field-id typed-span-fields field-id))
+        binding (if (and serialized?
+                         (= legacy-serialized-typed-binding-params
+                            (set (filter #(contains? params %)
+                                         serialized-typed-binding-params))))
+                  (dissoc binding :attribute-location)
+                  binding)]
     (typed-query/resolve-binding typed-span-fields binding)))
 (defn- typed-int64-param [params parameter]
   (let [raw (get params parameter)]
@@ -341,6 +354,9 @@
     (render-series-controls controls selection action live?)
     :else (render-distribution-controls controls selection action live?)))
 
+(defn- typed-field-label [field]
+  (str (:attribute-key field) " - "
+       (typed-query/location-label (:attribute-location field))))
 (defn- render-typed-controls [controls selection action]
   (let [fields (:typed-span-fields controls)
         mode (:mode selection)]
@@ -356,10 +372,10 @@
                            selected (or (some #(when (= current %) %) candidates)
                                         (first candidates))]
                        (str "<form method=\"get\" action=\"" (esc action)
-                            "\" aria-label=\"Typed " (name type) " span filter\">"
+                            "\" aria-label=\"Typed " (name type) " trace attribute filter\">"
                             "<input type=\"hidden\" name=\"mode\" value=\"typed-span-filter\">"
-                            "<div class=\"controls\"><label>Typed span attribute<select name=\"typed-field-id\">"
-                            (apply str (map #(option (:field-id %) (:attribute-key %)
+                            "<div class=\"controls\"><label>Typed trace attribute<select name=\"typed-field-id\">"
+                            (apply str (map #(option (:field-id %) (typed-field-label %)
                                                     (= selected %)) candidates))
                             "</select></label><label>Operator<select name=\"typed-operator\">"
                             (apply str
@@ -405,10 +421,10 @@
                                    (:aggregates
                                     typed-query/int64-aggregate-capability))]
                 (str "<form method=\"get\" action=\"" (esc action)
-                     "\" aria-label=\"Typed Int64 span aggregate\">"
+                     "\" aria-label=\"Typed Int64 trace attribute aggregate\">"
                      "<input type=\"hidden\" name=\"mode\" value=\"typed-span-int64-aggregate\">"
-                     "<div class=\"controls\"><label>Typed Int64 attribute<select name=\"typed-field-id\">"
-                     (apply str (map #(option (:field-id %) (:attribute-key %)
+                     "<div class=\"controls\"><label>Typed Int64 trace attribute<select name=\"typed-field-id\">"
+                     (apply str (map #(option (:field-id %) (typed-field-label %)
                                              (= selected %)) int64-fields))
                      "</select></label><label>Minimum, inclusive<input required name=\"typed-gte\" inputmode=\"numeric\" pattern=\"-?[0-9]+\" maxlength=\"20\" value=\""
                      (esc (:gte predicate))
@@ -442,13 +458,15 @@
   (let [selection (query/normalize-selection selection)]
     (cond
       (= :typed-span-int64-aggregate (:mode selection))
-      (let [{:keys [field-id attribute-key attribute-type manifest-version]}
+      (let [{:keys [field-id attribute-key attribute-type attribute-location
+                    manifest-version]}
             (:schema-binding selection)
             predicate (:predicate selection)]
         (str "?mode=typed-span-int64-aggregate&typed-field-id="
              (URLEncoder/encode field-id "UTF-8")
              "&typed-attribute-key=" (URLEncoder/encode attribute-key "UTF-8")
              "&typed-attribute-type=" (name attribute-type)
+             "&typed-attribute-location=" (name attribute-location)
              "&typed-manifest-version=" manifest-version
              (when (contains? predicate :gte)
                (str "&typed-gte=" (:gte predicate)))
@@ -462,11 +480,13 @@
              "&limit=" (:limit selection)))
 
       (= :typed-span-filter (:mode selection))
-      (let [{:keys [field-id attribute-key attribute-type manifest-version]}
+      (let [{:keys [field-id attribute-key attribute-type attribute-location
+                    manifest-version]}
             (:schema-binding selection)]
         (str "?mode=typed-span-filter&typed-field-id=" (URLEncoder/encode field-id "UTF-8")
              "&typed-attribute-key=" (URLEncoder/encode attribute-key "UTF-8")
              "&typed-attribute-type=" (name attribute-type)
+             "&typed-attribute-location=" (name attribute-location)
              "&typed-manifest-version=" manifest-version
              "&typed-operator=" (name (:operator selection))
              "&typed-value=" (URLEncoder/encode (str (:value selection)) "UTF-8")
@@ -495,7 +515,9 @@
 (defn- raw-typed-request? [params]
   (and (contains? #{"typed-span-filter" "typed-span-int64-aggregate"}
                   (get params "mode"))
-       (not-any? #(contains? params %) serialized-typed-binding-params)))
+       (not= serialized-typed-binding-params
+             (set (filter #(contains? params %)
+                          serialized-typed-binding-params)))))
 (defn- canonical-typed-location [path selection live?]
   (str path (selection-query-string selection) (when live? "&live=1")))
 (defn- render-export-controls [screen action enabled?]

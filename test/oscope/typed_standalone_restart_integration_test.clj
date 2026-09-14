@@ -97,15 +97,20 @@
   {"resourceSpans"
    [{"resource" {"attributes"
                   [{"key" "service.name"
-                    "value" {"stringValue" "oscope-typed-restart"}}]}
-     "scopeSpans" [{"scope" {"name" "oscope.typed-restart"}
+                    "value" {"stringValue" "oscope-typed-restart"}}
+                   (attribute "typed.shared" "stringValue" "resource-value")]}
+     "scopeSpans" [{"scope" {"name" "oscope.typed-restart"
+                              "attributes"
+                              [(attribute "typed.shared" "stringValue"
+                                          "scope-value")]}
                     "spans" spans}]}]})
 
 (defn- historical-request [now]
   (trace-request
    [(span now 2 "50000000000000000000000000000000" "5000000000000000"
           "typed.historical-fallback"
-          [(attribute "typed.exact" "intValue" "7")])
+          [(attribute "typed.exact" "intValue" "7")
+           (attribute "typed.shared" "stringValue" "historical-span")])
     (span now 3 "60000000000000000000000000000000" "6000000000000000"
           "typed.historical-unavailable" [])]))
 
@@ -113,13 +118,14 @@
   (trace-request
    [(span now 1 "30000000000000000000000000000000" "3000000000000000"
           "typed.valid"
-          (mapv (fn [[key value]]
-                  (attribute key
-                             (cond (boolean? value) "boolValue"
-                                   (string? value) "stringValue"
-                                   :else "intValue")
-                             (if (integer? value) (str value) value)))
-                values))
+          (conj (mapv (fn [[key value]]
+                        (attribute key
+                                   (cond (boolean? value) "boolValue"
+                                         (string? value) "stringValue"
+                                         :else "intValue")
+                                   (if (integer? value) (str value) value)))
+                      values)
+                (attribute "typed.shared" "stringValue" "span-value")))
     (span now 4 "70000000000000000000000000000000" "7000000000000000"
           "typed.invalid"
           [(attribute "typed.exact" "stringValue" "not-an-int")])
@@ -134,9 +140,11 @@
    :span-context {:trace-id "90000000000000000000000000000000"
                   :span-id "9000000000000000"
                   :trace-flags 1}
-   :resource {:attributes {"service.name" "oscope-typed-restart"}}
-   :scope {:name "oscope.typed-restart" :version "1" :attributes {}}
-   :attributes values
+   :resource {:attributes {"service.name" "oscope-typed-restart"
+                           "typed.shared" "resource-value"}}
+   :scope {:name "oscope.typed-restart" :version "1"
+           :attributes {"typed.shared" "scope-value"}}
+   :attributes (assoc values "typed.shared" "span-value")
    :events []
    :links []
    :status {:code :unset}})
@@ -148,13 +156,23 @@
             :authority :runtime-reviewed
             :source "test/typed-standalone-restart.edn"
             :entries
-            (mapv (fn [[key type]]
-                    {:signal :spans :table "otel_traces"
-                     :location :span-attributes :key key :type type})
-                  [["typed.ready" :boolean] ["typed.note" :string]
-                   ["typed.zero" :int64] ["typed.exact" :int64]
-                   ["typed.minimum" :int64]
-                   ["typed.maximum" :int64]])}])))
+            (into
+             (mapv (fn [[key type]]
+                     {:signal :spans :table "otel_traces"
+                      :location :span-attributes :key key :type type})
+                   [["typed.ready" :boolean] ["typed.note" :string]
+                    ["typed.zero" :int64] ["typed.exact" :int64]
+                    ["typed.minimum" :int64]
+                    ["typed.maximum" :int64]])
+             [{:signal :spans :table "otel_traces"
+               :location :resource-attributes
+               :key "typed.shared" :type :string}
+              {:signal :spans :table "otel_traces"
+               :location :scope-attributes
+               :key "typed.shared" :type :string}
+              {:signal :spans :table "otel_traces"
+               :location :span-attributes
+               :key "typed.shared" :type :string}])}])))
 
 (defn- selection [binding value]
   {:mode :typed-span-filter :schema-binding binding
@@ -190,13 +208,14 @@
   (into {} (map (juxt :attribute-key identity)) catalog))
 
 (defn- catalog-tuples [catalog]
-  (set (map (juxt :field-id :attribute-key :attribute-type :manifest-version)
+  (set (map (juxt :field-id :attribute-key :attribute-type
+                  :attribute-location :manifest-version)
             catalog)))
 
 (defn- confirmed-tuples [lifecycle]
   (set
-   (map (fn [{:keys [id key type identity]}]
-          [id key type (:version identity)])
+   (map (fn [{:keys [id key type location identity]}]
+          [id key type location (:version identity)])
         (projection/confirmed-span-fields
          (:typed-span-descriptors lifecycle) (:connection lifecycle)))))
 
@@ -231,9 +250,15 @@
              (is (.contains (String. (:body response) "UTF-8") expected-display))
              [key (select-keys row
                                [:attribute-key :attribute-type :attribute-value
-                                :field-id :manifest-version :typed-status
+                                :attribute-location :field-id :manifest-version
+                                :typed-status
                                 :trace-id :span-id :span-name])]))
          values)))
+
+(defn- binding-at [catalog key location]
+  (some #(when (and (= key (:attribute-key %))
+                    (= location (:attribute-location %))) %)
+        catalog))
 
 (defn- stop-twice! [lifecycle]
   (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))
@@ -288,6 +313,11 @@
         (is (= 200 (:status (post! (:port lifecycle) (typed-request now)))))
         (let [catalog (:typed-span-fields (:source lifecycle))
               bindings (catalog-by-key catalog)
+              shared-bindings
+              (into {}
+                    (map (fn [location]
+                           [location (binding-at catalog "typed.shared" location)]))
+                    [:resource-attributes :scope-attributes :span-attributes])
               descriptors (:typed-span-descriptors lifecycle)
               results (checked-results lifecycle bindings)
               exact-coverage (coverage (:source lifecycle)
@@ -300,7 +330,21 @@
           (is (identical? descriptors
                           (:typed-span-descriptors (:source lifecycle))))
           (is (= (catalog-tuples catalog) (confirmed-tuples lifecycle)))
-          (is (= (set (keys values)) (set (keys bindings))))
+          (is (= (set (keys values))
+                 (set (keys (dissoc bindings "typed.shared")))))
+          (is (every? some? (vals shared-bindings)))
+          (doseq [[location value]
+                  [[:resource-attributes "resource-value"]
+                   [:scope-attributes "scope-value"]
+                   [:span-attributes "span-value"]]]
+            (let [binding (get shared-bindings location)
+                  row (selected-row (:source lifecycle) binding value)
+                  coverage (coverage (:source lifecycle) binding value)]
+              (is (= location (:attribute-location row)))
+              (is (= value (:attribute-value row)))
+              (if (= :scope-attributes location)
+                (is (pos? (:historical-untyped-unavailable coverage)))
+                (is (pos? (:historical-untyped-fallback coverage))))))
           (is (= {:valid 1 :present-empty 0 :absent 1 :invalid 1
                   :historical-untyped-fallback 1
                   :historical-untyped-unavailable 1 :total 5}
@@ -351,6 +395,15 @@
               (is (= (catalog-tuples restarted-catalog)
                      (confirmed-tuples restarted)))
               (is (= catalog restarted-catalog))
+              (doseq [[location value]
+                      [[:resource-attributes "resource-value"]
+                       [:scope-attributes "scope-value"]
+                       [:span-attributes "span-value"]]]
+                (let [binding (binding-at restarted-catalog
+                                          "typed.shared" location)
+                      row (selected-row (:source restarted) binding value)]
+                  (is (= location (:attribute-location row)))
+                  (is (= value (:attribute-value row)))))
               (is (= results (checked-results restarted bindings)))
               (is (= exact-coverage
                      (coverage (:source restarted)

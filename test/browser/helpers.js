@@ -164,6 +164,30 @@ async function emitTypedBoolean(request, baseURL) {
   await postSignal(request, baseURL, "/v1/traces", {resourceSpans});
 }
 
+async function emitTypedLocations(request, baseURL) {
+  const now = BigInt(Date.now()) * 1000000n;
+  await postSignal(request, baseURL, "/v1/traces", {
+    resourceSpans: [{
+      resource: {attributes: [
+        attribute("service.name", "oscope-typed-locations"),
+        attribute("demo.shared", "resource-value"),
+      ]},
+      scopeSpans: [{
+        scope: {name: "oscope.browser.typed-locations", version: "1.0",
+          attributes: [attribute("demo.shared", "scope-value")]},
+        spans: [{
+          traceId: "b1000000000000000000000000000000",
+          spanId: "b100000000000000",
+          name: "location.values",
+          startTimeUnixNano: String(now - 2000000n),
+          endTimeUnixNano: String(now - 1000000n),
+          attributes: [attribute("demo.shared", "span-value")],
+        }],
+      }],
+    }],
+  });
+}
+
 async function openCheckoutTrace(page) {
   await page.goto("/oscope/telemetry");
   await page.getByLabel("Service").selectOption(SERVICE);
@@ -180,6 +204,7 @@ module.exports = {
   emitGaugeBuckets,
   emitTypedBoolean,
   emitTypedInt64,
+  emitTypedLocations,
   openCheckoutTrace,
   SERVICE,
   TRACE_ID,

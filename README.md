@@ -619,11 +619,21 @@ telemetry never receives either capability:
     [{:schema attribute-manifest/reviewed-fragment-schema
       :authority :advice
       :source "advice/checkout.edn"
-      :entries [{:signal :spans
-                 :table "otel_traces"
-                 :location :span-attributes
-                 :key "checkout.complete"
-                 :type :boolean}]}]}))
+    :entries [{:signal :spans
+               :table "otel_traces"
+               :location :resource-attributes
+               :key "deployment.environment"
+               :type :string}
+              {:signal :spans
+               :table "otel_traces"
+               :location :scope-attributes
+               :key "instrumentation.flavor"
+               :type :string}
+              {:signal :spans
+               :table "otel_traces"
+               :location :span-attributes
+               :key "checkout.complete"
+               :type :boolean}]}]}))
 
 (def runtime
   (embedded/start!
@@ -648,14 +658,18 @@ ownership. Version 2 file configuration validates a digest-pinned approved
 manifest or read-only registry selector with `--check-config`. Ordinary
 local-path startup reopens a persistent database-scoped registry and passes the
 authorized install or acquire mode through this same boundary. A confirmed
-capability also adds table-only Boolean, signed Int64, and string span filters
-to the web UI. Int64 values support exact `eq`, `gte`, and `lt` predicates and
+capability also adds table-only Boolean, signed Int64, and string filters for
+resource, instrumentation-scope, and span attributes to the web UI. The same
+logical key at different locations remains three visibly distinct fields and
+is always sent to exporter-owned queries with its confirmed location. Int64
+values support exact `eq`, `gte`, and `lt` predicates and
 remain decimal text in the browser until Oscope performs bounded parsing, so
 values beyond JavaScript's safe-number range remain exact. Approved Int64
 fields also have a table-first summary with an inclusive lower bound, optional
 exclusive upper bound, optional service grouping, and selectable `count`,
 `min`, `max`, and `avg` columns.
-Those controls use logical attribute names and exact manifest-version bindings;
+Those controls use logical attribute names, locations, and exact
+manifest-version bindings;
 successful field-selection forms redirect to a canonical URL containing the
 complete binding before executing the query. Partial bindings, nonpositive or
 overflowing signed-Int64 manifest versions, and stale saved URLs fail visibly,
@@ -666,7 +680,13 @@ that concurrent ingestion can advance one between them. Both views list valid,
 empty, absent, invalid, historical fallback, and historical unavailable rows
 plus the conserved total. Boolean results preserve `false` as a typed value;
 only valid typed values enter numeric aggregates, and generic historical text
-is never parsed as a number.
+is never parsed as a number. Resource and span history can use their matching
+generic ClickStack maps when present. ClickStack stores no generic scope
+attribute map, so pre-promotion scope values are reported as historical
+untyped-unavailable rather than guessed or silently omitted. Legacy saved URLs
+without a location redirect to the five-part form only when they still identify
+one span field; resource, scope, ambiguous, and stale legacy bindings fail
+closed before SQL execution.
 
 The opt-in [typed query and storage benchmark](docs/benchmarks/typed-query-storage.md)
 drives this real standalone OTLP/chDB path against an otherwise identical
@@ -958,7 +978,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 ## Exact dependency baselines
 
 - `casselc/otel` `87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0`
-- `chucklehead-dev/jolt-otel-clickhouse` `812957b85ea3717b28ad0e7a101a483f8a5f6deb`
+- `chucklehead-dev/jolt-otel-clickhouse` `419f7575d986683bd3f2abf28f837786f95b4134`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
 - `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`

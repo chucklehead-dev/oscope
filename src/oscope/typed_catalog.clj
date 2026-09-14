@@ -16,11 +16,13 @@
       (fail! ::incompatible-exporter
              "typed span filter capability does not match this oscope build"))
     (->> (projection/confirmed-span-fields descriptor-set connection)
-         (keep (fn [{:keys [id key type identity]}]
+         (keep (fn [{:keys [id key type location identity]}]
                  (when (contains? (set (:types typed-query/filter-capability)) type)
                    {:field-id id :attribute-key key :attribute-type type
+                    :attribute-location location
                     :manifest-version (:version identity)})))
-         (sort-by (juxt :attribute-key :attribute-type :field-id))
+         (sort-by (juxt :attribute-key :attribute-location
+                        :attribute-type :field-id))
          vec)
     (catch Throwable error
       (if (:oscope.typed-catalog/error (ex-data error))

@@ -3,6 +3,7 @@
             [clojure.test :refer [deftest is]]
             [jdbc.chdb.durable]
             [jdbc.chdb.durable.backend :as backend]
+            [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
             [oscope.embedded.query :as embedded-query]
@@ -42,8 +43,18 @@
           (do (Thread/sleep 5) (recur))
           :else snapshot)))))
 
+(defn- delete-tree! [root]
+  (when (.exists root)
+    (doseq [file (reverse (file-seq root))]
+      (java.nio.file.Files/deleteIfExists (.toPath file)))))
+
 (deftest direct-sdk-exports-survive-a-fresh-durable-reader
-  (let [store (backend/memory-backend)
+  (let [directory
+        (java.nio.file.Files/createTempDirectory
+         "oscope-embedded-local-object-store-"
+         (make-array java.nio.file.attribute.FileAttribute 0))
+        root (java.io.File. (str directory))
+        store (local-posix/local-backend root)
         db-spec (jdbc.chdb.durable/writer-dbspec
                  {:backend store
                   :owner "oscope-embedded-test"
@@ -86,14 +97,17 @@
       (is (= {:status :closed :phase :closed}
              (embedded/stop! lifecycle)))
       (with-open [reader (jdbc/connection
-                          (jdbc.chdb.durable/snapshot-dbspec {:backend store}))]
+                          (jdbc.chdb.durable/snapshot-dbspec
+                           {:backend (local-posix/local-backend root)}))]
         (let [source (live/open! {:connection reader :ensure-schema? false})]
           (try
             (assert-signals-visible! source "reader")
             (finally
               (live/close! source)))))
       (finally
-        (embedded/stop! lifecycle)))))
+        (embedded/stop! lifecycle)
+        (delete-tree! root)
+        (is (not (.exists root)))))))
 
 (defn- wire-spans [payload]
   (for [resource-spans (:resourceSpans payload)

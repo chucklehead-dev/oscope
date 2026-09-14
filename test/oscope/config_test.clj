@@ -1,5 +1,6 @@
 (ns oscope.config-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is]]
             [oscope.config :as config]
             [oscope.config-cli :as cli]
             [oscope.server-main :as server-main]))
@@ -8,6 +9,21 @@
   "{:version 1 :server {:host \"127.0.0.1\" :port 5000}
     :ingest {:type :otlp-http-json}
     :storage {:type :local-path :path \"/private/file\"}}")
+
+(deftest standalone-environment-contract-is-local-only-and-closed
+  (is (= ["OSCOPE_CONFIG" "OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_CHDB_SPEC"
+          "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"]
+         cli/environment-names))
+  (is (not-any? #(re-find #"(?i)langfuse|otlp|header|secret|endpoint" %)
+                cli/environment-names))
+  (let [poison {"LANGFUSE_PUBLIC_KEY" "poison-public"
+                "LANGFUSE_SECRET_KEY" "poison-secret"
+                "LANGFUSE_BASE_URL" "http://network-must-not-run.invalid"
+                "OTEL_EXPORTER_OTLP_HEADERS" "authorization=poison"
+                "OTEL_EXPORTER_OTLP_ENDPOINT" "http://network.invalid"}
+        resolved (cli/load-config [] poison)]
+    (is (= config/defaults (:config resolved)))
+    (is (not (str/includes? (pr-str resolved) "poison")))))
 
 (deftest precedence-and-storage-replacement
   (let [resolved (config/resolve-config
