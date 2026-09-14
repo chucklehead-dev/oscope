@@ -246,6 +246,10 @@
                     (is (identical? typed-options options))
                     (swap! events conj :schema-installed)
                     {:descriptor-set descriptor-set})
+                  typed-schema/descriptor-options
+                  (fn [context]
+                    (is (identical? descriptor-set (:descriptor-set context)))
+                    {:typed-span-descriptors descriptor-set})
                   chdb-export/exporter
                   (fn [options]
                     (reset! exporter-options options)
@@ -282,6 +286,40 @@
         (is (identical? descriptor-set
                         (:typed-span-descriptors lifecycle)))
         (is (= {:status :closed :phase :closed} (server/stop! lifecycle)))))))
+
+(deftest standalone-routes-log-capability-only-to-log-export
+  (let [descriptor-set (Object.)
+        conn (reify java.io.Closeable (close [_]))
+        exporter (fake-exporter (atom []))
+        exporter-options (atom nil)
+        source-options (atom nil)]
+    (with-redefs [jdbc/connection (constantly conn)
+                  typed-schema/install!
+                  (fn [& _] {:descriptor-set descriptor-set})
+                  typed-schema/descriptor-options
+                  (fn [_] {:typed-log-descriptors descriptor-set})
+                  chdb-export/exporter
+                  (fn [options]
+                    (reset! exporter-options options)
+                    exporter)
+                  live/open!
+                  (fn [options]
+                    (reset! source-options options)
+                    {:close! (fn [])})
+                  otlp/handler (fn [& _] (constantly {:status 200}))
+                  web/handler (fn [& _] (constantly {:status 200}))
+                  http/run-server (fn [& _] {:port 9191})
+                  http/stop-server (fn [_])]
+      (let [lifecycle (server/start! {:port 0 :typed-schema
+                                      (typed-schema-options)})]
+        (is (identical? descriptor-set
+                        (:typed-log-descriptors @exporter-options)))
+        (is (nil? (:typed-span-descriptors @exporter-options)))
+        (is (= {:connection conn :ensure-schema? false} @source-options))
+        (is (identical? descriptor-set (:typed-log-descriptors lifecycle)))
+        (is (nil? (:typed-span-descriptors lifecycle)))
+        (is (= {:status :closed :phase :closed}
+               (server/stop! lifecycle)))))))
 
 (deftest standalone-schema-failure-closes-before-exporter-or-ingress
   (let [events (atom [])

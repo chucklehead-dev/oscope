@@ -348,10 +348,9 @@
             sdk-processor (when pipelines
                             (local-required-processor pipelines pipeline-results))
             source (live/open!
-                    (cond-> {:connection connection :ensure-schema? false}
-                      schema-context
-                      (assoc :typed-span-descriptors
-                             (:descriptor-set schema-context))))
+                    (typed-schema/source-options
+                     {:connection connection :ensure-schema? false}
+                     schema-context))
             _ (reset! source* source)
             sdk-handle (sdk/init!
                         (cond-> (assoc sdk-options :exporter exporter)
@@ -378,13 +377,13 @@
                               :connection-closed? false})
                 :lock (Object.)}
                 schema-context
-                (assoc :typed-span-descriptors
-                       (:descriptor-set schema-context)))
+                (merge (typed-schema/descriptor-options schema-context)))
               public-base (cond->
                            (select-keys internal
                                         [:db-spec :connection :exporter :source
                                          :signals :checkpoint-on-close?
-                                         :typed-span-descriptors])
+                                         :typed-span-descriptors
+                                         :typed-log-descriptors])
                             (nil? pipelines) (assoc :sdk-handle sdk-handle
                                                     :state (:state internal)
                                                     :lock (:lock internal)))

@@ -29,7 +29,14 @@
                     ((:observe-columns runtime))
                     {:status :active
                      :descriptor-set descriptor-set
-                     :record ::active-record})]
+                     :record ::active-record})
+                  installer/descriptor-set-data
+                  (fn [actual]
+                    (is (identical? descriptor-set actual))
+                    {:record {:manifest
+                              {:fields
+                               [{:signal :spans :table "otel_traces"
+                                 :location :span-attributes}]}}})]
       (let [result (typed-schema/install!
                     ::connection (assoc (options) :emit! emit!))
             [_ backend manifest runtime] (second @events)]
@@ -39,16 +46,55 @@
         (is (= ::connection (:target runtime)))
         (is (identical? emit! (:emit! runtime)))
         (is (= [:ddl ::connection "ALTER TABLE owned"] (nth @events 2)))
-        (is (= [:observe ::connection "DESCRIBE TABLE otel_traces"]
-               (nth @events 3)))
-        (is (= 1 (count (filter #(= :observe (first %)) @events)))
-            "three logical attribute locations observe one physical table")
+        (is (= #{[:observe ::connection "DESCRIBE TABLE otel_logs"]
+                 [:observe ::connection "DESCRIBE TABLE otel_traces"]}
+               (set (filter #(= :observe (first %)) @events))))
+        (is (= 2 (count (filter #(= :observe (first %)) @events)))
+            "four supported logical locations observe their two physical tables")
         (is (identical? descriptor-set (:descriptor-set result)))
         (is (= #{:descriptor-set :installation} (set (keys result))))
         (is (= false
                (:create-schema?
                 (typed-schema/exporter-options {:connection ::connection}
-                                               result))))))))
+                                               result))))
+        (is (identical? descriptor-set
+                        (:typed-span-descriptors
+                         (typed-schema/exporter-options {} result))))))))
+
+(deftest confirmed-capability-is-routed-by-its-closed-export-target
+  (let [descriptor-set (Object.)
+        context {:descriptor-set descriptor-set}
+        route (fn [field]
+                (with-redefs [installer/descriptor-set-data
+                              (fn [actual]
+                                (is (identical? descriptor-set actual))
+                                {:record {:manifest {:fields [field]}}})]
+                  {:exporter (typed-schema/exporter-options
+                              {:connection ::connection} context)
+                   :source (typed-schema/source-options
+                            {:connection ::connection} context)}))]
+    (let [{:keys [exporter source]}
+          (route {:signal :spans :table "otel_traces"
+                  :location :resource-attributes})]
+      (is (identical? descriptor-set (:typed-span-descriptors exporter)))
+      (is (identical? descriptor-set (:typed-span-descriptors source)))
+      (is (nil? (:typed-log-descriptors exporter))))
+    (let [{:keys [exporter source]}
+          (route {:signal :logs :table "otel_logs"
+                  :location :log-attributes})]
+      (is (identical? descriptor-set (:typed-log-descriptors exporter)))
+      (is (= {:connection ::connection} source)
+          "log projection is enabled without pretending a log query API exists")
+      (is (nil? (:typed-span-descriptors exporter))))
+    (with-redefs [installer/descriptor-set-data
+                  (constantly
+                   {:record
+                    {:manifest
+                     {:fields [{:signal :logs :table "otel_logs"
+                                :location :resource-attributes}]}}})]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"unsupported export target"
+           (typed-schema/exporter-options {} context))))))
 
 (deftest read-only-acquisition-observes-without-base-schema-or-ddl
   (let [events (atom [])

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Route installer-confirmed `otel_logs` / log-record attribute capabilities to
+  the exporter's typed-log projection in both standalone and embedded startup.
+  The generic log attribute map remains intact, while typed-log query and
+  viewer surfaces stay explicitly out of this ingestion-only slice.
+
 - Complete the managed-config store qualification with an independent-process
   restart through the normal XDG loader, plus causal controls that demonstrate
   why direct live-file writes and pre-delete/non-atomic replacement fallbacks
@@ -17,7 +22,6 @@
   same-directory native rename without pre-deleting the prior file. Other
   platforms remain fail-closed pending native qualification. Refs #91, #31,
   #33.
-
 - Discover an existing platform user configuration when neither `--config` nor
   `OSCOPE_CONFIG` selects a file. XDG, macOS, and Windows defaults remain
   optional and read-only; relative roots never become working-directory
