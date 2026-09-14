@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add the closed, revisioned foundation for a private managed configuration
+  store. Only the canonical platform user path is eligible for writes;
+  explicitly selected command-line and environment files remain read-only.
+  Validation and deterministic encoding precede effects, stale revisions fail
+  under a cross-process lock, and public results retain only fixed categories
+  and opaque content revisions. The Linux x86-64 adapter uses descriptor-
+  relative no-follow access, owner/mode proofs, file and directory sync, and
+  same-directory native rename without pre-deleting the prior file. Other
+  platforms remain fail-closed pending native qualification. Refs #91, #31,
+  #33.
+
 - Discover an existing platform user configuration when neither `--config` nor
   `OSCOPE_CONFIG` selects a file. XDG, macOS, and Windows defaults remain
   optional and read-only; relative roots never become working-directory

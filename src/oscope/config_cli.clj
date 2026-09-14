@@ -112,6 +112,8 @@
       (when unix-home
         (append-path unix-home "/" ".config/oscope/config.edn")))))
 
+(declare config-selection)
+
 (defn config-path
   "Choose --config, then OSCOPE_CONFIG, then a present user-default file.
 
@@ -120,15 +122,31 @@
   ([parsed environment]
    (config-path parsed environment (system-properties) config-file?))
   ([parsed environment properties present?]
-   (or (:config parsed)
-       (nonblank (get environment "OSCOPE_CONFIG"))
-       (when-let [candidate (default-config-path environment properties)]
-         (when (present? candidate) candidate)))))
+   (:path (config-selection parsed environment properties present?))))
+
+(defn config-selection
+  "Select a config with a closed origin and a private path.
+
+  Callers may expose :origin, but :path is an internal I/O capability and must
+  never enter status, diagnostics, logs, or telemetry."
+  ([parsed environment]
+   (config-selection parsed environment (system-properties) config-file?))
+  ([parsed environment properties present?]
+   (if-let [path (:config parsed)]
+     {:origin :command-line :path path}
+     (if-let [path (nonblank (get environment "OSCOPE_CONFIG"))]
+       {:origin :environment :path path}
+       (if-let [candidate (default-config-path environment properties)]
+         (if (present? candidate)
+           {:origin :managed-user :path candidate}
+           {:origin :none})
+         {:origin :none})))))
 
 (defn- load-config* [arguments environment environment-layer
                      read-text read-manifest-bytes]
   (let [parsed (parse-args arguments)
-         path (config-path parsed environment)
+         selection (config-selection parsed environment)
+         path (:path selection)
          file-layer (if path
                       (try
                         (config/file-document (config/parse (read-text path)))
@@ -145,7 +163,9 @@
          (typed-schema-config/load-handoff
           (get-in resolved [:config :typed-attributes])
           read-manifest-bytes)]
-    (cond-> (assoc resolved :check-config? (:check-config? parsed))
+    (cond-> (assoc resolved
+                   :check-config? (:check-config? parsed)
+                   :config-origin (:origin selection))
       ;; A check proves the manifest but deliberately drops the manifest and
       ;; selector capability before returning to the diagnostic renderer.
       (not (:check-config? parsed))

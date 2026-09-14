@@ -23,6 +23,32 @@ looks for a configuration file in the working directory. An explicit
 `--config` still wins over `OSCOPE_CONFIG`, and both explicit selectors are
 read-or-error contracts rather than optional discovery.
 
+The configuration selector also retains a closed internal origin:
+`command-line`, `environment`, `managed-user`, or `none`. The selected path is
+not part of that public metadata. Managed writes are eligible only for the
+canonical platform user path selected as `managed-user`, or for that same path
+before it exists (`none`). Files explicitly selected by `--config` or
+`OSCOPE_CONFIG` are always read-only.
+
+The managed-store API uses an opaque revision of the exact deterministic file
+bytes for compare-and-swap updates. Callers must read a snapshot, submit that
+revision with a complete validated document, and resnapshot after any failure.
+The storage adapter must serialize competing processes, reject links and
+unowned or incorrectly permissioned files, durably verify a private temporary
+file, atomically replace it in the same directory, and sync the directory.
+Platforms without a qualified implementation fail closed. This API is a
+storage foundation for future settings and first-run screens; it does not yet
+enable either UI.
+
+The current native adapter is qualified only for Linux x86-64. It holds a
+private descriptor-relative lock across reread, revision comparison, temporary
+write, and replacement; checks the effective owner and exact `0700` directory
+and `0600` file modes; syncs the temporary file; reads it back; uses native
+same-directory rename without pre-deleting the destination; then syncs the
+directory. macOS remains disabled until exercised against its ABI and
+durability behavior. Windows remains disabled until an equivalent ACL and
+atomic-replacement contract is qualified.
+
 `--check-config` applies the same selection and precedence, validates the
 combined configuration, prints deterministic redacted diagnostic EDN, and
 exits before opening a database or listener. Neither the selected path nor

@@ -117,6 +117,12 @@ platform user config (for example `$XDG_CONFIG_HOME/oscope/config.edn` or
 `$HOME/.config/oscope/config.edn` on Linux). It never creates that file and
 never loads a working-directory config implicitly.
 
+The library also provides a revisioned managed-config store for future settings
+and first-run interfaces. It may write only the canonical user path, never a
+file selected through `--config` or `OSCOPE_CONFIG`. Its private atomic adapter
+is currently qualified on Linux x86-64; macOS and Windows writes fail closed.
+The standalone launcher itself remains read-only and does not invoke this API.
+
 `OSCOPE_HOST` is accepted only as `127.0.0.1`; jolt-http's current transport
 bind is intentionally loopback-only. The receiver accepts uncompressed
 `application/json`, caps the consumed request body at 1 MiB, and admits one
