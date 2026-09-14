@@ -79,7 +79,7 @@
                (= :span-attributes (:attribute-location (first matches))))
         (first matches)
         (fail! ::stale-binding
-               "legacy typed span binding is no longer unambiguous")))))
+               "legacy typed schema binding is no longer available as one span field")))))
 
 (defn resolve-field-id [catalog field-id]
   (when-not (and (string? field-id) (re-matches field-id-pattern field-id))

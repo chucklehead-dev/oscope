@@ -81,10 +81,12 @@
     (is (= scope (typed-query/resolve-binding located scope)))
     (is (= span (typed-query/resolve-binding located
                                              (dissoc span :attribute-location))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no longer unambiguous"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"no longer available as one span field"
                           (typed-query/resolve-binding
                            located (dissoc resource :attribute-location))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no longer unambiguous"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"no longer available as one span field"
                           (typed-query/resolve-binding
                            located (dissoc scope :attribute-location))))))
 
