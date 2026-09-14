@@ -10,7 +10,10 @@
             [oscope.embedded.query :as embedded-query]
             [oscope.live :as live]
             [oscope.sample-emitter :as sample]
-            [otel.otlp.http :as otlp-http]))
+            [otel.exporter.chdb.attribute-manifest :as manifest]
+            [otel.otlp.http :as otlp-http]
+            [otel.sdk :as sdk]
+            [otel.trace :as trace]))
 
 (defn- values [source request-id signal field]
   (set
@@ -48,6 +51,92 @@
   (when (.exists root)
     (doseq [file (reverse (file-seq root))]
       (java.nio.file.Files/deleteIfExists (.toPath file)))))
+
+(def ^:private typed-attribute-key "checkout.approved")
+
+(defn- approved-embedded-manifest []
+  (manifest/compile-manifest
+   {:dataset-id "oscope-embedded"
+    :application-id "typed-ingestion"
+    :lineage "typed-ingestion-v1"
+    :version 1
+    :fragments
+    [{:schema manifest/reviewed-fragment-schema
+      :authority :runtime-reviewed
+      :source "test/embedded-durable-integration.edn"
+      :entries
+      [{:signal :spans
+        :table "otel_traces"
+        :location :span-attributes
+        :key typed-attribute-key
+        :type :boolean}]}]}))
+
+(deftest approved-manifest-drives-embedded-sdk-ingestion-and-live-query
+  (let [telemetry-store (backend/memory-backend)
+        registry-store (backend/memory-backend)
+        db-spec (jdbc.chdb.durable/writer-dbspec
+                 {:backend telemetry-store
+                  :owner "oscope-embedded-typed-test"
+                  :instance "oscope-embedded-typed-test-instance"
+                  :database "default"
+                  :lease-ttl-ms 30000})
+        lifecycle
+        (embedded/start!
+         {:db-spec db-spec
+          :sdk-options {:service-name "oscope-embedded-typed-test"
+                        :processor :simple
+                        :metrics? false
+                        :runtime-metrics? false}
+          :typed-schema
+          {:mode :install
+           :approved-manifest (approved-embedded-manifest)
+           :registry-backend registry-store}})]
+    (try
+      (let [descriptor-set (:typed-span-descriptors lifecycle)
+            source (:source lifecycle)
+            binding (first (:typed-span-fields source))
+            tracer (sdk/tracer "oscope.embedded.typed-test")]
+        ;; Only the installer-confirmed opaque capability reaches ingestion and
+        ;; query state; neither runtime surface retains the input manifest.
+        (is (some? descriptor-set))
+        (is (identical? descriptor-set (:typed-span-descriptors source)))
+        (is (not (contains? lifecycle :approved-manifest)))
+        (is (not (contains? source :approved-manifest)))
+        (is (= {:attribute-key typed-attribute-key
+                :attribute-type :boolean
+                :attribute-location :span-attributes
+                :manifest-version 1}
+               (select-keys binding
+                            [:attribute-key :attribute-type
+                             :attribute-location :manifest-version])))
+        (trace/with-span
+          [_ tracer "typed embedded checkout"
+           {:attributes {typed-attribute-key true}}])
+        (is (true? (embedded/force-flush! lifecycle)))
+        (let [screen
+              ((:load-command source)
+               :typed-embedded
+               {:mode :typed-span-filter
+                :schema-binding binding
+                :operator :eq
+                :value true
+                :window :15m
+                :limit 10})]
+          (is (= [{:attribute-key typed-attribute-key
+                   :attribute-type :boolean
+                   :attribute-value true
+                   :attribute-location :span-attributes
+                   :manifest-version 1
+                   :typed-status 3
+                   :span-name "typed embedded checkout"}]
+                 (mapv #(select-keys %
+                                     [:attribute-key :attribute-type
+                                      :attribute-value :attribute-location
+                                      :manifest-version :typed-status :span-name])
+                       (get-in screen [:table :rows]))))))
+      (finally
+        (is (= {:status :closed :phase :closed}
+               (embedded/stop! lifecycle)))))))
 
 (deftest direct-sdk-exports-survive-a-fresh-durable-reader
   (let [directory
