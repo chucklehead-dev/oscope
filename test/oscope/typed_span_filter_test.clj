@@ -210,6 +210,22 @@
          (web/render-page
           (assoc-in screen [:coverage 0 :status] :unreviewed-category))))))
 
+(deftest inactive-filter-forms-do-not-inherit-another-fields-value
+  (let [screen (view-model/screen
+                (query/compile-query (selection int64-binding 42) now)
+                (result int64-binding 42)
+                {:typed-span-fields catalog})
+        html (web/render-page screen)]
+    (is (re-find
+         #"(?s)aria-label=\"Typed string trace attribute filter\".*?<input name=\"typed-value\" maxlength=\"256\" value=\"\">"
+         html))
+    (is (re-find
+         #"(?s)aria-label=\"Typed boolean trace attribute filter\".*?<option value=\"true\" selected>true</option>"
+         html))
+    (is (re-find
+         #"(?s)aria-label=\"Typed int64 trace attribute filter\".*?<input name=\"typed-value\" inputmode=\"numeric\"[^>]*value=\"42\">"
+         html))))
+
 (deftest int64-web-values-remain-exact-decimal-text-until-bounded-parsing
   (doseq [[operator value] [[:eq 9007199254740993]
                             [:gte typed-query/int64-min]

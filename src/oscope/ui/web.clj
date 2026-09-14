@@ -414,9 +414,13 @@
                               :boolean
                               (str "<select name=\"typed-value\">"
                                    (option :true "true"
-                                           (not= false (:value selection)))
+                                           (or (not= :boolean
+                                                     (:attribute-type current))
+                                               (= true (:value selection))))
                                    (option :false "false"
-                                           (= false (:value selection)))
+                                           (and (= :boolean
+                                                   (:attribute-type current))
+                                                (= false (:value selection))))
                                    "</select>")
                               :int64
                               (str "<input name=\"typed-value\" inputmode=\"numeric\" pattern=\"-?[0-9]+\" maxlength=\"20\" value=\""
@@ -424,7 +428,8 @@
                                                  (:attribute-type current))
                                           (:value selection))) "\">")
                               (str "<input name=\"typed-value\" maxlength=\"256\" value=\""
-                                   (esc (when (= :string type)
+                                   (esc (when (= :string
+                                                 (:attribute-type current))
                                           (:value selection))) "\">"))
                             "</label><label>Window<select name=\"window\">"
                             (apply str
