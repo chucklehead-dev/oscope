@@ -48,6 +48,32 @@
   [parsed environment]
   (or (:config parsed) (not-empty (get environment "OSCOPE_CONFIG"))))
 
+(defn- load-config* [arguments environment environment-layer
+                     read-text read-manifest-bytes]
+  (let [parsed (parse-args arguments)
+         path (config-path parsed environment)
+         file-layer (if path
+                      (try
+                        (config/file-document (config/parse (read-text path)))
+                        (catch Throwable error
+                          (if (:oscope.config/error (ex-data error))
+                            (throw error)
+                            (throw (ex-info "could not read configuration file"
+                                            {:oscope.config/error true})))))
+                      {})
+         resolved (config/resolve-config [[:file file-layer]
+                                          [:environment environment-layer]
+                                          [:cli (:layer parsed)]])
+         typed-handoff
+         (typed-schema-config/load-handoff
+          (get-in resolved [:config :typed-attributes])
+          read-manifest-bytes)]
+    (cond-> (assoc resolved :check-config? (:check-config? parsed))
+      ;; A check proves the manifest but deliberately drops the manifest and
+      ;; selector capability before returning to the diagnostic renderer.
+      (not (:check-config? parsed))
+      (assoc :typed-attributes-handoff typed-handoff))))
+
 (defn load-config
   "Resolve startup config and validate any typed manifest before startup.
 
@@ -60,30 +86,21 @@
    (load-config arguments environment read-text
                 typed-schema-config/read-bounded-file!))
   ([arguments environment read-text read-manifest-bytes]
-   (let [parsed (parse-args arguments)
-         path (config-path parsed environment)
-         file-layer (if path
-                      (try
-                        (config/file-document (config/parse (read-text path)))
-                        (catch Throwable error
-                          (if (:oscope.config/error (ex-data error))
-                            (throw error)
-                            (throw (ex-info "could not read configuration file"
-                                            {:oscope.config/error true})))))
-                      {})
-         resolved (config/resolve-config
-                   [[:file file-layer]
-                    [:environment (config/environment-layer environment)]
-                    [:cli (:layer parsed)]])
-         typed-handoff
-         (typed-schema-config/load-handoff
-          (get-in resolved [:config :typed-attributes])
-          read-manifest-bytes)]
-     (cond-> (assoc resolved :check-config? (:check-config? parsed))
-       ;; A check proves the manifest but deliberately drops the manifest and
-       ;; selector capability before returning to the diagnostic renderer.
-       (not (:check-config? parsed))
-       (assoc :typed-attributes-handoff typed-handoff)))))
+   (load-config* arguments environment (config/environment-layer environment)
+                 read-text read-manifest-bytes)))
+
+(defn load-config-with-environment-layer
+  "Resolve configuration with a caller-supplied, already sanitized env layer.
+
+  This is used by ownership-specific launchers whose legacy environment aliases
+  must become config data without retaining credential values."
+  ([arguments environment environment-layer]
+   (load-config-with-environment-layer
+    arguments environment environment-layer slurp
+    typed-schema-config/read-bounded-file!))
+  ([arguments environment environment-layer read-text read-manifest-bytes]
+   (load-config* arguments environment environment-layer
+                 read-text read-manifest-bytes)))
 
 (defn typed-attributes-handoff
   "Return the validated plan consumed by the storage-owned runtime adapter."

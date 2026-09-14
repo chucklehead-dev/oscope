@@ -152,8 +152,8 @@ close are not chDB Durable `close()` operations.
 | --- | --- | --- |
 | Ephemeral/in-memory | `OSCOPE_CHDB_SPEC=chdb::memory:` | Available now. Process-local state is not expected to survive close or restart. |
 | Local path persistence | `OSCOPE_CHDB_SPEC=chdb:/absolute/path/to/oscope-data`; the standalone default is `chdb:./oscope-data` | Available now. Reopening the same local directory retains the database, as covered by the restart integration test. It is not object-backed Durable recovery. |
-| Local Durable development mode | `OSCOPE_DURABLE_ROOT=/absolute/path jolt -M:durable-server-dev` | Available with a qualified chDB Durable V1 native library. Uses the POSIX object backend, fenced single-writer lease, acknowledged WAL flushes, checkpoints, and recovery through the published head. |
-| Object-backed Durable mode | `OSCOPE_DURABLE_BACKEND=s3` plus the S3 settings below | Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend. Recovery uses the last CAS-published Durable checkpoint and WAL chain. |
+| Local Durable development mode | `jolt -M:durable-server-dev --config config/oscope-durable.example.edn`, or the existing `OSCOPE_DURABLE_ROOT` alias | Available with a qualified chDB Durable V1 native library. Uses the POSIX object backend, fenced single-writer lease, acknowledged WAL flushes, checkpoints, and recovery through the published head. |
+| Object-backed Durable mode | A `:durable-s3` file section, or `OSCOPE_DURABLE_BACKEND=s3` plus the S3 settings below | Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend. Recovery uses the last CAS-published Durable checkpoint and WAL chain. |
 | In-process Durable SDK | `oscope.embedded/start!` with a Durable writer dbspec | Available with the same qualified native library. Instrumented application code exports spans, logs, and metrics directly into the shared writer and queries them through oscope without OTLP or HTTP framing. |
 
 These modes reserve “Durable” for the official
@@ -236,9 +236,20 @@ Durable V1 POSIX backend instead of opening `oscope-data` directly:
 
 ```sh
 env JOLT_CHDB_LIB=/path/to/chdb-26.7.2-or-newer/libchdb.so \
-    OSCOPE_DURABLE_ROOT=/absolute/private/path/oscope-durable \
-    jolt -M:durable-server-dev
+    jolt -M:durable-server-dev --config config/oscope-durable.example.edn
 ```
+
+Validate the resolved file without opening a Durable backend, reading any
+credential reference, or binding a listener:
+
+```sh
+jolt -M:durable-server-dev \
+  --config config/oscope-durable.example.edn --check-config
+```
+
+The existing `OSCOPE_DURABLE_*` variables remain compatible. When present,
+their Durable storage selection replaces the complete file storage section;
+the ordinary command-line server overrides remain strongest.
 
 The Durable root contains immutable checkpoint/WAL objects and the CAS-protected
 head. Native chDB recovery uses a private scratch directory and never opens that
@@ -284,8 +295,10 @@ lease instance. Optional transport controls are
 `OSCOPE_DURABLE_S3_TIMEOUT_MS` (default 300000). Its retry budget is configured
 separately with `OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS` (default 300000),
 `OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS` (default 25), and
-`OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS` (default 1000). Credentials are passed
-only to the backend and are not copied into bounded operator diagnostics.
+`OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS` (default 1000). File configuration
+contains environment-variable references rather than credential values. The
+values are resolved only after check-only handling, passed only to the backend,
+and are not copied into bounded operator diagnostics.
 
 Startup and terminal failures print a bounded operator category before exiting
 nonzero. Recognized categories include `lease-held`, `lease-fenced`,
@@ -733,8 +746,9 @@ threshold or a cold-cache claim. A one-process run is explicitly unbalanced;
 an optional even repetition count launches fresh processes with alternating
 typed/fallback order and rejects incomplete or stale repetition sets.
 
-Durable file-launcher integration remains follow-on work. Typed promotion is
-never inferred from telemetry.
+The versioned Durable launcher places the typed registry in a fixed object
+scope distinct from the telemetry object. Typed promotion is never inferred
+from telemetry.
 
 The returned `:source` is the ordinary live oscope query source and can be
 given to the web or native UI handlers. The exporter owns schema migration,

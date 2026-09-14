@@ -6,7 +6,8 @@
             [jdbc.chdb.durable.control :as control]
             [jdbc.chdb.durable.s3-curl :as s3-curl]
             [jdbc.core :as jdbc]
-            [oscope.durable-server-main :as durable-main]
+            [oscope.config :as config]
+            [oscope.durable-config-runtime :as durable-config-runtime]
             [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.server :as server]
             [teensyp.client :as client]))
@@ -122,20 +123,28 @@
           :request-body {:bytes (byte-array 0) :byte-count 0}
           :auth auth :region "us-east-1"
           :connect-timeout-ms 5000 :timeout-ms 30000})
-        environment
-        {"OSCOPE_DURABLE_BACKEND" "s3"
-         "OSCOPE_DURABLE_OBJECT_ID" "private-object-7f2c91"
-         "OSCOPE_DURABLE_S3_ENDPOINT" endpoint
-         "OSCOPE_DURABLE_S3_BUCKET" "oscope-durable"
-         "OSCOPE_DURABLE_S3_PREFIX" "integration"
-         "OSCOPE_DURABLE_S3_REGION" "us-east-1"
-         "OSCOPE_DURABLE_S3_ACCESS_KEY" (:access-key auth)
-         "OSCOPE_DURABLE_S3_SECRET_KEY" (:secret-key auth)
-         "OSCOPE_DURABLE_INSTANCE" "s3-writer"
-         "OSCOPE_DURABLE_LEASE_TTL_MS" "30000"
-         "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES" "2"
-         "OSCOPE_PORT" "0"}
-        options (durable-main/durable-options environment)]
+        storage
+        {:type :durable-s3
+         :instance "s3-writer"
+         :lease-ttl-ms 30000
+         :checkpoint-every-batches 2
+         :s3 {:endpoint endpoint
+              :bucket "oscope-durable"
+              :prefix "integration"
+              :region "us-east-1"
+              :object-id "private-object-7f2c91"
+              :credentials {:type :environment
+                            :access-key-env "MINIO_ACCESS"
+                            :secret-key-env "MINIO_SECRET"}}}
+        credentials {"MINIO_ACCESS" (:access-key auth)
+                     "MINIO_SECRET" (:secret-key auth)}
+        configured (fn [storage]
+                     (config/resolve-config
+                      [[:file {:version 2
+                               :server {:port 0}
+                               :storage storage}]]))
+        options (durable-config-runtime/server-options
+                 (configured storage) credentials)]
     (is (= 200 (:status bucket-result)))
     (let [lifecycle (server/start! options)]
       (try
@@ -148,9 +157,10 @@
             (is (= 200 (post-json! (:port lifecycle) path payload)))))
         (finally
           (is (= :closed (:status (server/stop! lifecycle)))))))
-    (let [db-spec (:db-spec (durable-main/durable-options
-                             (assoc environment
-                                    "OSCOPE_DURABLE_INSTANCE" "s3-reader")))
+    (let [db-spec (:db-spec (durable-config-runtime/server-options
+                             (configured (assoc storage
+                                                :instance "s3-reader"))
+                             credentials))
           store (backend/object-backend (:namespace-backend db-spec)
                                         (:object-id db-spec))
           head (:head (control/read-head! store))]
