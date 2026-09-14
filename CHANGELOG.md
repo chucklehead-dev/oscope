@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Align the protected Langfuse workflow's GitHub variable and secret context
+  names with the documented `OSCOPE_LANGFUSE_*` inputs, and reject the stale
+  short-name mapping with a causal workflow-policy mutation.
+
 - Consume exporter-confirmed resource, instrumentation-scope, and span
   attribute descriptors as distinct typed fields. Catalogs, queries, results,
   controls, and saved URLs retain the attribute location; legacy four-part
