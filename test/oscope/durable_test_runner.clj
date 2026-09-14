@@ -1,6 +1,7 @@
 (ns oscope.durable-test-runner
   (:require [clojure.test :as test]
             [jdbc.chdb.native :as native]
+            [oscope.durable-config-runtime-test]
             [oscope.durable-integration-test]
             [oscope.durable-server-main-test]
             [oscope.embedded-durable-integration-test]
@@ -12,7 +13,8 @@
 
 (defn -main [& _]
   (let [qualified? (= :supported (:status (native/durable-capability)))
-        namespaces (cond-> ['oscope.durable-server-main-test
+        namespaces (cond-> ['oscope.durable-config-runtime-test
+                            'oscope.durable-server-main-test
                             'oscope.embedded-test
                             'oscope.embedded-viewer-test
                             'oscope.embedded-query-test

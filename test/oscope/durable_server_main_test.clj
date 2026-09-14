@@ -5,8 +5,7 @@
             [jdbc.chdb.durable.control :as control]
             [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.s3 :as durable-s3]
-            [oscope.durable-server-main :as durable-main]
-            [oscope.server-main :as server-main]))
+            [oscope.durable-server-main :as durable-main]))
 
 (def ^:private test-local-backend (backend/memory-backend))
 (def ^:private test-s3-backend (backend/memory-backend))
@@ -269,8 +268,11 @@
           output
           (with-out-str
             (binding [*err* *out*]
-              (with-redefs [durable-main/env-options (constantly {})
-                            server-main/run! (fn [_] (throw failure))]
+              (with-redefs [durable-main/system-environment (constantly {})
+                            durable-main/resolve-config
+                            (fn [_ _] ::resolved)
+                            durable-main/execute!
+                            (fn [_ _] (throw failure))]
                 (try
                   (durable-main/-main)
                   (catch Throwable error

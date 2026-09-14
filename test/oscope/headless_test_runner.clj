@@ -10,6 +10,7 @@
             [oscope.config-test]
             [oscope.config-property-test]
             [oscope.durable-cadence-property-test]
+            [oscope.durable-config-runtime-test]
             [oscope.durable-observability-test]
             [oscope.dependency-resolution-test]
             [oscope.embedded-query-test]
@@ -46,6 +47,7 @@
                         'oscope.config-test
                         'oscope.config-property-test
                         'oscope.durable-cadence-property-test
+                        'oscope.durable-config-runtime-test
                         'oscope.durable-observability-test
                         'oscope.dependency-resolution-test
                         'oscope.embedded-query-test

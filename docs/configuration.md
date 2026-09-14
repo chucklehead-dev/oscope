@@ -18,6 +18,8 @@ make it unsuitable as a reusable configuration file.
 ```sh
 jolt -M:server --config config/oscope.example.edn --check-config
 jolt -M:server --config /etc/oscope.edn --port 14318
+jolt -M:durable-server-dev --config config/oscope-durable.example.edn --check-config
+jolt -M:durable-server-dev --config /etc/oscope-durable.edn
 ```
 
 The initial command-line overrides are `--host`, `--port`, and `--db-spec`.
@@ -57,15 +59,23 @@ Durable S3 files may contain only credential references, never credentials:
                     :session-token-env "AWS_SESSION_TOKEN"}}}
 ```
 
-The ordinary `-M:server` launcher currently starts only `:memory` and
-`:local-path` storage. Version 2 validates Durable variants so they can be
-managed safely, but wiring those documents into `-M:durable-server-dev` remains
-a follow-up slice. Existing Durable environment variables remain unchanged.
+The ordinary `-M:server` launcher starts only `:memory` and `:local-path`
+storage. The ownership-specific `-M:durable-server-dev` launcher accepts only
+`:durable-local` and `:durable-s3`, using the same file selection, command-line
+server overrides, validation, and redacted `--check-config` path. Existing
+Durable environment variables remain supported and replace the complete file
+`:storage` section, so fields from two storage variants cannot mix.
+
+Credential reference names are validated with the file. Their values are read
+only when the Durable S3 runtime is actually materialized, after check-only
+handling, and are passed directly to the backend. A missing required value
+fails before backend creation. Neither config diagnostics nor bounded startup
+errors contain credential values.
 
 Diagnostic rendering redacts local paths, object-store locations, Durable
-owner/instance identities, and database names. Field provenance is retained
-internally as `:default`, `:file`, `:environment`, or `:cli` for a future
-settings/status screen.
+owner/instance identities, database names, and credential-reference names.
+Field provenance is retained internally as `:default`, `:file`, `:environment`,
+or `:cli` for a future settings/status screen.
 
 ## Approved typed attributes
 
@@ -150,7 +160,7 @@ settings remain owned by `jolt-otel-clickhouse`.
 
 `:memory` is rejected for non-disabled typed attributes because a process-only
 registry would make restart and read-only acquisition claims false. The
-versioned Durable launcher adapter remains separate work: `:durable-local` and
-`:durable-s3` config documents are validated, but the ordinary `-M:server`
-launcher does not own their writer lifecycle or backend and will not invent a
-second one.
+ownership-specific Durable launcher gives typed install/acquire modes a
+registry object distinct from the telemetry object while retaining the same
+Durable namespace. The ordinary `-M:server` launcher still does not own a
+Durable writer lifecycle or backend and will not invent a second one.

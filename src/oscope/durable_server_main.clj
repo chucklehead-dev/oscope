@@ -7,6 +7,9 @@
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.chdb.durable.s3 :as durable-s3]
             [jdbc.chdb.durable.s3-curl :as s3-curl]
+            [oscope.config :as config]
+            [oscope.config-cli :as config-cli]
+            [oscope.durable-config-runtime :as config-runtime]
             [oscope.server :as server]
             [oscope.server-main :as server-main]))
 
@@ -148,6 +151,167 @@
                     {:oscope.durable-server/error true
                      :option "OSCOPE_DURABLE_OBJECT_ID"})))
   value)
+
+(def durable-environment-names
+  ["OSCOPE_DURABLE_ROOT" "OSCOPE_DURABLE_BACKEND"
+   "OSCOPE_DURABLE_OBJECT_ID" "OSCOPE_DURABLE_S3_ENDPOINT"
+   "OSCOPE_DURABLE_S3_BUCKET" "OSCOPE_DURABLE_S3_PREFIX"
+   "OSCOPE_DURABLE_S3_REGION" "OSCOPE_DURABLE_S3_ACCESS_KEY"
+   "OSCOPE_DURABLE_S3_SECRET_KEY" "OSCOPE_DURABLE_S3_SESSION_TOKEN"
+   "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"
+   "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS" "OSCOPE_DURABLE_S3_TIMEOUT_MS"
+   "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS"
+   "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"
+   "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS" "OSCOPE_DURABLE_OWNER"
+   "OSCOPE_DURABLE_INSTANCE" "OSCOPE_DURABLE_DATABASE"
+   "OSCOPE_DURABLE_SCRATCH_PARENT" "OSCOPE_DURABLE_LEASE_TTL_MS"
+   "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS" "OSCOPE_DURABLE_CLOCK_SKEW_MS"
+   "OSCOPE_DURABLE_FORCE" "OSCOPE_DURABLE_MAX_ATTEMPTS"
+   "OSCOPE_DURABLE_RETRY_DEADLINE_MS"
+   "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS"
+   "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS"
+   "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES"])
+
+(defn- optional-string [environment name]
+  (not-empty (get environment name)))
+
+(defn- optional-positive [environment name]
+  (when-let [raw (optional-string environment name)]
+    (positive-long raw name nil)))
+
+(defn- common-environment-storage [environment]
+  (cond-> {}
+    (optional-string environment "OSCOPE_DURABLE_OWNER")
+    (assoc :owner (get environment "OSCOPE_DURABLE_OWNER"))
+    (optional-string environment "OSCOPE_DURABLE_INSTANCE")
+    (assoc :instance (get environment "OSCOPE_DURABLE_INSTANCE"))
+    (optional-string environment "OSCOPE_DURABLE_DATABASE")
+    (assoc :database (get environment "OSCOPE_DURABLE_DATABASE"))
+    (optional-string environment "OSCOPE_DURABLE_SCRATCH_PARENT")
+    (assoc :scratch-parent (get environment "OSCOPE_DURABLE_SCRATCH_PARENT"))
+    (optional-positive environment "OSCOPE_DURABLE_LEASE_TTL_MS")
+    (assoc :lease-ttl-ms
+           (optional-positive environment "OSCOPE_DURABLE_LEASE_TTL_MS"))
+    (optional-positive environment "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS")
+    (assoc :heartbeat-interval-ms
+           (optional-positive environment
+                              "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS"))
+    (optional-string environment "OSCOPE_DURABLE_CLOCK_SKEW_MS")
+    (assoc :clock-skew-ms
+           (let [value (parse-long
+                        (get environment "OSCOPE_DURABLE_CLOCK_SKEW_MS"))]
+             (when-not (and (integer? value) (not (neg? value)))
+               (throw (ex-info "OSCOPE_DURABLE_CLOCK_SKEW_MS must be nonnegative"
+                               {:oscope.durable-server/error true
+                                :option "OSCOPE_DURABLE_CLOCK_SKEW_MS"})))
+             value))
+    (optional-string environment "OSCOPE_DURABLE_FORCE")
+    (assoc :force? (boolean-option
+                    (get environment "OSCOPE_DURABLE_FORCE")
+                    "OSCOPE_DURABLE_FORCE"))
+    (optional-positive environment "OSCOPE_DURABLE_MAX_ATTEMPTS")
+    (assoc :max-attempts
+           (optional-positive environment "OSCOPE_DURABLE_MAX_ATTEMPTS"))
+    (optional-positive environment "OSCOPE_DURABLE_RETRY_DEADLINE_MS")
+    (assoc :retry-deadline-ms
+           (optional-positive environment "OSCOPE_DURABLE_RETRY_DEADLINE_MS"))
+    (optional-positive environment "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS")
+    (assoc :retry-initial-backoff-ms
+           (optional-positive
+            environment "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS"))
+    (optional-positive environment "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS")
+    (assoc :retry-max-backoff-ms
+           (optional-positive environment
+                              "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS"))
+    (optional-positive environment "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES")
+    (assoc :checkpoint-every-batches
+           (optional-positive
+            environment "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES"))))
+
+(defn durable-environment-storage
+  "Translate a complete legacy Durable environment selection into config data.
+
+  Credential values are deliberately never read into the returned map. The S3
+  variant carries only the names of the environment variables that the runtime
+  adapter may resolve after check-only handling."
+  [environment]
+  (let [raw-backend (optional-string environment "OSCOPE_DURABLE_BACKEND")
+        root (optional-string environment "OSCOPE_DURABLE_ROOT")]
+    (when (or raw-backend root)
+      (let [backend-kind (or (some-> raw-backend str/lower-case) "local")
+            common (common-environment-storage environment)]
+        (case backend-kind
+          "local"
+          (assoc common :type :durable-local
+                 :root (required-option environment "OSCOPE_DURABLE_ROOT"))
+
+          "s3"
+          (let [optional-s3
+                (cond-> {}
+                  (some? (get environment "OSCOPE_DURABLE_S3_PREFIX"))
+                  (assoc :prefix (get environment "OSCOPE_DURABLE_S3_PREFIX"))
+                  (optional-positive environment "OSCOPE_DURABLE_S3_MAX_ATTEMPTS")
+                  (assoc :max-attempts
+                         (attempt-count
+                          (get environment "OSCOPE_DURABLE_S3_MAX_ATTEMPTS")))
+                  (optional-positive environment
+                                     "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS")
+                  (assoc :connect-timeout-ms
+                         (optional-positive
+                          environment "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS"))
+                  (optional-positive environment "OSCOPE_DURABLE_S3_TIMEOUT_MS")
+                  (assoc :timeout-ms
+                         (optional-positive environment
+                                            "OSCOPE_DURABLE_S3_TIMEOUT_MS"))
+                  (optional-positive environment
+                                     "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS")
+                  (assoc :retry-deadline-ms
+                         (optional-positive
+                          environment "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS"))
+                  (optional-positive
+                   environment "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS")
+                  (assoc :retry-initial-backoff-ms
+                         (optional-positive
+                          environment
+                          "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"))
+                  (optional-positive
+                   environment "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS")
+                  (assoc :retry-max-backoff-ms
+                         (optional-positive
+                          environment
+                          "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS")))]
+            (assoc common :type :durable-s3
+                   :s3
+                   (merge
+                    {:endpoint (required-option
+                                environment "OSCOPE_DURABLE_S3_ENDPOINT")
+                     :bucket (required-option
+                              environment "OSCOPE_DURABLE_S3_BUCKET")
+                     :region (required-option
+                              environment "OSCOPE_DURABLE_S3_REGION")
+                     :object-id (object-id!
+                                 (or (optional-string
+                                      environment "OSCOPE_DURABLE_OBJECT_ID")
+                                     "oscope"))
+                     :credentials
+                     (cond->
+                      {:type :environment
+                       :access-key-env "OSCOPE_DURABLE_S3_ACCESS_KEY"
+                       :secret-key-env "OSCOPE_DURABLE_S3_SECRET_KEY"}
+                       (optional-string
+                        environment "OSCOPE_DURABLE_S3_SESSION_TOKEN")
+                       (assoc :session-token-env
+                              "OSCOPE_DURABLE_S3_SESSION_TOKEN"))}
+                    optional-s3)))
+
+          (throw (ex-info "OSCOPE_DURABLE_BACKEND must be local or s3"
+                          {:oscope.durable-server/error true
+                           :option "OSCOPE_DURABLE_BACKEND"})))))))
+
+(defn durable-environment-layer [environment]
+  (let [storage (durable-environment-storage environment)]
+    (cond-> (config/environment-layer environment)
+      storage (assoc :storage storage))))
 
 (defn durable-options
   "Build server options from an environment-shaped map.
@@ -370,9 +534,41 @@
           "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS"
           "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES"])))
 
-(defn -main [& _]
+(defn system-environment []
+  (into {}
+        (map (fn [name] [name (System/getenv name)]))
+        (distinct (concat config-cli/environment-names
+                          durable-environment-names))))
+
+(defn resolve-config
+  "Resolve the shared CLI/file model plus legacy Durable environment aliases."
+  ([arguments environment]
+   (config-cli/load-config-with-environment-layer
+    arguments environment (durable-environment-layer environment)))
+  ([arguments environment read-text read-manifest-bytes]
+   (config-cli/load-config-with-environment-layer
+    arguments environment (durable-environment-layer environment)
+    read-text read-manifest-bytes)))
+
+(defn execute!
+  "Check a Durable config without effects, or materialize and run its owner."
+  ([resolved environment]
+   (execute! resolved environment
+             (fn [candidate _]
+               ;; Resolve only references named by the already validated
+               ;; configuration, and only after check-only handling.
+               (config-runtime/server-options candidate #(System/getenv %)))
+             server-main/run!))
+  ([resolved environment server-options-fn run-fn]
+   (config-runtime/validate-resolved! resolved)
+   (if (:check-config? resolved)
+     (print (config-cli/check-output resolved))
+     (run-fn (server-options-fn resolved environment)))))
+
+(defn -main [& arguments]
   (try
-    (server-main/run! (env-options))
+    (let [environment (system-environment)]
+      (execute! (resolve-config arguments environment) environment))
     (catch Throwable error
       (let [{:keys [category message]} (report-failure! error)]
         ;; Do not attach the original cause: an uncaught-exception printer may

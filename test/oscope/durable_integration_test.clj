@@ -8,6 +8,8 @@
             [jdbc.chdb.durable.head :as head]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
+            [oscope.config :as config]
+            [oscope.durable-config-runtime :as durable-config-runtime]
             [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.server :as server]
             [teensyp.client :as client])
@@ -220,16 +222,19 @@
       (let [store (local-posix/local-backend root)
             lifecycle
             (server/start!
-             {:port 0
-              :durability {:checkpoint! jdbc.chdb.durable/checkpoint!
-                           :flush! jdbc.chdb.durable/flush!}
-              :db-spec (jdbc.chdb.durable/writer-dbspec
-                        {:backend store
-                         :owner "oscope-test"
-                         :instance "oscope-test-instance"
-                         :database "default"
-                         :lease-ttl-ms 30000
-                         :heartbeat-interval-ms 50})})]
+             (durable-config-runtime/server-options
+              (config/resolve-config
+               [[:file
+                 {:version 2
+                  :server {:port 0}
+                  :storage {:type :durable-local
+                            :root (str root)
+                            :owner "oscope-test"
+                            :instance "oscope-test-instance"
+                            :database "default"
+                            :lease-ttl-ms 30000
+                            :heartbeat-interval-ms 50}}]])
+              {}))]
         (try
           (is (pos? (:port lifecycle)))
           (let [initial-expiry

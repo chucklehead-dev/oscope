@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Route versioned `:durable-local` and `:durable-s3` files through the existing
+  Durable standalone owner. The launcher shares config precedence and redacted
+  check-only handling, retains the legacy environment surface, resolves S3
+  credential references only at runtime, and gives typed schema state a
+  distinct fixed registry object. Refs #4, #33.
+
 - Add a closed, versioned `oscope.embedded/status` snapshot for application
   health endpoints. It reports lifecycle phase and bounded local/remote span
   pipeline counters without exposing ownership-bearing objects, endpoints,
@@ -148,8 +154,7 @@
   validation, enforces deployment-selector equality, redacts private
   provenance, and routes the result through a persistent database-scoped local
   registry. Acquire remains read-only through the existing typed-schema startup
-  boundary; ephemeral memory and not-yet-owned Durable file launches fail
-  closed.
+  boundary; ephemeral memory launches fail closed.
 - Add an explicit operator-authorized typed span schema startup boundary for
   embedded and standalone collection. Base schema and approved additive DDL
   complete before exporter or ingress startup, and only installer-confirmed

@@ -300,7 +300,8 @@
                                 :secret-key-env "AWS_SECRET_ACCESS_KEY"}}}
             ["/private/scratch-s3" "s3-owner" "s3-instance" "s3_database"
              "https://private-s3.example.test" "private-bucket"
-             "private/prefix" "private-object"]]]]
+             "private/prefix" "private-object" "AWS_ACCESS_KEY_ID"
+             "AWS_SECRET_ACCESS_KEY"]]]]
     (let [resolved (checked-file storage)
           output (cli/check-output resolved)
           displayed (config/parse output)]

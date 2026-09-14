@@ -427,8 +427,8 @@
   "Return a diagnostic-safe config/provenance result.
 
   Local paths, object-store identity, typed manifest paths, and typed deployment
-  selector strings are suppressed. Credential values are impossible in the
-  schema; environment variable references remain visible."
+  selector strings and credential-reference names are suppressed. Credential
+  values are impossible in the schema."
   [{:keys [config provenance] :as resolved}]
   (let [kind (get-in config [:storage :type])
         storage-paths (case kind
@@ -438,6 +438,9 @@
                                         [:storage :database]]
                         :durable-s3 [[:storage :s3 :endpoint] [:storage :s3 :bucket]
                                      [:storage :s3 :prefix] [:storage :s3 :object-id]
+                                     [:storage :s3 :credentials :access-key-env]
+                                     [:storage :s3 :credentials :secret-key-env]
+                                     [:storage :s3 :credentials :session-token-env]
                                      [:storage :scratch-parent] [:storage :owner]
                                      [:storage :instance] [:storage :database]]
                         [])
