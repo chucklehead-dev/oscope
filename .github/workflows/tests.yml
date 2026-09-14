@@ -48,6 +48,8 @@ jobs:
         run: test "$(jolt --version)" = "jolt v0.8.6"
       - name: Test strict Langfuse credential wrapper
         run: test/langfuse_interop_env_test.sh
+      - name: Test protected manual Langfuse workflow
+        run: test/langfuse_workflow_test.sh
       - name: Install native property-test dependency
         run: jolt -Srepro -A:test-headless -m hegel.install
       - name: Headless tests

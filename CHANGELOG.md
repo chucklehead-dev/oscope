@@ -6,6 +6,8 @@
   files or separately injected CI variables. It derives the Basic header over
   standard input, removes raw keys before launching the existing gate, rejects
   ambiguous or malformed inputs, and has causal non-execution/redaction tests.
+  A manual protected-environment workflow qualifies real Langfuse readback
+  without exposing that credentialed gate to ordinary CI.
 
 - Align the ClickHouse exporter pin with its merged current OTel dependency.
   Hosted checks reject the prior exporter coordinate from the resolved
