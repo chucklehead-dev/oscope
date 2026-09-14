@@ -107,9 +107,9 @@ file. Do not create or store a combined-header secret:
 - name: Qualify Oscope and Langfuse interoperability
   env:
     JOLT_CHDB_LIB: ${{ runner.temp }}/chdb/native/libchdb.so
-    OSCOPE_LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
-    OSCOPE_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-    OSCOPE_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+    OSCOPE_LANGFUSE_BASE_URL: ${{ vars.OSCOPE_LANGFUSE_BASE_URL }}
+    OSCOPE_LANGFUSE_PUBLIC_KEY: ${{ secrets.OSCOPE_LANGFUSE_PUBLIC_KEY }}
+    OSCOPE_LANGFUSE_SECRET_KEY: ${{ secrets.OSCOPE_LANGFUSE_SECRET_KEY }}
   run: test/langfuse_interop_env.sh
 ```
 
@@ -117,10 +117,12 @@ File and environment modes are mutually exclusive, and an ambient combined
 header is rejected. The same gate is designed for a self-hosted v4 base URL.
 The repository's `langfuse-interop` workflow is manual-only and uses the
 protected `langfuse-interop` GitHub environment. Configure its
-`LANGFUSE_BASE_URL` environment variable and `LANGFUSE_PUBLIC_KEY` and
-`LANGFUSE_SECRET_KEY` environment secrets, then dispatch the workflow when a
-real interoperability qualification is wanted. Ordinary push and pull-request
-CI uses dummy credentials only and never calls Langfuse.
+`OSCOPE_LANGFUSE_BASE_URL` environment variable and
+`OSCOPE_LANGFUSE_PUBLIC_KEY` and `OSCOPE_LANGFUSE_SECRET_KEY` environment
+secrets, then dispatch the workflow when a real interoperability qualification
+is wanted. These context names intentionally match the wrapper's input names;
+GitHub resolves a missing variable or secret to an empty string. Ordinary push
+and pull-request CI uses dummy credentials only and never calls Langfuse.
 
 Ingestion is asynchronous, so it polls the Observations API for up to 90 seconds
 instead of treating an ingestion HTTP 2xx response as proof of semantic storage.
