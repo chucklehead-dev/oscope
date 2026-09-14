@@ -5,6 +5,7 @@
             [oscope.config-cli :as config-cli]
             [oscope.managed-config-posix :as posix]
             [oscope.managed-config-store :as store]
+            [oscope.managed-config-load-worker]
             [oscope.managed-config-worker])
   (:import [java.nio.file Files LinkOption Path]
            [java.nio.file.attribute FileAttribute PosixFilePermissions]))
@@ -49,6 +50,13 @@
     (str root) revision (str port) (str ready) (str start) (str result)]
    {:out :string :err :string :dir (System/getProperty "user.dir")}))
 
+(defn- load-worker [root port result]
+  (process/process
+   [(or (System/getenv "JOLT_BIN") "jolt")
+    "-M:test-managed-config-load-worker"
+    (str root) (str port) (str result)]
+   {:out :string :err :string :dir (System/getProperty "user.dir")}))
+
 (defn- call-private [name & arguments]
   (apply (deref (ns-resolve 'oscope.managed-config-posix name)) arguments))
 
@@ -76,7 +84,9 @@
                                                no-link-options))))
         (is (= "rw-------"
                (PosixFilePermissions/toString
-                (Files/getPosixFilePermissions target no-link-options)))))
+                (Files/getPosixFilePermissions target no-link-options))))
+        (is (empty? (filter #(.contains (.getName %) ".tmp")
+                            (seq (.listFiles (.toFile (.getParent target))))))))
       (finally (delete-tree! root)))))
 
 (deftest linux-posix-store-rejects-linked-directory-and-target
@@ -211,3 +221,26 @@
         (is (empty? (filter #(.contains (.getName %) ".tmp")
                             (seq (.listFiles (.toFile (.getParent target))))))))
       (finally (delete-tree! root)))))
+
+(deftest independent-restart-consumes-the-managed-file-through-normal-xdg-loading
+  (let [root (Files/createTempDirectory "oscope-managed-restart-"
+                                        no-file-attributes)
+        result (.resolve root "load-result")
+        child (atom nil)]
+    (try
+      (let [managed (store/managed-store
+                     [] {"XDG_CONFIG_HOME" (str root)})
+            absent (:revision (store/snapshot! managed))]
+        (is (= :ok (:status
+                   (store/replace! managed absent (document 14321)))))
+        (reset! child (load-worker root 14321 result))
+        (let [process-result (deref @child 30000 ::timeout)]
+          (is (not= ::timeout process-result))
+          (when (map? process-result)
+            (is (zero? (:exit process-result))))
+          (is (wait-for-paths! [result]))
+          (is (= "ok" (String. (Files/readAllBytes result) "UTF-8")))))
+      (finally
+        (when @child
+          (try (process/destroy-tree @child) (catch Throwable _ nil)))
+        (delete-tree! root)))))
