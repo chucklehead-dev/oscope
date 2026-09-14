@@ -510,6 +510,7 @@ owned embedded native windows should treat that runner enhancement as a gate.
 ```clojure
 (require '[jdbc.chdb.durable :as durable]
          '[oscope.embedded :as embedded]
+         '[oscope.embedded.viewer :as viewer]
          '[otel.sdk :as sdk]
          '[otel.trace :as trace])
 
@@ -527,9 +528,22 @@ owned embedded native windows should treat that runner enhancement as a gate.
 (trace/with-span [_ (sdk/tracer "checkout.http") "POST /checkout"]
   (handle-checkout))
 
-;; Stop application ingress first, then drain and retire the owned runtime.
+;; Optional: expose the normal UI without installing any OTLP receiver routes.
+(def viewer-lifecycle (viewer/start! runtime {:port 0}))
+(:url viewer-lifecycle) ; open the actual loopback URL selected for port 0
+
+;; Stop application ingress and the borrowed viewer first, then drain and
+;; retire its source, SDK, exporter, connection, and Durable writer owner.
+(viewer/stop! viewer-lifecycle)
 (embedded/stop! runtime)
 ```
+
+The viewer-only lifecycle accepts only `127.0.0.1`, validates each request's
+exact numeric `Host` authority, and returns `404` for every OTLP ingestion path.
+It borrows the embedded runtime's source and connection, and owns only its HTTP
+listener and bounded request workers. Its stop operation is idempotent and
+retries an incomplete listener or worker boundary. Always stop the viewer
+before `embedded/stop!` so an admitted query cannot race source retirement.
 
 An embedded runtime can also send the same completed spans to a remote
 OTLP/HTTP JSON collector while retaining spans, logs, and metrics locally. Each

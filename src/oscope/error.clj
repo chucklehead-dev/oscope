@@ -2,7 +2,8 @@
   "Stable public descriptors and formatting helpers for errors.")
 
 (def ^:private lifecycle-operations
-  #{:stop-ingress :stop-http-executor :shutdown-sdk :close-source
+  #{:stop-ingress :stop-http-executor :stop-listener :stop-query-workers
+    :shutdown-sdk :close-source
     :close-exporter :checkpoint :flush :close-connection :lifecycle})
 
 (defn lifecycle-failure

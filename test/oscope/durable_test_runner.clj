@@ -6,6 +6,7 @@
             [oscope.embedded-durable-integration-test]
             [oscope.embedded-query-test]
             [oscope.embedded-test]
+            [oscope.embedded-viewer-test]
             [oscope.otlp-test]
             [oscope.server-test]))
 
@@ -13,6 +14,7 @@
   (let [qualified? (= :supported (:status (native/durable-capability)))
         namespaces (cond-> ['oscope.durable-server-main-test
                             'oscope.embedded-test
+                            'oscope.embedded-viewer-test
                             'oscope.embedded-query-test
                             'oscope.otlp-test
                             'oscope.server-test]

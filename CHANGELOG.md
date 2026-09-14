@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a viewer-only embedded lifecycle over an existing source and connection.
+  It exposes the normal workbench, event, chart, and editor surfaces on an
+  exact loopback authority without OTLP ingress, reports the actual ephemeral
+  URL, and owns only its listener and bounded query-request workers. Retryable
+  stop and startup rollback leave the caller's SDK, exporter, source,
+  connection, and Durable writer under the original embedded owner.
+
 - Report the protected Langfuse gate's failure through a closed set of stage,
   status, and bounded observation-count categories. Terminal summaries retain
   no endpoints, trace IDs, headers, credentials, bodies, exception details, or
