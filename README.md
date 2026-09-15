@@ -855,6 +855,22 @@ paths, endpoints, or credentials. A character limit bounds retention size but
 does not redact a sensitive prefix, so arbitrary exception strings are not
 included at all.
 
+If the owned query executor throws while `stop!` shuts it down or waits for
+termination, the call returns the same closed lifecycle failure shape used by
+the other embedded owners:
+
+```clojure
+{:status :stopping
+ :phase :joining-query
+ :errors [{:type :oscope.error/lifecycle-operation-threw
+           :operation :stop-query-workers}]}
+```
+
+The result contains no Throwable class or message, cause, ex-data, stack,
+query value, path, endpoint, or credential. It remains safe to retry; `:closed`
+is still reported only after the executor really terminates, and a blocked
+native query is never interrupted.
+
 An out-of-process viewer opens a read-only Durable connection after a published
 flush or checkpoint. It restores the immutable head selected at open time into
 private scratch storage; it does not need the writer's local state and does not

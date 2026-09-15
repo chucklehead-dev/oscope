@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Close embedded-query executor shutdown and termination-wait failures into the
+  shared redacted lifecycle descriptor instead of throwing the original
+  exception to the caller. Stop remains retryable, never interrupts blocked
+  native work, and reports `:closed` only after real executor termination.
+  Refs #99.
+
 - Replace embedded-query snapshot exception class/message prefixes with a
   closed failure type, phase, and category for load, executor-submission, and
   timeout outcomes. Throwable details, SQL and values, paths, endpoints, and

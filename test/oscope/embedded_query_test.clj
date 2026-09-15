@@ -57,6 +57,25 @@
     (is (not-any? #(instance? Throwable %) (tree-seq coll? seq snapshot))
         "no Throwable, cause, or stack remains reachable")))
 
+(defn- assert-closed-stop-failure! [failure result]
+  (let [expected {:status :stopping
+                  :phase :joining-query
+                  :errors
+                  [{:type :oscope.error/lifecycle-operation-threw
+                    :operation :stop-query-workers}]}
+        rendered (pr-str result)]
+    (is (= expected result))
+    (is (= #{:status :phase :errors} (set (keys result))))
+    (is (= #{:type :operation} (set (keys (first (:errors result)))))
+        "the public stop failure shape is exact")
+    (is (every? #(not (.contains rendered %)) failure-canaries)
+        "no causal message, data, SQL, value, path, endpoint, or credential leaks")
+    (is (not (.contains rendered "clojure.lang.ExceptionInfo"))
+        "the Throwable class name is not projected")
+    (is (not-any? #(identical? % failure) (tree-seq coll? seq result)))
+    (is (not-any? #(instance? Throwable %) (tree-seq coll? seq result))
+        "no Throwable, cause, or stack remains reachable")))
+
 (deftest blocking-load-runs-off-fiber-and-publication-is-bounded
   (let [realization-contexts (atom [])
         rows (fn rows [id]
@@ -236,6 +255,62 @@
     (is (= {:status :closed :phase :closed}
            (stop-until-closed! lifecycle)))
     (is (= [:query-enter :query-exit] @events))))
+
+(deftest executor-shutdown-failure-is-closed-and-retryable
+  (let [shutdown-var
+        (ns-resolve 'oscope.embedded.query 'shutdown-query-executor!)
+        shutdown! @shutdown-var
+        failure (causal-failure)
+        calls (atom 0)]
+    (with-redefs-fn
+      {shutdown-var
+       (fn [executor]
+         (if (= 1 (swap! calls inc))
+           (throw failure)
+           (shutdown! executor)))}
+      (fn []
+        (let [lifecycle
+              (embedded-query/start!
+               {:load! (constantly [])
+                :interval-ms 1000 :timeout-ms 100})]
+          (try
+            (is (= :ready
+                   (:status (eventually lifecycle #(= :ready (:status %))))))
+            (assert-closed-stop-failure!
+             failure (embedded-query/stop! lifecycle))
+            (is (= {:status :closed :phase :closed}
+                   (stop-until-closed! lifecycle))
+                "a retry reruns shutdown and closes only after termination")
+            (finally
+              (stop-until-closed! lifecycle))))))))
+
+(deftest executor-termination-wait-failure-is-closed-and-retryable
+  (let [await-var
+        (ns-resolve 'oscope.embedded.query 'await-query-executor!)
+        await! @await-var
+        failure (causal-failure)
+        calls (atom 0)]
+    (with-redefs-fn
+      {await-var
+       (fn [executor timeout-ms]
+         (if (= 1 (swap! calls inc))
+           (throw failure)
+           (await! executor timeout-ms)))}
+      (fn []
+        (let [lifecycle
+              (embedded-query/start!
+               {:load! (constantly [])
+                :interval-ms 1000 :timeout-ms 100})]
+          (try
+            (is (= :ready
+                   (:status (eventually lifecycle #(= :ready (:status %))))))
+            (assert-closed-stop-failure!
+             failure (embedded-query/stop! lifecycle))
+            (is (= {:status :closed :phase :closed}
+                   (stop-until-closed! lifecycle))
+                "a retry waits again and closes only after termination")
+            (finally
+              (stop-until-closed! lifecycle))))))))
 
 (deftest invalid-options-fail-before-a-worker-is-created
   (testing "caller must supply the complete bounded contract"

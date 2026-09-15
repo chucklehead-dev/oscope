@@ -4,7 +4,8 @@
   Query selection and display-model construction remain caller-owned. This
   namespace owns only execution policy: blocking work runs on one OS thread,
   while a Jolt fiber controls cadence and publishes immutable snapshots."
-  (:require [jolt.fibers :as fibers])
+  (:require [jolt.fibers :as fibers]
+            [oscope.error :as error])
   (:import [java.util.concurrent Executors TimeUnit]))
 
 (def default-options
@@ -153,16 +154,23 @@
               :stopped
               (recur nil))))))))
 
-(defn- stop-result [state]
-  {:status (if (= :closed (:phase state)) :closed :stopping)
-   :phase (:phase state)})
+(defn- stop-result [state failure]
+  (cond-> {:status (if (= :closed (:phase state)) :closed :stopping)
+           :phase (:phase state)}
+    failure (assoc :errors [failure])))
+
+(defn- shutdown-query-executor! [executor]
+  (.shutdown executor))
+
+(defn- await-query-executor! [executor timeout-ms]
+  (.awaitTermination executor timeout-ms TimeUnit/MILLISECONDS))
 
 (defn- stop-lifecycle!
   [{:keys [stop-signal worker executor options state lock]}]
   (locking lock
     (if (= :closed (:phase @state))
-      (stop-result @state)
-      (do
+      (stop-result @state nil)
+      (try
         (deliver stop-signal true)
         (when-not (:worker-stopped? @state)
           (swap! state assoc :phase :stopping-cadence)
@@ -175,13 +183,17 @@
                    (not (:executor-shutdown? @state)))
           ;; Never interrupt a native/JDBC operation: publish shutdown and wait
           ;; for the one owned thread to finish. A timed-out stop stays retryable.
-          (.shutdown executor)
+          (shutdown-query-executor! executor)
           (swap! state assoc :executor-shutdown? true))
         (when (and (:executor-shutdown? @state)
-                   (.awaitTermination executor (:stop-timeout-ms options)
-                                      TimeUnit/MILLISECONDS))
+                   (await-query-executor! executor
+                                          (:stop-timeout-ms options)))
           (swap! state assoc :phase :closed))
-        (stop-result @state)))))
+        (stop-result @state nil)
+        (catch Throwable failure
+          (stop-result @state
+                       (error/lifecycle-failure :stop-query-workers
+                                                failure)))))))
 
 (defn start!
   "Start a bounded background query lifecycle.
