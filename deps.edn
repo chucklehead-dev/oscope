@@ -137,6 +137,10 @@
   :typed-browser-server
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.typed-browser-server-main"]}
+
+  :typed-log-browser-server
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.typed-log-browser-server-main"]}
   :emit-sample {:main-opts ["-m" "oscope.sample-emitter"]}
   :live-web {:main-opts ["-m" "oscope.live-main" "web"]}
 

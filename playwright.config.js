@@ -23,20 +23,26 @@ module.exports = defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: {
-    command: `${joltCommand} -M:typed-browser-server`,
-    url: `${baseURL}/healthz`,
-    timeout: 120_000,
-    reuseExistingServer: false,
-    env: {
-      ...process.env,
-      OSCOPE_PORT: String(port),
+  webServer: [
+    {
+      command: `${joltCommand} -M:typed-browser-server`,
+      url: `${baseURL}/healthz`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+      env: {...process.env, OSCOPE_PORT: String(port)},
     },
-  },
+    {
+      command: `${joltCommand} -M:typed-log-browser-server`,
+      url: "http://127.0.0.1:18319/healthz",
+      timeout: 120_000,
+      reuseExistingServer: false,
+      env: {...process.env, OSCOPE_LOG_E2E_PORT: "18319"},
+    },
+  ],
   projects: [
     {
       name: "chromium",
-      testMatch: /(?:oscope|typed-attributes)\.spec\.js/,
+      testMatch: /(?:oscope|typed-attributes|typed-logs)\.spec\.js/,
     },
     {
       name: "docs",

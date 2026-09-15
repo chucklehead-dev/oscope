@@ -6,7 +6,10 @@
   historical coverage to the embedded and standalone viewer. String, Boolean,
   and Int64 fields are acquired only from the installer-confirmed capability;
   saved URLs retain the complete schema binding and fail closed after catalog
-  changes, while generic log exploration remains available. Refs #93.
+  changes, while generic log exploration remains available. A separate
+  log-target browser fixture qualifies real OTLP ingestion, projected values,
+  coverage, and canonical URL reload without conflating trace capabilities.
+  Refs #93.
 
 - Route installer-confirmed `otel_logs` / log-record attribute capabilities to
   the exporter's typed-log projection in both standalone and embedded startup.
