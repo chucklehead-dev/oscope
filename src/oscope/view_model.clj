@@ -422,6 +422,10 @@
   #{:attribute-key :attribute-type :attribute-location :attribute-value :field-id
     :manifest-version :parent-span-id :service-name :signal :source :span-id
     :span-name :timestamp-unix-nano :trace-id :typed-status})
+(def ^:private typed-log-row-keys
+  #{:attribute-key :attribute-type :attribute-location :attribute-value :body
+    :field-id :manifest-version :service-name :severity-text :signal :source
+    :span-id :timestamp-unix-nano :trace-id :typed-status})
 
 (defn- valid-bounded-text? [value]
   (and (string? value) (<= (count value) max-plotje-text)))
@@ -517,6 +521,90 @@
                :rows rows}
        :empty-message (when (empty? rows) "No typed spans matched this bounded query window.")})))
 
+(defn- typed-log-filter-screen [plan result typed-log-fields]
+  (let [plan (query/validate-plan plan)
+        {:keys [schema-binding operator value limit] :as selection} (:selection plan)
+        binding (typed-query/resolve-binding typed-log-fields schema-binding)
+        expected {:attribute-key (:attribute-key binding)
+                  :attribute-type (:attribute-type binding)
+                  :attribute-location :log-attributes
+                  :field-id (:field-id binding)
+                  :manifest-version (:manifest-version binding)
+                  :signal :logs}
+        coverage (:coverage result)
+        counts (when (map? coverage) (mapv coverage coverage-order))]
+    (when-not (and (typed-query/log-binding? binding) (map? result)
+                   (= expected (select-keys result (keys expected)))
+                   (= {:operator operator :value value} (:filter result))
+                   (map? coverage) (= coverage-keys (set (keys coverage)))
+                   (every? #(and (integer? %) (not (neg? %))) counts)
+                   (integer? (:total coverage)) (not (neg? (:total coverage)))
+                   (= (:total coverage) (reduce + 0 counts))
+                   (vector? (:matches result)) (<= (count (:matches result)) limit))
+      (fail! ::invalid-typed-result
+             "typed log filter result does not match its schema binding" {}))
+    (let [rows
+          (mapv
+           (fn [row]
+             (when-not
+              (and (map? row) (= typed-log-row-keys (set (keys row)))
+                   (= expected (select-keys row (keys expected)))
+                   (= :typed (:source row))
+                   (integer? (:timestamp-unix-nano row))
+                   (<= 0 (:timestamp-unix-nano row) 9223372036854775807)
+                   (every? valid-bounded-text?
+                           ((juxt :trace-id :span-id :service-name
+                                  :severity-text :body) row))
+                   (case (:attribute-type binding)
+                     :boolean (and (= 3 (:typed-status row))
+                                   (boolean? (:attribute-value row)))
+                     :int64 (and (= 3 (:typed-status row))
+                                 (typed-query/int64? (:attribute-value row)))
+                     :string (and (contains? #{2 3} (:typed-status row))
+                                  (string? (:attribute-value row))
+                                  (<= (count (:attribute-value row))
+                                      query/max-value-length)
+                                  (= (= 2 (:typed-status row))
+                                     (empty? (:attribute-value row))))
+                     false))
+               (fail! ::invalid-typed-row
+                      "typed log row does not match its schema binding" {}))
+             (assoc row :display-value
+                    (if (and (= :string (:attribute-type binding))
+                             (= "" (:attribute-value row)))
+                      "(empty string)" (str (:attribute-value row)))))
+           (:matches result))
+          visible (typed-query/visible-catalog typed-log-fields binding)]
+      {:oscope.view/version 1 :view :telemetry-typed-log-filter
+       :status (if (seq rows) :ready :empty)
+       :title (str "Typed " (typed-query/type-label (:attribute-type binding))
+                   " logs - " (:attribute-key binding))
+       :selection selection :query-plan plan :chart nil
+       :controls {:typed-log-fields (:fields visible)
+                  :typed-log-field-total (:total visible)
+                  :typed-log-fields-truncated? (:truncated? visible)
+                  :windows (keys query/windows)
+                  :limit {:value limit :minimum 1 :maximum query/max-result-limit}}
+       :coverage (conj
+                  (mapv (fn [status] {:status status :count (get coverage status)})
+                        coverage-order)
+                  {:status :total :count (:total coverage)})
+       :freshness-notice
+       "Coverage and matching logs are evaluated by bounded live queries; concurrent ingestion can advance one between them."
+       :table {:columns [{:key :timestamp-unix-nano :label "Timestamp (Unix ns)"}
+                         {:key :service-name :label "Service"}
+                         {:key :severity-text :label "Severity"}
+                         {:key :body :label "Body"}
+                         {:key :display-value
+                          :label (str "Typed "
+                                      (typed-query/type-label
+                                       (:attribute-type binding)) " value")}
+                         {:key :trace-id :label "Trace ID"}
+                         {:key :span-id :label "Span ID"}]
+               :rows rows}
+       :empty-message (when (empty? rows)
+                        "No typed logs matched this bounded query window.")})))
+
 (def ^:private typed-int64-aggregate-base-row-keys
   #{:attribute-key :attribute-location :field-id :manifest-version
     :signal :source :typed-status})
@@ -608,24 +696,35 @@
 
 (defn screen
   ([plan rows] (screen plan rows {}))
-  ([plan rows {:keys [typed-span-fields]}]
+  ([plan rows {:keys [typed-span-fields typed-log-fields]}]
    (let [mode (get-in plan [:selection :mode])
          result (cond
                   (= :typed-span-int64-aggregate mode)
                   (typed-span-int64-aggregate-screen plan rows typed-span-fields)
                   (= :typed-span-filter mode)
                   (typed-span-filter-screen plan rows typed-span-fields)
+                  (= :typed-log-filter mode)
+                  (typed-log-filter-screen plan rows typed-log-fields)
                   (contains? #{:metric-series :counter-series
                                :cumulative-histogram-series} mode)
                   (metric-series-screen plan rows)
                   :else (distribution-screen plan rows))]
-     (if (and (seq typed-span-fields)
-              (not (contains? #{:typed-span-filter
-                                :typed-span-int64-aggregate} mode)))
-       (let [{:keys [fields total truncated?]}
-             (typed-query/visible-catalog typed-span-fields)]
-         (-> result
-             (assoc-in [:controls :typed-span-fields] fields)
-             (assoc-in [:controls :typed-span-field-total] total)
-             (assoc-in [:controls :typed-span-fields-truncated?] truncated?)))
-       result))))
+     (let [result
+           (if (and (seq typed-span-fields)
+                    (not (contains? #{:typed-span-filter
+                                      :typed-span-int64-aggregate} mode)))
+             (let [{:keys [fields total truncated?]}
+                   (typed-query/visible-catalog typed-span-fields)]
+               (-> result
+                   (assoc-in [:controls :typed-span-fields] fields)
+                   (assoc-in [:controls :typed-span-field-total] total)
+                   (assoc-in [:controls :typed-span-fields-truncated?] truncated?)))
+             result)]
+       (if (and (seq typed-log-fields) (not= :typed-log-filter mode))
+         (let [{:keys [fields total truncated?]}
+               (typed-query/visible-catalog typed-log-fields)]
+           (-> result
+               (assoc-in [:controls :typed-log-fields] fields)
+               (assoc-in [:controls :typed-log-field-total] total)
+               (assoc-in [:controls :typed-log-fields-truncated?] truncated?)))
+         result)))))

@@ -109,15 +109,18 @@
                         {:oscope.ui/error true}))))))
 (defn selection-from-params
   ([params] (selection-from-params params nil))
-  ([params typed-span-fields]
+  ([params typed-span-fields] (selection-from-params params typed-span-fields nil))
+  ([params typed-span-fields typed-log-fields]
   (let [mode (case (get params "mode")
                "typed-span-filter" :typed-span-filter
+               "typed-log-filter" :typed-log-filter
                "typed-span-int64-aggregate" :typed-span-int64-aggregate
                "metric-series" :metric-series
                "counter-series" :counter-series
                "cumulative-histogram-series" :cumulative-histogram-series
                :distribution)
         typed-filter? (= :typed-span-filter mode)
+        typed-log-filter? (= :typed-log-filter mode)
         typed-aggregate? (= :typed-span-int64-aggregate mode)
         series? (contains? #{:metric-series :counter-series
                              :cumulative-histogram-series} mode)
@@ -165,8 +168,9 @@
           :group-by (if (= :none group) [] [group])
           :aggregates aggregates :window window :limit limit}))
 
-      typed-filter?
-      (let [binding (typed-binding-from-params params typed-span-fields)
+      (or typed-filter? typed-log-filter?)
+      (let [catalog (if typed-log-filter? typed-log-fields typed-span-fields)
+            binding (typed-binding-from-params params catalog)
             allowed-operators (typed-query/operators-for (:attribute-type binding))
             raw-operator (get params "typed-operator")
             operator (if (nil? raw-operator)
@@ -193,7 +197,8 @@
           (throw (ex-info "invalid typed Int64 filter value"
                           {:oscope.ui/error true})))
         (query/normalize-selection
-         {:mode :typed-span-filter :schema-binding binding :operator operator
+         {:mode (if typed-log-filter? :typed-log-filter :typed-span-filter)
+          :schema-binding binding :operator operator
           :value value :window window :limit limit}))
 
       series?
@@ -347,7 +352,8 @@
          "<button type=\"submit\">Run query</button></div></form>")))
 (defn- render-controls [controls selection action live?]
   (cond
-    (contains? #{:typed-span-filter :typed-span-int64-aggregate}
+    (contains? #{:typed-span-filter :typed-span-int64-aggregate
+                 :typed-log-filter}
                (:mode selection)) ""
     (contains? #{:metric-series :counter-series
                  :cumulative-histogram-series} (:mode selection))
@@ -485,6 +491,52 @@
                (str "<p>Showing " (count fields) " of "
                     (:typed-span-field-total controls)
                     " approved typed fields.</p>")))))))
+
+(defn- render-typed-log-controls [controls selection action]
+  (let [fields (:typed-log-fields controls)
+        current (when (= :typed-log-filter (:mode selection))
+                  (:schema-binding selection))]
+    (when (seq fields)
+      (str
+       (apply str
+              (for [type (:types typed-query/log-filter-capability)
+                    :let [candidates (filterv #(= type (:attribute-type %)) fields)]
+                    :when (seq candidates)]
+                (let [selected (or (some #(when (= current %) %) candidates)
+                                   (first candidates))]
+                  (str "<form method=\"get\" action=\"" (esc action)
+                       "\" aria-label=\"Typed " (name type) " log attribute filter\">"
+                       "<input type=\"hidden\" name=\"mode\" value=\"typed-log-filter\">"
+                       "<div class=\"controls\"><label>Typed log attribute<select name=\"typed-field-id\">"
+                       (apply str (map #(option (:field-id %) (typed-field-label %)
+                                               (= selected %)) candidates))
+                       "</select></label><label>Operator<select name=\"typed-operator\">"
+                       (apply str (map #(option % (name %)
+                                               (= % (or (:operator selection) :eq)))
+                                       (get-in typed-query/log-filter-capability
+                                               [:operators type])))
+                       "</select></label><label>Value"
+                       (case type
+                         :boolean (str "<select name=\"typed-value\">"
+                                       (option :true "true" (not= false (:value selection)))
+                                       (option :false "false" (= false (:value selection)))
+                                       "</select>")
+                         :int64 (str "<input name=\"typed-value\" inputmode=\"numeric\" pattern=\"-?[0-9]+\" maxlength=\"20\" value=\""
+                                     (esc (when (= :int64 (:attribute-type current))
+                                            (:value selection))) "\">")
+                         (str "<input name=\"typed-value\" maxlength=\"256\" value=\""
+                              (esc (when (= :string (:attribute-type current))
+                                     (:value selection))) "\">"))
+                       "</label><label>Window<select name=\"window\">"
+                       (apply str (map #(option % (name %) (= % (:window selection)))
+                                       [:15m :1h :6h :24h]))
+                       "</select></label><label>Maximum rows<input name=\"limit\" type=\"number\" min=\"1\" max=\"100\" value=\""
+                       (or (:limit selection) 12)
+                       "\"></label><button type=\"submit\">Filter typed logs</button></div></form>"))))
+       (when (:typed-log-fields-truncated? controls)
+         (str "<p>Showing " (count fields) " of "
+              (:typed-log-field-total controls)
+              " approved typed log fields.</p>"))))))
 (defn selection-query-string [selection]
   (let [selection (query/normalize-selection selection)]
     (cond
@@ -522,6 +574,19 @@
              "&typed-operator=" (name (:operator selection))
              "&typed-value=" (URLEncoder/encode (str (:value selection)) "UTF-8")
              "&window=" (name (:window selection)) "&limit=" (:limit selection)))
+
+      (= :typed-log-filter (:mode selection))
+      (let [{:keys [field-id attribute-key attribute-type attribute-location
+                    manifest-version]} (:schema-binding selection)]
+        (str "?mode=typed-log-filter&typed-field-id="
+             (URLEncoder/encode field-id "UTF-8")
+             "&typed-attribute-key=" (URLEncoder/encode attribute-key "UTF-8")
+             "&typed-attribute-type=" (name attribute-type)
+             "&typed-attribute-location=" (name attribute-location)
+             "&typed-manifest-version=" manifest-version
+             "&typed-operator=" (name (:operator selection))
+             "&typed-value=" (URLEncoder/encode (str (:value selection)) "UTF-8")
+             "&window=" (name (:window selection)) "&limit=" (:limit selection)))
       (contains? #{:metric-series :counter-series
                      :cumulative-histogram-series} (:mode selection))
       (str "?mode=" (name (:mode selection))
@@ -544,7 +609,8 @@
            "&window=" (name (:window selection))
            "&limit=" (:limit selection)))))
 (defn- raw-typed-request? [params]
-  (and (contains? #{"typed-span-filter" "typed-span-int64-aggregate"}
+  (and (contains? #{"typed-span-filter" "typed-span-int64-aggregate"
+                    "typed-log-filter"}
                   (get params "mode"))
        (not= serialized-typed-binding-params
              (set (filter #(contains? params %)
@@ -556,6 +622,7 @@
         series? (contains? #{:metric-series :counter-series
                              :cumulative-histogram-series} mode)
         signal (cond series? :metrics
+                     (= :typed-log-filter mode) :logs
                      (contains? #{:typed-span-filter
                                   :typed-span-int64-aggregate} mode) :spans
                      :else signal)
@@ -741,6 +808,7 @@
                           (esc (refresh-path path)) "\"")) ">"
          (render-controls controls selection path live?)
          (render-typed-controls controls selection path)
+         (render-typed-log-controls controls selection path)
          (render-screen-fragment screen {:live? live?})
          (render-export-controls screen (export-path path) export-enabled?)
          "</main></body></html>"))))
@@ -872,7 +940,8 @@
           {:status 405 :headers (assoc html-headers "Allow" "GET")
            :body "method not allowed"}
           (let [params (or query-params (parse-query-params query-string))
-                selection (selection-from-params params (:typed-span-fields source))
+                selection (selection-from-params params (:typed-span-fields source)
+                                                 (:typed-log-fields source))
                 screen ((:load-command source)
                         [:web-refresh (System/nanoTime)] selection)]
             {:status 200 :headers html-headers
@@ -883,7 +952,8 @@
            {:status 405 :headers (assoc html-headers "Allow" "GET")
             :body "method not allowed"}
            (let [params (or query-params (parse-query-params query-string))
-                 selection (selection-from-params params (:typed-span-fields source))
+                 selection (selection-from-params params (:typed-span-fields source)
+                                                  (:typed-log-fields source))
                  live? (= "1" (get params "live"))]
              (if (raw-typed-request? params)
                {:status 303
@@ -938,7 +1008,7 @@
           (let [data (ex-data error)
                 params (or query-params (parse-query-params query-string))
                 typed-mode (get params "mode")
-                typed-request? (contains? #{"typed-span-filter"
+                typed-request? (contains? #{"typed-span-filter" "typed-log-filter"
                                             "typed-span-int64-aggregate"}
                                           typed-mode)]
             (cond

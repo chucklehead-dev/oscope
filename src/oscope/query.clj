@@ -99,6 +99,8 @@
     :aggregates :window :limit})
 (def ^:private typed-span-filter-selection-keys
   #{:mode :schema-binding :operator :value :window :limit})
+(def ^:private typed-log-filter-selection-keys
+  #{:mode :schema-binding :operator :value :window :limit})
 (def ^:private typed-span-int64-aggregate-selection-keys
   #{:mode :schema-binding :predicate :group-by :aggregates :window :limit})
 
@@ -113,7 +115,8 @@
   (let [{:keys [schema-binding operator value window limit]} selection
         type (:attribute-type schema-binding)
         allowed (typed-query/operators-for type)]
-    (when-not (typed-query/binding? schema-binding)
+    (when-not (and (typed-query/binding? schema-binding)
+                   (not= :log-attributes (:attribute-location schema-binding)))
       (fail! ::invalid-schema-binding "typed span filter requires a closed schema binding" {}))
     (when-not (some #{operator} allowed)
       (fail! ::unsupported-typed-operator "typed span filter operator is unsupported" {}))
@@ -129,6 +132,33 @@
     (when-not (and (integer? limit) (<= 1 limit max-result-limit))
       (fail! ::invalid-limit "oscope result limit is outside the explorer cap" {:limit limit}))
     {:mode :typed-span-filter :schema-binding schema-binding :operator operator
+     :value value :window window :limit limit}))
+
+(defn normalize-typed-log-filter-selection [selection]
+  (when-not (map? selection)
+    (fail! ::invalid-selection "oscope typed log filter selection must be a map" {}))
+  (when-let [unknown (seq (remove typed-log-filter-selection-keys (keys selection)))]
+    (fail! ::unsupported-selection-key "oscope typed log filter contains unsupported keys"
+           {:keys (error/sorted-keys unknown)}))
+  (let [{:keys [schema-binding operator value window limit]} selection
+        type (:attribute-type schema-binding)
+        allowed (get-in typed-query/log-filter-capability [:operators type])]
+    (when-not (typed-query/log-binding? schema-binding)
+      (fail! ::invalid-schema-binding "typed log filter requires an exact log schema binding" {}))
+    (when-not (some #{operator} allowed)
+      (fail! ::unsupported-typed-operator "typed log filter operator is unsupported" {}))
+    (when-not (case type
+                :boolean (boolean? value)
+                :int64 (typed-query/int64? value)
+                :string (and (string? value) (<= (count value) max-value-length)
+                             (or (= :eq operator) (not (empty? value))))
+                false)
+      (fail! ::invalid-typed-value "typed log filter value is invalid" {}))
+    (when-not (contains? windows window)
+      (fail! ::unsupported-window "oscope query window is not supported" {:window window}))
+    (when-not (and (integer? limit) (<= 1 limit max-result-limit))
+      (fail! ::invalid-limit "oscope result limit is outside the explorer cap" {:limit limit}))
+    {:mode :typed-log-filter :schema-binding schema-binding :operator operator
      :value value :window window :limit limit}))
 
 (defn normalize-typed-span-int64-aggregate-selection [selection]
@@ -426,6 +456,7 @@
 (defn normalize-selection [selection]
   (case (:mode selection)
     :typed-span-filter (normalize-typed-span-filter-selection selection)
+    :typed-log-filter (normalize-typed-log-filter-selection selection)
     :typed-span-int64-aggregate
     (normalize-typed-span-int64-aggregate-selection selection)
     :metric-series (normalize-metric-series-selection selection)
@@ -454,6 +485,14 @@
                  :limit limit}}
 
       :typed-span-filter
+      {:oscope.query/version 1
+       :selection selected
+       :request {:schema-binding (:schema-binding selected)
+                 :operator (:operator selected) :value (:value selected)
+                 :start-unix-nano start :end-unix-nano end-unix-nano
+                 :limit limit}}
+
+      :typed-log-filter
       {:oscope.query/version 1
        :selection selected
        :request {:schema-binding (:schema-binding selected)

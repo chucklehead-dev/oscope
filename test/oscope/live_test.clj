@@ -58,6 +58,26 @@
         (is (= fields (:typed-span-fields source)))
         (live/close! source)))))
 
+(deftest confirmed-log-descriptors-remain-in-the-live-query-context
+  (let [descriptor-set (Object.)
+        fields [{:field-id "attribute_0123456789abcdefabcd"
+                 :attribute-key "game.ready" :attribute-type :boolean
+                 :attribute-location :log-attributes :manifest-version 1}]]
+    (with-redefs [typed-catalog/acquire-logs
+                  (fn [connection descriptors]
+                    (is (= ::shared connection))
+                    (is (identical? descriptor-set descriptors))
+                    fields)
+                  query-chdb/run
+                  (fn [_ _ context]
+                    (is (= fields (:typed-log-fields context)))
+                    [])]
+      (let [source (live/open! {:connection ::shared :ensure-schema? false
+                                :typed-log-descriptors descriptor-set})]
+        (is (identical? descriptor-set (:typed-log-descriptors source)))
+        (is (= fields (:typed-log-fields source)))
+        (live/close! source)))))
+
 (deftest plotje-query-command-has-one-query-admission
   (let [source* (atom nil)
         rejected (atom nil)

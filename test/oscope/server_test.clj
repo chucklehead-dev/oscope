@@ -315,7 +315,8 @@
         (is (identical? descriptor-set
                         (:typed-log-descriptors @exporter-options)))
         (is (nil? (:typed-span-descriptors @exporter-options)))
-        (is (= {:connection conn :ensure-schema? false} @source-options))
+        (is (identical? descriptor-set
+                        (:typed-log-descriptors @source-options)))
         (is (identical? descriptor-set (:typed-log-descriptors lifecycle)))
         (is (nil? (:typed-span-descriptors lifecycle)))
         (is (= {:status :closed :phase :closed}

@@ -7,6 +7,12 @@
    :signals [:spans]
    :types [:boolean :int64 :string]})
 
+(def log-filter-capability
+  {:operators {:boolean [:eq] :int64 [:eq :gte :lt]
+               :string [:eq :prefix :contains]}
+   :signals [:logs]
+   :types [:boolean :int64 :string]})
+
 (def int64-aggregate-capability
   {:aggregates [:count :min :max :avg]
    :group-by [:service-name]
@@ -28,13 +34,14 @@
   #{:field-id :attribute-key :attribute-type :manifest-version})
 
 (def attribute-locations
-  [:resource-attributes :scope-attributes :span-attributes])
+  [:resource-attributes :scope-attributes :span-attributes :log-attributes])
 
 (defn location-label [location]
   (case location
     :resource-attributes "Resource"
     :scope-attributes "Scope"
     :span-attributes "Span"
+    :log-attributes "Log"
     "Unknown"))
 
 (defn type-label [attribute-type]
@@ -67,6 +74,9 @@
 (defn binding? [value]
   (and (binding-shape? value binding-keys)
        (contains? (set attribute-locations) (:attribute-location value))))
+
+(defn log-binding? [value]
+  (and (binding? value) (= :log-attributes (:attribute-location value))))
 
 (defn legacy-binding? [value]
   (binding-shape? value legacy-binding-keys))
