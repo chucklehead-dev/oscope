@@ -1,5 +1,6 @@
 (ns oscope.embedded-query-test
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.core.async :as async]
             [jolt.fibers :as fibers]
             [oscope.embedded.query :as embedded-query]))
 
@@ -133,6 +134,84 @@
       (is (= [{:value "late"}]
              (:rows (eventually lifecycle #(= :ready (:status %))))))
       (finally
+        (deliver release true)
+        (stop-until-closed! lifecycle)))))
+
+(deftest completed-query-wakes-cadence-without-a-poll-window
+  (let [entered (promise)
+        release (promise)
+        poll-var (ns-resolve 'oscope.embedded.query 'result-poll-ms)
+        exercise
+        (fn []
+          (let [lifecycle
+                (embedded-query/start!
+                 {:load! (fn []
+                           (deliver entered true)
+                           @release
+                           [{:value "event-driven"}])
+                  :interval-ms 1000 :timeout-ms 2000})]
+            (try
+              (is (true? (deref entered 1000 false)))
+              ;; Let the cadence fiber settle into its result wait. On the old
+              ;; implementation, widening the private poll window makes the
+              ;; otherwise periodic wakeup observable without a timing gamble.
+              (Thread/sleep 25)
+              (let [released-at (System/nanoTime)]
+                (deliver release true)
+                (is (= [{:value "event-driven"}]
+                       (:rows (eventually lifecycle #(= :ready (:status %))))))
+                (is (< (/ (- (System/nanoTime) released-at) 1000000.0) 200.0)
+                    "completion wakes the cadence fiber directly"))
+              (finally
+                (deliver release true)
+                (stop-until-closed! lifecycle)))))]
+    (is (nil? poll-var)
+        "the cadence path has no periodic result-polling control")
+    (if poll-var
+      (with-redefs-fn {poll-var 500} exercise)
+      (exercise))))
+
+(deftest stop-wins-a-ready-result-boundary-race
+  (let [result (async/chan 1)
+        stop-signal (async/promise-chan)
+        await-result-or-stop
+        @(ns-resolve 'oscope.embedded.query 'await-result-or-stop)]
+    (is (true? (async/>!! result {:status :ready :rows [{:value "late"}]})))
+    (is (true? (async/>!! stop-signal true)))
+    (is (= :oscope.embedded.query/stopped
+           (await-result-or-stop result stop-signal 1000))
+        "a stop already requested suppresses simultaneous result publication")))
+
+(deftest concurrent-stop-callers-close-across-a-result-race
+  (let [entered (promise)
+        release (promise)
+        race-start (promise)
+        calls (atom 0)
+        lifecycle
+        (embedded-query/start!
+         {:load! (fn []
+                   (swap! calls inc)
+                   (deliver entered true)
+                   @release
+                   [{:value "raced"}])
+          :interval-ms 60000 :timeout-ms 60000 :stop-timeout-ms 1000})]
+    (try
+      (is (true? (deref entered 1000 false)))
+      (let [stop-a (fibers/spawn #(do @race-start
+                                      (embedded-query/stop! lifecycle)))
+            stop-b (fibers/spawn #(do @race-start
+                                      (embedded-query/stop! lifecycle)))
+            complete (fibers/spawn #(do @race-start (deliver release true)))]
+        (deliver race-start true)
+        (is (not= ::join-timeout
+                  (fibers/join complete 2000 ::join-timeout)))
+        (is (= {:status :closed :phase :closed}
+               (fibers/join stop-a 2000 ::join-timeout)))
+        (is (= {:status :closed :phase :closed}
+               (fibers/join stop-b 2000 ::join-timeout)))
+        (is (= 1 @calls) "the boundary race does not enqueue duplicate work"))
+      (finally
+        (deliver race-start true)
         (deliver release true)
         (stop-until-closed! lifecycle)))))
 

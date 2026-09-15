@@ -827,11 +827,12 @@ The load function must use a backend-bounded selection; `:max-rows` separately
 bounds retained display data. A timeout publishes `:error` before the first
 good sample or `:stale` while retaining the last good rows. It does not interrupt
 native JDBC work. The cadence fiber notices stop without waiting for the query
-timeout, but the owned query thread is joined rather than interrupted. If a
-native call is still running, `stop!` returns `:stopping`/`:joining-query` after
-the configured stop bound; retry it and keep the source open until it returns
-`:closed`. Total shutdown latency can therefore include the native operation's
-actual completion time.
+timeout. Result, stop, interval, and timeout events wake it through Jolt channel
+selection rather than periodic result polling. The owned query thread is joined
+rather than interrupted. If a native call is still running, `stop!` returns
+`:stopping`/`:joining-query` after the configured stop bound; retry it and keep
+the source open until it returns `:closed`. Total shutdown latency can therefore
+include the native operation's actual completion time.
 
 Query failures use a closed public descriptor:
 

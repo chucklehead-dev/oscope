@@ -4,7 +4,8 @@
   Query selection and display-model construction remain caller-owned. This
   namespace owns only execution policy: blocking work runs on one OS thread,
   while a Jolt fiber controls cadence and publishes immutable snapshots."
-  (:require [jolt.fibers :as fibers]
+  (:require [clojure.core.async :as async]
+            [jolt.fibers :as fibers]
             [oscope.error :as error])
   (:import [java.util.concurrent Executors TimeUnit]))
 
@@ -15,10 +16,7 @@
    :max-rows 100})
 
 (def ^:private timeout-token ::timeout)
-(def ^:private continue-token ::continue)
-(def ^:private tick-token ::tick)
 (def ^:private stopped-token ::stopped)
-(def ^:private result-poll-ms 10)
 
 (defn- fail! [type message value]
   (throw (ex-info message
@@ -70,13 +68,13 @@
   (.execute executor task))
 
 (defn- submit-query! [executor {:keys [load! max-rows]}]
-  (let [result (promise)
+  (let [result (async/chan 1)
         attempted-at (System/currentTimeMillis)]
     (try
       (execute-query!
        executor
        (fn []
-         (deliver
+         (async/>!!
           result
           (try
             {:status :ready
@@ -85,10 +83,10 @@
               {:status :failed
                :failure (failure-summary :load :load-failed)})))))
       (catch Throwable _
-        (deliver result {:status :failed
-                         :failure (failure-summary
-                                   :submission
-                                   :executor-submission-failed)})))
+        (async/>!! result {:status :failed
+                           :failure (failure-summary
+                                     :submission
+                                     :executor-submission-failed)})))
     {:result result :attempted-at-unix-ms attempted-at}))
 
 (defn- publish-outcome! [model job outcome]
@@ -117,22 +115,25 @@
                                    :timeout-ms timeout-ms)))))
 
 (defn- stop-requested? [stop-signal timeout-ms]
-  (not= tick-token (deref stop-signal timeout-ms tick-token)))
+  (let [tick (async/timeout timeout-ms)
+        [_ port] (async/alts! [stop-signal tick] :priority true)]
+    (not (identical? tick port))))
 
 (defn- await-result-or-stop [result stop-signal timeout-ms]
-  (loop [remaining timeout-ms]
-    (if (not= continue-token (deref stop-signal 0 continue-token))
-      stopped-token
-      (let [wait-ms (min result-poll-ms remaining)
-            outcome (deref result wait-ms timeout-token)]
-        (cond
-          (not= timeout-token outcome) outcome
-          (= wait-ms remaining) timeout-token
-          :else (recur (- remaining wait-ms)))))))
+  (let [timeout (async/timeout timeout-ms)
+        [outcome port]
+        ;; Preserve the prior stop-first boundary behavior. A ready result wins
+        ;; over a simultaneous timeout; stop wins over both and suppresses any
+        ;; publication after lifecycle shutdown has begun.
+        (async/alts! [stop-signal result timeout] :priority true)]
+    (cond
+      (identical? stop-signal port) stopped-token
+      (identical? result port) outcome
+      :else timeout-token)))
 
 (defn- run-worker! [executor model stop-signal options]
   (loop [job nil]
-    (if (not= continue-token (deref stop-signal 0 continue-token))
+    (if (some? (async/poll! stop-signal))
       :stopped
       (let [job (or job (submit-query! executor options))
             outcome (await-result-or-stop (:result job) stop-signal
@@ -171,7 +172,7 @@
     (if (= :closed (:phase @state))
       (stop-result @state nil)
       (try
-        (deliver stop-signal true)
+        (async/offer! stop-signal true)
         (when-not (:worker-stopped? @state)
           (swap! state assoc :phase :stopping-cadence)
           (when-not (= timeout-token
@@ -209,7 +210,7 @@
                      :rows []
                      :attempted-at-unix-ms nil
                      :sampled-at-unix-ms nil})
-        stop-signal (promise)
+        stop-signal (async/promise-chan)
         executor (Executors/newSingleThreadExecutor)]
     (try
       (let [worker (fibers/spawn
