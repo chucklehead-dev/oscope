@@ -1,0 +1,11 @@
+{:paths []
+ :jolt/min-version "0.8.6"
+ :deps {;; Historical jolt-chDB provider coordinate and pin.
+        io.github.casselc/db
+        {:git/url "https://github.com/casselc/db.git"
+         :git/sha "a5bf25d9e141e8dcf28d6d07cd053fceb0019563"}
+
+        ;; Historical Samizdat provider coordinate and pin.
+        jolt-lang/db
+        {:git/url "https://github.com/jolt-lang/db"
+         :git/sha "d85f391ca521da389b935c38f3d78b30eaa23208"}}}

@@ -3,15 +3,16 @@
  :deps {io.github.chucklehead-dev/oscope-embedded
         {:local/root "../../../profiles/embedded"}
 
-        ;; Exact application-side selections audited at casselc/samizdat
-        ;; 22be90ddf9b05ba8406d6ec231d2748a4da22d8e. This fixture must remain a
-        ;; rejected red control until the owning provider libraries converge.
+        ;; Samizdat's HTTP migration is deliberately not part of the database
+        ;; provider qualification in this fixture.
         jolt-lang/http-client
         {:git/url "https://github.com/jolt-lang/http-client"
          :git/sha "ccce992d6e3d0035a5ffd1d4364cdb39df4af2f0"}
+        ;; Current merged casselc/db main, under the same canonical key used by
+        ;; jolt-chDB. 9632471 contains the reviewed 6db79163 provider commit.
         jolt-lang/db
-        {:git/url "https://github.com/jolt-lang/db"
-         :git/sha "d85f391ca521da389b935c38f3d78b30eaa23208"}
+        {:git/url "https://github.com/casselc/db.git"
+         :git/sha "96324713500c96ae97c0deaf84691f31df158f25"}
         metosin/malli {:mvn/version "0.17.0"}
         org.clojure/data.json
         {:git/url "https://github.com/clojure/data.json"
