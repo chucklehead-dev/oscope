@@ -27,10 +27,12 @@ application state and a real local-POSIX Durable chDB writer for telemetry,
 installs an approved typed span manifest, starts one SDK owner, emits and
 flushes one span through the real chDB exporter, and reads that span back
 through a bounded typed query. Shutdown retires the query before the Oscope
-source, checkpoints and closes Durable, shuts down the SDK terminal action
-once, and closes SQLite. Repeated query and embedded stop calls prove that the
-underlying terminal actions are idempotent; post-close queries prove both
-database handles are retired.
+embedded lifecycle begins. That lifecycle then shuts down the SDK terminal
+action once, retires its Oscope query source, checkpoints and closes Durable,
+and returns before the fixture closes its outer SQLite application connection.
+Repeated query and embedded stop calls prove that the underlying terminal
+actions are idempotent; post-close queries prove both database handles are
+retired.
 
 The fixture loads neither `oscope.server` nor `oscope.embedded.viewer`. The
 profile still supplies no listener or viewer dependency, and this acceptance

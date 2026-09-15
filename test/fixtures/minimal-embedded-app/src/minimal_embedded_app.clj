@@ -15,6 +15,8 @@
 
 (def ^:private span-name "minimal embedded fixture")
 (def ^:private typed-attribute-key "fixture.confirmed")
+(def ^:private query-timeout-ms 5000)
+(def ^:private query-ready-wait-ms 15000)
 
 (defn- require! [condition message & [data]]
   (when-not condition
@@ -52,7 +54,8 @@
         :type :boolean}]}]}))
 
 (defn- await-ready [query]
-  (let [deadline (+ (System/currentTimeMillis) 5000)]
+  ;; Leave a separate scheduling envelope beyond the query's own timeout.
+  (let [deadline (+ (System/currentTimeMillis) query-ready-wait-ms)]
     (loop []
       (let [snapshot (embedded-query/snapshot query)]
         (cond
@@ -149,7 +152,7 @@
                   (embedded-query/start!
                    {:load! #(typed-span-rows runtime binding)
                     :interval-ms 60000
-                    :timeout-ms 5000
+                    :timeout-ms query-timeout-ms
                     :stop-timeout-ms 5000
                     :max-rows 10})]
               (reset! query* query)
