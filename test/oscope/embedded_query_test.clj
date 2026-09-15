@@ -1,5 +1,6 @@
 (ns oscope.embedded-query-test
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.core.async :as async]
             [jolt.fibers :as fibers]
             [oscope.embedded.query :as embedded-query]))
 
@@ -20,6 +21,14 @@
         (= :closed (:status result)) result
         (< attempt 100) (do (Thread/sleep 2) (recur (inc attempt)))
         :else result))))
+
+(defn- await-fiber-state [fiber expected]
+  (loop [attempt 0]
+    (let [actual (fibers/state fiber)]
+      (cond
+        (= expected actual) actual
+        (< attempt 100) (do (Thread/sleep 1) (recur (inc attempt)))
+        :else actual))))
 
 (def ^:private failure-canaries
   #{"CANARY-EXCEPTION-MESSAGE-97"
@@ -133,6 +142,133 @@
       (is (= [{:value "late"}]
              (:rows (eventually lifecycle #(= :ready (:status %))))))
       (finally
+        (deliver release true)
+        (stop-until-closed! lifecycle)))))
+
+(deftest completed-query-wakes-cadence-without-a-poll-window
+  (let [entered (promise)
+        release (promise)
+        poll-var (ns-resolve 'oscope.embedded.query 'result-poll-ms)
+        exercise
+        (fn []
+          (let [lifecycle
+                (embedded-query/start!
+                 {:load! (fn []
+                           (deliver entered true)
+                           @release
+                           [{:value "event-driven"}])
+                  :interval-ms 1000 :timeout-ms 2000})]
+            (try
+              (is (true? (deref entered 1000 false)))
+              ;; Let the cadence fiber settle into its result wait. On the old
+              ;; implementation, widening the private poll window makes the
+              ;; otherwise periodic wakeup observable without a timing gamble.
+              (Thread/sleep 25)
+              (let [released-at (System/nanoTime)]
+                (deliver release true)
+                (is (= [{:value "event-driven"}]
+                       (:rows (eventually lifecycle #(= :ready (:status %))))))
+                (is (< (/ (- (System/nanoTime) released-at) 1000000.0) 200.0)
+                    "completion wakes the cadence fiber directly"))
+              (finally
+                (deliver release true)
+                (stop-until-closed! lifecycle)))))]
+    (is (nil? poll-var)
+        "the cadence path has no periodic result-polling control")
+    (if poll-var
+      (with-redefs-fn {poll-var 500} exercise)
+      (exercise))))
+
+(deftest jolt-priority-selection-preserves-production-race-order
+  (let [select-event
+        @(ns-resolve 'oscope.embedded.query 'select-result-stop-or-timeout)
+        outcome {:status :ready :rows [{:value "ready"}]}
+        stop-signal (async/promise-chan)
+        result (async/chan 1)
+        timeout (async/chan 1)]
+    (is (true? (async/>!! result outcome)))
+    (is (true? (async/>!! stop-signal true)))
+    (is (= :oscope.embedded.query/stopped
+           (select-event result stop-signal timeout))
+        "first-listed stop wins when stop and result are pre-ready")
+    (let [stop-signal (async/promise-chan)
+          result (async/chan 1)
+          timeout (async/chan 1)]
+      (is (true? (async/>!! result outcome)))
+      (is (true? (async/>!! timeout :elapsed)))
+      (is (= outcome (select-event result stop-signal timeout))
+          "first-listed result wins when result and timeout are pre-ready"))))
+
+(deftest losing-alts-registrations-do-not-consume-a-retained-late-result
+  (let [select-event
+        @(ns-resolve 'oscope.embedded.query 'select-result-stop-or-timeout)
+        stop-signal (async/promise-chan)
+        result (async/chan 1)
+        outcome {:status :ready :rows [{:value "retained"}]}]
+    ;; Each selection parks with the same production-shaped result channel as a
+    ;; loser, then a distinct timeout wins. If a losing registration remains
+    ;; active, the later buffered result can be stolen by an already-finished
+    ;; selection instead of reaching the final waiter.
+    (dotimes [_ 16]
+      (let [timeout (async/chan 1)
+            waiter (fibers/spawn #(select-event result stop-signal timeout))]
+        (is (= :parked (await-fiber-state waiter :parked)))
+        (is (true? (async/>!! timeout :elapsed)))
+        (is (= :oscope.embedded.query/timeout
+               (fibers/join waiter 1000 ::join-timeout)))))
+    (is (true? (async/>!! result outcome)))
+    (let [final-waiter
+          (fibers/spawn
+           #(select-event result stop-signal (async/chan 1)))]
+      (is (= outcome (fibers/join final-waiter 1000 ::join-timeout))
+          "all timeout losers are unregistered and the late result is retained"))))
+
+(deftest repeated-promise-channel-stop-offers-are-idempotent-and-nonblocking
+  (let [stop-signal (async/promise-chan)]
+    (is (true? (async/offer! stop-signal :first)))
+    (let [offerer
+          (fibers/spawn
+           #(do
+              (dotimes [_ 64]
+                (when-not (true? (async/offer! stop-signal :later))
+                  (throw (ex-info "promise channel rejected a repeated offer" {}))))
+              :done))]
+      (is (= :done (fibers/join offerer 1000 ::join-timeout))
+          "repeated offers cannot block a lifecycle stop caller"))
+    (is (= :first (async/<!! stop-signal)))
+    (is (= :first (async/<!! stop-signal))
+        "the first stop value remains persistently observable")))
+
+(deftest concurrent-stop-callers-close-across-a-result-race
+  (let [entered (promise)
+        release (promise)
+        race-start (promise)
+        calls (atom 0)
+        lifecycle
+        (embedded-query/start!
+         {:load! (fn []
+                   (swap! calls inc)
+                   (deliver entered true)
+                   @release
+                   [{:value "raced"}])
+          :interval-ms 60000 :timeout-ms 60000 :stop-timeout-ms 1000})]
+    (try
+      (is (true? (deref entered 1000 false)))
+      (let [stop-a (fibers/spawn #(do @race-start
+                                      (embedded-query/stop! lifecycle)))
+            stop-b (fibers/spawn #(do @race-start
+                                      (embedded-query/stop! lifecycle)))
+            complete (fibers/spawn #(do @race-start (deliver release true)))]
+        (deliver race-start true)
+        (is (not= ::join-timeout
+                  (fibers/join complete 2000 ::join-timeout)))
+        (is (= {:status :closed :phase :closed}
+               (fibers/join stop-a 2000 ::join-timeout)))
+        (is (= {:status :closed :phase :closed}
+               (fibers/join stop-b 2000 ::join-timeout)))
+        (is (= 1 @calls) "the boundary race does not enqueue duplicate work"))
+      (finally
+        (deliver race-start true)
         (deliver release true)
         (stop-until-closed! lifecycle)))))
 

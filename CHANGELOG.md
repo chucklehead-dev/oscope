@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace embedded-query result polling with Jolt's event-driven channel
+  selection across result, stop, and timeout events. The single owned query
+  thread, cadence timing, stop-first race behavior, bounded retryable stop, and
+  no-native-interrupt contract remain unchanged. Refs #38.
+
 - Close embedded-query executor shutdown and termination-wait failures into the
   shared redacted lifecycle descriptor instead of throwing the original
   exception to the caller. Stop remains retryable, never interrupts blocked
