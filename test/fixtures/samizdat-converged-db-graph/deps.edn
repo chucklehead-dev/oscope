@@ -1,0 +1,21 @@
+{:paths []
+ :jolt/min-version "0.8.6"
+ :deps {io.github.chucklehead-dev/oscope-embedded
+        {:local/root "../../../profiles/embedded"}
+
+        ;; Samizdat 22be90d still uses the jolt-lang/db repository. This fixture
+        ;; models its required database migration; the HTTP migration remains
+        ;; deliberately outside this qualification.
+        jolt-lang/http-client
+        {:git/url "https://github.com/jolt-lang/http-client"
+         :git/sha "ccce992d6e3d0035a5ffd1d4364cdb39df4af2f0"}
+        ;; Merged casselc/db main, under the same canonical key used by
+        ;; jolt-chDB. The qualification verifies 9632471's ancestry from the
+        ;; reviewed 6db79163 provider commit using this resolved git checkout.
+        jolt-lang/db
+        {:git/url "https://github.com/casselc/db.git"
+         :git/sha "96324713500c96ae97c0deaf84691f31df158f25"}
+        metosin/malli {:mvn/version "0.17.0"}
+        org.clojure/data.json
+        {:git/url "https://github.com/clojure/data.json"
+         :git/sha "94463ffb54482427fd9b31f264b06bff6dcfd557"}}}

@@ -32,42 +32,52 @@ jolt -M:test-embedded-profile
 
 ## Samizdat qualification boundary
 
-The dependency audit is pinned to casselc/samizdat
-`22be90ddf9b05ba8406d6ec231d2748a4da22d8e`. That application selects:
+The original dependency audit was pinned to casselc/samizdat
+`22be90ddf9b05ba8406d6ec231d2748a4da22d8e`. Its application-side versions
+included:
 
 - `jolt-lang/http-client` `ccce992d6e3d0035a5ffd1d4364cdb39df4af2f0`;
 - `jolt-lang/db` `d85f391ca521da389b935c38f3d78b30eaa23208`;
 - Malli 0.17.0; and
 - upstream data.json `94463ffb54482427fd9b31f264b06bff6dcfd557`.
 
+That audited Samizdat revision still points the `jolt-lang/db` key at the
+`jolt-lang/db` repository. Samizdat itself must repoint that same key to the
+merged `casselc/db` repository before combining its authoritative SQLite state
+with this Durable profile. The fixture below models that required migration;
+it is not the as-pinned `22be90d` graph.
+
 The current embedded profile selects OTel
 `0c50b0f8254713ce9df8a3f201f345b1854000b8`, jolt-chDB
-`dbc2db22130c7e783739c79bc24691dcbba21906`, and jolt-otel-clickhouse
+`3552a2575a96e3c9dd7b495a9b16b1e9c3317eee`, and jolt-otel-clickhouse
 `14a2998a27f64a9bff329811461be9157a00c849`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration
 must be applied by Samizdat itself because dependency aliases do not propagate.
 
-Database providers remain a blocker. jolt-chDB brings `casselc/db`
-`a5bf25d9e141e8dcf28d6d07cd053fceb0019563`, while Samizdat brings the
-divergent `jolt-lang/db` revision above. Both contribute the same `db.*` and
-JDBC provider surface. The checked-in `test/fixtures/samizdat-current-graph`
-reproduces both DB roots and both pre-migration HTTP roots with actual
-`jolt -Spath` resolution, and the causal qualification test rejects that graph.
-Oscope deliberately does not select one implementation under the other's
-coordinate.
+The provider lineage needed by the modeled graph is converged. jolt-chDB's
+merged main revision uses
+the canonical `jolt-lang/db` key at reviewed provider `6db79163`. The updated
+`test/fixtures/samizdat-converged-db-graph` models Samizdat's required repoint
+to merged `casselc/db` main `96324713` under that same key. Qualification uses
+the resolved local git checkout to verify that `96324713` descends from
+`6db79163`. Actual `jolt -Spath` resolution then proves that the authoritative
+`db/sqlite.clj` surface and Durable chDB coexist with exactly one physical
+`db/**` source root.
+The separate `samizdat-pre-convergence-db-graph` fixture pins the old
+`jolt-chDB@dbc2db22` dependency (which brings
+`io.github.casselc/db@a5bf25d9`) beside `jolt-lang/db@d85f391c` as a causal red
+control and proves that graph has two provider roots.
 
-Until the DB provider converges in its owning library and Samizdat adopts the
-merged HTTP coordinate, the combined SQLite plus Durable application fixture
-is not qualified. This keeps blocked-request cancellation and authoritative
-SQLite state explicit rather than claiming them from a dependency winner.
+This requalification does not migrate Samizdat's HTTP coordinate or qualify
+the remote-stall/Langfuse path. The converged-DB fixture intentionally
+continues to observe both pre-migration HTTP roots as a tripwire so that
+residual work is not mistaken for part of the database result.
 
 ## Durable status boundary
 
 `oscope.embedded/status` remains version 1 and reports Durable freshness and
-the last successful persistence boundary as `:unavailable`. The current
-profile pin predates jolt-chDB's proposed public status capability. Oscope will
-only populate those fields after a reviewed status API merges and the profile
-is repinned to that public commit; it does not pin an unpublished feature
-branch or infer freshness from an open connection.
+the last successful persistence boundary as `:unavailable`. This slice does
+not adopt or expose a Durable freshness/status capability, and it does not
+pin an unpublished status branch or infer freshness from an open connection.

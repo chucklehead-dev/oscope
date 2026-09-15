@@ -9,11 +9,11 @@
          :git/sha "0c50b0f8254713ce9df8a3f201f345b1854000b8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "dbc2db22130c7e783739c79bc24691dcbba21906"}
+         :git/sha "3552a2575a96e3c9dd7b495a9b16b1e9c3317eee"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
          :git/sha "14a2998a27f64a9bff329811461be9157a00c849"}
         metosin/malli {:mvn/version "0.20.1"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}}
+         :git/sha "3174868a7baa06e118fb8d1201edd98c5769b335"}}}
