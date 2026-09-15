@@ -18,7 +18,7 @@
 /test/durable-process-published/.jolt/
 /test/durable-process-published/target/
 /test/fixtures/minimal-embedded-app/.jolt/
-/test/fixtures/samizdat-current-graph/.jolt/
+/test/fixtures/samizdat-converged-db-graph/.jolt/
 /test/fixtures/samizdat-pre-convergence-db-graph/.jolt/
 *.html
 *.chdb

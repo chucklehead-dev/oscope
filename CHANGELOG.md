@@ -8,13 +8,15 @@
   no-native-interrupt contract remain unchanged. Refs #38.
 
 - Requalify the minimal embedded profile against jolt-chDB's merged database
-  provider convergence (`3552a257`). The updated Samizdat graph fixture selects
-  current `casselc/db` main (`96324713`, containing reviewed provider
-  `6db79163`) under the canonical `jolt-lang/db` key and proves authoritative
-  SQLite plus Durable chDB resolve with exactly one physical `db/**` source
-  root. A pinned pre-convergence fixture remains as the causal two-root red
-  control. Samizdat's HTTP migration and remote-stall/Langfuse qualification,
-  plus Durable freshness/status exposure, remain separate follow-ups. Refs #77.
+  provider convergence (`3552a257`). A modeled Samizdat migration fixture
+  repoints the canonical `jolt-lang/db` key to merged `casselc/db` main
+  (`96324713`) and verifies from resolved git metadata that it descends from
+  reviewed provider `6db79163`. The graph resolves authoritative SQLite plus
+  Durable chDB with exactly one physical `db/**` source root. A pinned
+  pre-convergence fixture remains as the causal two-root red control.
+  Samizdat's actual DB and HTTP migrations, remote-stall/Langfuse
+  qualification, and Durable freshness/status exposure remain separate
+  follow-ups. Refs #77.
 
 - Close embedded-query executor shutdown and termination-wait failures into the
   shared redacted lifecycle descriptor instead of throwing the original
