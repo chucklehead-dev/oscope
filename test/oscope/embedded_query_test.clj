@@ -22,6 +22,14 @@
         (< attempt 100) (do (Thread/sleep 2) (recur (inc attempt)))
         :else result))))
 
+(defn- await-fiber-state [fiber expected]
+  (loop [attempt 0]
+    (let [actual (fibers/state fiber)]
+      (cond
+        (= expected actual) actual
+        (< attempt 100) (do (Thread/sleep 1) (recur (inc attempt)))
+        :else actual))))
+
 (def ^:private failure-canaries
   #{"CANARY-EXCEPTION-MESSAGE-97"
     "CANARY-EX-DATA-97"
@@ -171,16 +179,65 @@
       (with-redefs-fn {poll-var 500} exercise)
       (exercise))))
 
-(deftest stop-wins-a-ready-result-boundary-race
-  (let [result (async/chan 1)
+(deftest jolt-priority-selection-preserves-production-race-order
+  (let [select-event
+        @(ns-resolve 'oscope.embedded.query 'select-result-stop-or-timeout)
+        outcome {:status :ready :rows [{:value "ready"}]}
         stop-signal (async/promise-chan)
-        await-result-or-stop
-        @(ns-resolve 'oscope.embedded.query 'await-result-or-stop)]
-    (is (true? (async/>!! result {:status :ready :rows [{:value "late"}]})))
+        result (async/chan 1)
+        timeout (async/chan 1)]
+    (is (true? (async/>!! result outcome)))
     (is (true? (async/>!! stop-signal true)))
     (is (= :oscope.embedded.query/stopped
-           (await-result-or-stop result stop-signal 1000))
-        "a stop already requested suppresses simultaneous result publication")))
+           (select-event result stop-signal timeout))
+        "first-listed stop wins when stop and result are pre-ready")
+    (let [stop-signal (async/promise-chan)
+          result (async/chan 1)
+          timeout (async/chan 1)]
+      (is (true? (async/>!! result outcome)))
+      (is (true? (async/>!! timeout :elapsed)))
+      (is (= outcome (select-event result stop-signal timeout))
+          "first-listed result wins when result and timeout are pre-ready"))))
+
+(deftest losing-alts-registrations-do-not-consume-a-retained-late-result
+  (let [select-event
+        @(ns-resolve 'oscope.embedded.query 'select-result-stop-or-timeout)
+        stop-signal (async/promise-chan)
+        result (async/chan 1)
+        outcome {:status :ready :rows [{:value "retained"}]}]
+    ;; Each selection parks with the same production-shaped result channel as a
+    ;; loser, then a distinct timeout wins. If a losing registration remains
+    ;; active, the later buffered result can be stolen by an already-finished
+    ;; selection instead of reaching the final waiter.
+    (dotimes [_ 16]
+      (let [timeout (async/chan 1)
+            waiter (fibers/spawn #(select-event result stop-signal timeout))]
+        (is (= :parked (await-fiber-state waiter :parked)))
+        (is (true? (async/>!! timeout :elapsed)))
+        (is (= :oscope.embedded.query/timeout
+               (fibers/join waiter 1000 ::join-timeout)))))
+    (is (true? (async/>!! result outcome)))
+    (let [final-waiter
+          (fibers/spawn
+           #(select-event result stop-signal (async/chan 1)))]
+      (is (= outcome (fibers/join final-waiter 1000 ::join-timeout))
+          "all timeout losers are unregistered and the late result is retained"))))
+
+(deftest repeated-promise-channel-stop-offers-are-idempotent-and-nonblocking
+  (let [stop-signal (async/promise-chan)]
+    (is (true? (async/offer! stop-signal :first)))
+    (let [offerer
+          (fibers/spawn
+           #(do
+              (dotimes [_ 64]
+                (when-not (true? (async/offer! stop-signal :later))
+                  (throw (ex-info "promise channel rejected a repeated offer" {}))))
+              :done))]
+      (is (= :done (fibers/join offerer 1000 ::join-timeout))
+          "repeated offers cannot block a lifecycle stop caller"))
+    (is (= :first (async/<!! stop-signal)))
+    (is (= :first (async/<!! stop-signal))
+        "the first stop value remains persistently observable")))
 
 (deftest concurrent-stop-callers-close-across-a-result-race
   (let [entered (promise)

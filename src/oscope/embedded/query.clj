@@ -119,9 +119,8 @@
         [_ port] (async/alts! [stop-signal tick] :priority true)]
     (not (identical? tick port))))
 
-(defn- await-result-or-stop [result stop-signal timeout-ms]
-  (let [timeout (async/timeout timeout-ms)
-        [outcome port]
+(defn- select-result-stop-or-timeout [result stop-signal timeout]
+  (let [[outcome port]
         ;; Preserve the prior stop-first boundary behavior. A ready result wins
         ;; over a simultaneous timeout; stop wins over both and suppresses any
         ;; publication after lifecycle shutdown has begun.
@@ -130,6 +129,9 @@
       (identical? stop-signal port) stopped-token
       (identical? result port) outcome
       :else timeout-token)))
+
+(defn- await-result-or-stop [result stop-signal timeout-ms]
+  (select-result-stop-or-timeout result stop-signal (async/timeout timeout-ms)))
 
 (defn- run-worker! [executor model stop-signal options]
   (loop [job nil]
