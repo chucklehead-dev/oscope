@@ -1,9 +1,10 @@
 (ns oscope.headless-test-runner
   "Hosted-CI gate for the portable collector, query, export, and web layers.
 
-  Native Glitter/Glimmer adapters remain in `oscope.test-runner`; real chDB,
-  independent-reader, and standalone receiver gates retain their dedicated
-  runners. This runner must not load GTK-facing namespaces."
+  Native Glitter/Glimmer adapters remain in `oscope.test-runner`; independent
+  reader and standalone receiver gates retain their dedicated runners. The
+  minimal embedded-profile acceptance opens real SQLite and chDB state in a
+  fresh child process. This runner must not load GTK-facing namespaces."
   (:require [clojure.test :as test]
             [oscope.async-selection-test]
             [oscope.core-test]

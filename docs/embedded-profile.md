@@ -20,15 +20,35 @@ implementation. A consumer's direct dependency selections still have normal
 precedence; this profile is not an override mechanism.
 
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
-profile, asserts the exact dependency revisions, loads neither
-`oscope.server` nor `oscope.embedded.viewer`, starts one SDK owner, retires a
-bounded query helper, and closes every owned resource exactly once.
+profile and asserts the exact dependency revisions. Its application coordinate
+selects converged `casselc/db` `96324713` under the canonical `jolt-lang/db`
+key. In one fresh Jolt process it opens a real SQLite file for authoritative
+application state and a real local-POSIX Durable chDB writer for telemetry,
+installs an approved typed span manifest, starts one SDK owner, emits and
+flushes one span through the real chDB exporter, and reads that span back
+through a bounded typed query. Shutdown retires the query before the Oscope
+source, checkpoints and closes Durable, shuts down the SDK terminal action
+once, and closes SQLite. Repeated query and embedded stop calls prove that the
+underlying terminal actions are idempotent; post-close queries prove both
+database handles are retired.
+
+The fixture loads neither `oscope.server` nor `oscope.embedded.viewer`. The
+profile still supplies no listener or viewer dependency, and this acceptance
+does not exercise remote OTLP or Samizdat HTTP behavior.
 
 Run its focused graph and lifecycle qualification with:
 
 ```sh
-jolt -M:test-embedded-profile
+env JOLT_CHDB_LIB=/path/to/chdb-26.7.3/libchdb.so \
+    JOLT_BIN=/path/to/jolt-containing-strict-utf8-and-append-range-fixes \
+    jolt -M:test-embedded-profile
 ```
+
+The outer test runner may remain the project's baseline Jolt, but `JOLT_BIN`
+must select the qualified runtime used by the fresh native fixture process.
+Hosted CI pins that runtime to public `casselc/jolt` `2d39e854` and installs
+the profile's checksum-pinned Linux x86-64 chDB 26.7.3 asset before running the
+aggregate. This slice does not claim macOS behavioral qualification.
 
 ## Samizdat qualification boundary
 
@@ -45,7 +65,8 @@ That audited Samizdat revision still points the `jolt-lang/db` key at the
 `jolt-lang/db` repository. Samizdat itself must repoint that same key to the
 merged `casselc/db` repository before combining its authoritative SQLite state
 with this Durable profile. The fixture below models that required migration;
-it is not the as-pinned `22be90d` graph.
+it is not the as-pinned `22be90d` graph. The runnable minimal application uses
+the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
 `0c50b0f8254713ce9df8a3f201f345b1854000b8`, jolt-chDB

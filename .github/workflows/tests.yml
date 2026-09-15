@@ -35,6 +35,15 @@ jobs:
       HEGEL_CACHE_DIR: ${{ github.workspace }}/.hegel-native
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout Durable-capable Jolt runtime
+        uses: actions/checkout@v4
+        with:
+          repository: casselc/jolt
+          ref: 2d39e854a90926d8f8e9bd5d3ddbb109d657afe1
+          path: .qualification/jolt
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
       - name: Install Jolt v0.8.6
         shell: bash
         run: |
@@ -46,6 +55,24 @@ jobs:
       - name: Assert Jolt version
         shell: bash
         run: test "$(jolt --version)" = "jolt v0.8.6"
+      - name: Provision pinned Chez for the Durable-capable runtime
+        run: make -C .qualification/jolt deps JOLT_SYSTEM_CHEZ=
+      - name: Assert Durable-capable Jolt version
+        run: >-
+          test "$(.qualification/jolt/bin/jolt --version)"
+          = "jolt v0.8.6-7-g2d39e854"
+      - name: Install checksum-pinned minimal-profile chDB asset
+        working-directory: test/fixtures/minimal-embedded-app
+        env:
+          JOLT_CHDB_CACHE_DIR: ${{ runner.temp }}/chdb-native
+        run: >-
+          ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          -Srepro -M -m jdbc.chdb.install
+      - name: Select qualified native fixture runtime
+        shell: bash
+        run: |
+          echo "JOLT_BIN=$GITHUB_WORKSPACE/.qualification/jolt/bin/jolt" >> "$GITHUB_ENV"
+          echo "JOLT_CHDB_LIB=$RUNNER_TEMP/chdb-native/libchdb.so" >> "$GITHUB_ENV"
       - name: Test strict Langfuse credential wrapper
         run: test/langfuse_interop_env_test.sh
       - name: Test protected manual Langfuse workflow

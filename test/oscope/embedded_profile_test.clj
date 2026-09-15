@@ -6,6 +6,8 @@
 
 (def ^:private embedded-profile-dir "profiles/embedded")
 (def ^:private minimal-fixture-dir "test/fixtures/minimal-embedded-app")
+(def ^:private minimal-fixture-source
+  (str minimal-fixture-dir "/src/minimal_embedded_app.clj"))
 (def ^:private samizdat-converged-fixture-dir
   "test/fixtures/samizdat-converged-db-graph")
 (def ^:private samizdat-pre-convergence-fixture-dir
@@ -118,7 +120,20 @@
     (is (nil? (get-in profile
                        [:deps 'io.github.chucklehead-dev/jolt-otel-viewer])))))
 
-(deftest minimal-fixture-resolves-one-library-stack-and-one-sdk-owner
+(deftest minimal-fixture-resolves-and-runs-the-real-native-stack
+  (let [source (slurp minimal-fixture-source)]
+    (is (not (str/includes? source "with-redefs"))
+        "core acceptance must not replace native/JDBC/exporter behavior")
+    (doseq [required ["sqlite:"
+                      "local-posix/local-backend"
+                      "durable/writer-dbspec"
+                      "manifest/compile-manifest"
+                      "embedded/start!"
+                      "trace/with-span"
+                      "embedded/force-flush!"
+                      "embedded-query/start!"]]
+      (is (str/includes? source required)
+          (str "minimal native fixture lost required behavior: " required))))
   (let [classpath-result (run-jolt minimal-fixture-dir "-Spath")]
     (is (map? classpath-result))
     (when (map? classpath-result)
@@ -126,7 +141,7 @@
       (let [classpath (:out classpath-result)]
         (doseq [coordinate (map coordinates [:otel :chdb :clickhouse :data-json])]
           (is (exact-coordinate? classpath coordinate)))
-        (is (exact-coordinate? classpath (:reviewed-db coordinates)))
+        (is (exact-coordinate? classpath (:converged-db coordinates)))
         (is (= 1 (count (database-provider-roots classpath))))
         (is (exact-coordinate? classpath (:casselc-http coordinates)))
         (is (= 1 (count (namespace-providers classpath "db/sqlite.clj"))))
@@ -140,7 +155,7 @@
       (is (zero? (:exit run-result))
           (str (:out run-result) (:err run-result)))
       (is (str/includes? (:out run-result)
-                         "minimal embedded fixture: PASS")))))
+                         "minimal embedded native fixture: PASS")))))
 
 (deftest converged-database-coordinate-qualifies-one-provider
   (let [result (run-jolt samizdat-converged-fixture-dir "-Spath")]
