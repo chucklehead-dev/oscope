@@ -569,10 +569,12 @@
                      false))
                (fail! ::invalid-typed-row
                       "typed log row does not match its schema binding" {}))
-             (assoc row :display-value
-                    (if (and (= :string (:attribute-type binding))
-                             (= "" (:attribute-value row)))
-                      "(empty string)" (str (:attribute-value row)))))
+             (-> row
+                 (dissoc :body)
+                 (assoc :display-value
+                        (if (and (= :string (:attribute-type binding))
+                                 (= "" (:attribute-value row)))
+                          "(empty string)" (str (:attribute-value row))))))
            (:matches result))
           visible (typed-query/visible-catalog typed-log-fields binding)]
       {:oscope.view/version 1 :view :telemetry-typed-log-filter
@@ -594,7 +596,6 @@
        :table {:columns [{:key :timestamp-unix-nano :label "Timestamp (Unix ns)"}
                          {:key :service-name :label "Service"}
                          {:key :severity-text :label "Severity"}
-                         {:key :body :label "Body"}
                          {:key :display-value
                           :label (str "Typed "
                                       (typed-query/type-label

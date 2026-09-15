@@ -663,12 +663,13 @@ or telemetry attribute values.
 Installer-confirmed log-record attributes are also available through bounded,
 schema-bound typed-log filters in the embedded and standalone viewer. The
 catalog and result surface retain only logical field identity, type, location,
-manifest version, bounded display text, projected scalar values, and conserved
+manifest version, projected scalar values, and conserved
 coverage counts. String, Boolean, and Int64 use the operators advertised by the
 exporter. Historical rows are distinguished as valid, empty, absent, invalid,
 fallback-readable, or unavailable; generic log exploration remains the
 fallback when no confirmed typed-log capability is present. Saved typed-log
 URLs carry the complete binding and fail closed if the active manifest changes.
+Log bodies and non-selected attribute values never enter the typed result UI.
 
 To promote reviewed span attributes into typed ClickHouse columns, compile the
 approved manifest before startup and pass it with the registry backend. Oscope

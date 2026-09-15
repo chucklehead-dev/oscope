@@ -78,8 +78,10 @@
     (is (= "9007199254740993"
            (get-in screen [:table :rows 0 :display-value])))
     (doseq [text ["Typed Int64 logs" "Filter typed logs"
-                  "Historical value unavailable" "retry"]]
+                  "Historical value unavailable"]]
       (is (str/includes? html text) text))
+    (is (not (str/includes? html "retry")) "log bodies never enter viewer HTML")
+    (is (not (contains? (get-in screen [:table :rows 0]) :body)))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"does not match"
          (view-model/screen plan (assoc-in result [:coverage :total] 6)

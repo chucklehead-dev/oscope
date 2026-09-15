@@ -21,7 +21,7 @@ test("queries projected typed logs with an exact saved binding and coverage", as
   await expect(page.getByRole("heading", {name: "Typed Int64 logs - job.attempt"}))
     .toBeVisible();
   const results = page.locator("#oscope-screen > section.panel").last();
-  await expect(results).toContainText("exact large integer");
+  await expect(results).not.toContainText("exact large integer");
   await expect(results).toContainText("9007199254740993");
   await expect(results).not.toContainText("small integer");
 
