@@ -831,8 +831,29 @@ timeout, but the owned query thread is joined rather than interrupted. If a
 native call is still running, `stop!` returns `:stopping`/`:joining-query` after
 the configured stop bound; retry it and keep the source open until it returns
 `:closed`. Total shutdown latency can therefore include the native operation's
-actual completion time. Failure snapshots retain only bounded class/message
-strings and never retain a Throwable or an invalid query result.
+actual completion time.
+
+Query failures use a closed public descriptor:
+
+```clojure
+;; :load! threw
+{:type :query-failure :phase :load :category :load-failed}
+
+;; executor submission threw
+{:type :query-failure :phase :submission
+ :category :executor-submission-failed}
+
+;; the validated configured timeout n elapsed
+{:type :query-failure :phase :load :category :timeout :timeout-ms n}
+```
+
+A later successful sample removes the failure; a failure after success
+publishes `:stale` with the last good rows.
+These descriptors never retain exception class or message text, causes,
+ex-data, stacks, SQL, parameter or result values, database/backend/object
+paths, endpoints, or credentials. A character limit bounds retention size but
+does not redact a sensitive prefix, so arbitrary exception strings are not
+included at all.
 
 An out-of-process viewer opens a read-only Durable connection after a published
 flush or checkpoint. It restores the immutable head selected at open time into
