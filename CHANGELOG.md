@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Replace the minimal embedded profile's graph-only stub fixture with a fresh
+  hosted-Linux native process using the converged `jolt-lang/db` provider. It
+  keeps authoritative SQLite application state beside one real local-POSIX
+  Durable chDB telemetry writer, installs confirmed typed span descriptors,
+  starts one OTel SDK owner, flushes and reads back a bounded span, retires the
+  query, and closes SDK/source/checkpoint/Durable/SQLite ownership exactly once
+  without adding viewer or listener dependencies.
+  Samizdat HTTP migration and remote Langfuse availability remain outside this
+  qualification. Refs #77.
+
 - Replace embedded-query result polling with Jolt's event-driven channel
   selection across result, stop, and timeout events. The single owned query
   thread, cadence timing, stop-first race behavior, bounded retryable stop, and

@@ -1,5 +1,11 @@
 {:paths ["src"]
  :jolt/min-version "0.8.6"
  :deps {io.github.chucklehead-dev/oscope-embedded
-        {:local/root "../../../profiles/embedded"}}
+        {:local/root "../../../profiles/embedded"}
+        ;; Model the authoritative application's completed provider migration:
+        ;; the canonical key selects merged casselc/db while the embedded
+        ;; profile's transitive jolt-chDB dependency uses the same key.
+        jolt-lang/db
+        {:git/url "https://github.com/casselc/db.git"
+         :git/sha "96324713500c96ae97c0deaf84691f31df158f25"}}
  :aliases {:test {:main-opts ["-m" "minimal-embedded-app"]}}}
