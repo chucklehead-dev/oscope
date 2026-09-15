@@ -531,6 +531,14 @@ owned embedded native windows should treat that runner enhancement as a gate.
 
 `oscope.embedded` packages the direct in-process path behind one lifecycle:
 
+Applications that do not need Oscope's listener or UI dependencies can use the
+same repository with `:deps/root "profiles/embedded"`. The profile keeps
+`oscope.embedded` as the only lifecycle implementation and adds only the SDK,
+Durable/exporter, typed-schema, and bounded-query dependencies. See
+[Minimal embedded dependency profile](docs/embedded-profile.md) for the
+coordinate, exact dependency audit, fixture, and current Samizdat provider
+qualification boundary.
+
 ```clojure
 (require '[jdbc.chdb.durable :as durable]
          '[oscope.embedded :as embedded]
