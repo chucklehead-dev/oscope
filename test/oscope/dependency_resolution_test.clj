@@ -33,7 +33,7 @@
        ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
 (def ^:private prior-exporter-root
-  (str "io.github.chucklehead-dev/jolt-otel-clickhouse/"
+  (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
        "96e68eddbe897e566ec3a7564609c49b0794e59d/"))
 
 (def ^:private prior-exporter-coordinate
@@ -89,7 +89,7 @@
     (is (successful-report? result))
     (when (map? result)
       (testing "the real mutation resolves the prior exporter coordinate"
-        (is (exact-resolution? (:out result) "io.github.chucklehead-dev/jolt-otel-clickhouse"
+        (is (exact-resolution? (:out result) "jolt-otel-clickhouse.git"
                                prior-exporter-root)))
       (testing "the reviewed exporter-root oracle rejects that resolution"
         (is (false? (exact-resolution? (:out result)
