@@ -5,7 +5,7 @@
             [jolt.process :as process]))
 
 (def ^:private exporter-root
-  (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
+  (str "io.github.chucklehead-dev/jolt-otel-clickhouse/"
        "14a2998a27f64a9bff329811461be9157a00c849/"))
 
 (def ^:private otel-root
@@ -33,7 +33,7 @@
        ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
 (def ^:private prior-exporter-root
-  (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
+  (str "io.github.chucklehead-dev/jolt-otel-clickhouse/"
        "96e68eddbe897e566ec3a7564609c49b0794e59d/"))
 
 (def ^:private prior-exporter-coordinate
@@ -78,7 +78,7 @@
   (let [result (dependency-report [])]
     (is (successful-report? result))
     (when (map? result)
-      (is (exact-resolution? (:out result) "jolt-otel-clickhouse.git"
+      (is (exact-resolution? (:out result) "io.github.chucklehead-dev/jolt-otel-clickhouse"
                              exporter-root))
       (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root))
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
@@ -89,11 +89,11 @@
     (is (successful-report? result))
     (when (map? result)
       (testing "the real mutation resolves the prior exporter coordinate"
-        (is (exact-resolution? (:out result) "jolt-otel-clickhouse.git"
+        (is (exact-resolution? (:out result) "io.github.chucklehead-dev/jolt-otel-clickhouse"
                                prior-exporter-root)))
       (testing "the reviewed exporter-root oracle rejects that resolution"
         (is (false? (exact-resolution? (:out result)
-                                       "jolt-otel-clickhouse.git"
+                                       "io.github.chucklehead-dev/jolt-otel-clickhouse"
                                        exporter-root)))))))
 
 (deftest prior-otel-coordinate-is-a-causal-red-control
