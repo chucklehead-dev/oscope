@@ -22,12 +22,12 @@
 
 (def ^:private coordinates
   {:otel [["casselc_otel.git" "io.github.casselc/otel"]
-          ["https___github.com_casselc_otel.git/0c50b0f8254713ce9df8a3f201f345b1854000b8/"
-           "io.github.casselc/otel/0c50b0f8254713ce9df8a3f201f345b1854000b8/"]]
+          ["https___github.com_casselc_otel.git/4d61f8e921d1310bc7ba39d7208cc38ac14a3215/"
+           "io.github.casselc/otel/4d61f8e921d1310bc7ba39d7208cc38ac14a3215/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/3552a2575a96e3c9dd7b495a9b16b1e9c3317eee/"
-           "io.github.chucklehead-dev/jolt-chdb/3552a2575a96e3c9dd7b495a9b16b1e9c3317eee/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/95d7b2b31c95e007d5065e3950deb1869e2d0f8a/"
+           "io.github.chucklehead-dev/jolt-chdb/95d7b2b31c95e007d5065e3950deb1869e2d0f8a/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
@@ -75,6 +75,11 @@
       (try (process/destroy-tree child) (catch Throwable _ nil)))
     result))
 
+(defn- delete-tree! [root]
+  (when (and root (.exists root))
+    (doseq [file (reverse (file-seq root))]
+      (java.nio.file.Files/deleteIfExists (.toPath file)))))
+
 (defn- classpath-roots [classpath fragments]
   (let [fragments (if (string? fragments) [fragments] fragments)]
     (->> (str/split (str classpath) #":")
@@ -120,7 +125,7 @@
     (is (nil? (get-in profile
                        [:deps 'io.github.chucklehead-dev/jolt-otel-viewer])))))
 
-(deftest minimal-fixture-resolves-and-runs-the-real-native-stack
+(deftest minimal-fixture-source-and-dependencies-are-converged
   (let [source (slurp minimal-fixture-source)]
     (is (not (str/includes? source "with-redefs"))
         "core acceptance must not replace native/JDBC/exporter behavior")
@@ -130,7 +135,8 @@
                       "manifest/compile-manifest"
                       "embedded/start!"
                       "trace/with-span"
-                      "embedded/force-flush!"
+                      "http/get"
+                      "embedded/status"
                       "embedded-query/start!"]]
       (is (str/includes? source required)
           (str "minimal native fixture lost required behavior: " required))))
@@ -148,14 +154,25 @@
         (is (= 1 (count (namespace-providers classpath
                                              "jolt/http_client.clj"))))
         (is (empty? (classpath-roots classpath "casselc_jolt-http")))
-        (is (empty? (classpath-roots classpath "jolt-otel-viewer"))))))
-  (let [run-result (run-jolt minimal-fixture-dir "-M:test")]
-    (is (map? run-result))
-    (when (map? run-result)
-      (is (zero? (:exit run-result))
-          (str (:out run-result) (:err run-result)))
-      (is (str/includes? (:out run-result)
-                         "minimal embedded native fixture: PASS")))))
+        (is (empty? (classpath-roots classpath "jolt-otel-viewer")))))))
+
+(deftest minimal-fixture-runs-the-real-native-stalled-remote-stack
+  (let [root (.toFile
+              (java.nio.file.Files/createTempDirectory
+               "oscope-minimal-embedded-parent-"
+               (make-array java.nio.file.attribute.FileAttribute 0)))]
+    (try
+      (let [run-result (run-jolt minimal-fixture-dir "-M:test" (str root))]
+        (is (map? run-result))
+        (when (map? run-result)
+          (is (zero? (:exit run-result))
+              (str (:out run-result) (:err run-result)))
+          (is (str/includes? (:out run-result)
+                             "minimal embedded native fixture: PASS"))))
+      (finally
+        ;; jolt-chDB's process anchor owns its scratch tree until the child
+        ;; exits; only this parent process may remove the fixture root safely.
+        (delete-tree! root)))))
 
 (deftest converged-database-coordinate-qualifies-one-provider
   (let [result (run-jolt samizdat-converged-fixture-dir "-Spath")]
