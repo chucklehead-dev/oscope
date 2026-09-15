@@ -157,10 +157,8 @@
     options))
 
 (defn source-options
-  "Attach only query-capable trace descriptors to an Oscope live source.
-
-  Log capabilities remain exporter-only until a separately reviewed typed-log
-  query/view contract exists."
+  "Attach query-capable, target-confirmed descriptors to an Oscope live source."
   [options schema-context]
   (merge options (select-keys (descriptor-options schema-context)
-                              [:typed-span-descriptors])))
+                              [:typed-span-descriptors
+                               :typed-log-descriptors])))

@@ -23,7 +23,7 @@
   `:db-spec`, oscope owns the new connection and closes it exactly once."
   ([] (open! {}))
   ([{:keys [connection db-spec now-fn export-capacity ensure-schema?
-            typed-span-descriptors]
+            typed-span-descriptors typed-log-descriptors]
      :or {db-spec "chdb::memory:" now-fn now-unix-nano
           export-capacity 1 ensure-schema? true}}]
    (when-not (and (integer? export-capacity) (pos? export-capacity)
@@ -41,19 +41,24 @@
        (when ensure-schema? (schema/ensure-schema! conn))
        (let [typed-span-fields (when typed-span-descriptors
                                  (typed-catalog/acquire conn typed-span-descriptors))
+             typed-log-fields (when typed-log-descriptors
+                                (typed-catalog/acquire-logs conn typed-log-descriptors))
              closed? (atom false)
              loader (fn [selection]
                       (when @closed?
                         (throw (ex-info "oscope live source is closed"
                                         {:oscope.live/error true :type ::closed})))
                       (let [plan (query/compile-query selection (now-fn))]
-                        (if typed-span-descriptors
+                        (if (or typed-span-descriptors typed-log-descriptors)
                           (view-model/screen
                            plan
                            (query-chdb/run conn plan
                                            {:typed-span-descriptors typed-span-descriptors
-                                            :typed-span-fields typed-span-fields})
-                           {:typed-span-fields typed-span-fields})
+                                            :typed-span-fields typed-span-fields
+                                            :typed-log-descriptors typed-log-descriptors
+                                            :typed-log-fields typed-log-fields})
+                           {:typed-span-fields typed-span-fields
+                            :typed-log-fields typed-log-fields})
                           (view-model/screen plan (query-chdb/run conn plan)))))
              load-command (fn [request-id selection]
                             (effect/run-command
@@ -94,7 +99,10 @@
                        (when owned? (.close conn))))}
           typed-span-descriptors
           (assoc :typed-span-descriptors typed-span-descriptors
-                 :typed-span-fields typed-span-fields)))
+                 :typed-span-fields typed-span-fields)
+          typed-log-descriptors
+          (assoc :typed-log-descriptors typed-log-descriptors
+                 :typed-log-fields typed-log-fields)))
        (catch Throwable error
          (when owned? (.close conn))
          (throw error))))))

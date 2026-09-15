@@ -83,8 +83,7 @@
           (route {:signal :logs :table "otel_logs"
                   :location :log-attributes})]
       (is (identical? descriptor-set (:typed-log-descriptors exporter)))
-      (is (= {:connection ::connection} source)
-          "log projection is enabled without pretending a log query API exists")
+      (is (identical? descriptor-set (:typed-log-descriptors source)))
       (is (nil? (:typed-span-descriptors exporter))))
     (with-redefs [installer/descriptor-set-data
                   (constantly

@@ -191,9 +191,15 @@
       [{:signal :logs :table "otel_logs" :location :log-attributes
         :key "job.attempt" :type :int64}]}]}))
 
-(defn- typed-log-record []
-  {:timestamp-unix-nano 1700000000000000000
-   :observed-time-unix-nano 1700000000000000001
+(def ^:private log-selector
+  {:dataset-id "oscope-standalone" :application-id "typed-log"
+   :lineage "typed-log-v1" :version 1})
+
+(defn- typed-log-record
+  ([] (typed-log-record (* (System/currentTimeMillis) 1000000)))
+  ([timestamp]
+  {:timestamp-unix-nano timestamp
+   :observed-time-unix-nano (inc timestamp)
    :trace-id "11111111111111111111111111111111"
    :span-id "2222222222222222" :trace-flags 1
    :severity-number 9 :severity-text "INFO"
@@ -201,7 +207,15 @@
    :resource (resource/resource {:service.name "oscope-typed-log"})
    :scope {:name "oscope.typed-log" :version "1"}
    :attributes {"job.attempt" 9007199254740993
-                "fallback" "retained"}})
+                "fallback" "retained"}}))
+
+(defn- log-selection [binding]
+  {:mode :typed-log-filter :schema-binding binding :operator :eq
+   :value 9007199254740993 :window :1h :limit 10})
+
+(defn- log-screen [source binding]
+  ((:load-command source) [:typed-log-restart (:field-id binding)]
+   (log-selection binding)))
 
 (defn- selection [binding value]
   {:mode :typed-span-filter :schema-binding binding
@@ -500,8 +514,8 @@
             record (typed-log-record)]
         (is (some? descriptor-set))
         (is (nil? (:typed-span-descriptors lifecycle)))
-        (is (nil? (:typed-span-fields (:source lifecycle)))
-            "typed log ingestion must not fabricate a typed log viewer")
+        (is (nil? (:typed-span-fields (:source lifecycle))))
+        (is (= 1 (count (:typed-log-fields (:source lifecycle)))))
         (is (= 200
                (:status
                 (post-logs! (:port lifecycle)
@@ -519,5 +533,63 @@
                   "fallback" "retained"}
                  (:logattributes row))
               "the generic compatibility map remains the fallback surface")))
+        (let [binding (first (:typed-log-fields (:source lifecycle)))
+              screen (log-screen (:source lifecycle) binding)]
+          (is (= :telemetry-typed-log-filter (:view screen)))
+          (is (= 9007199254740993
+                 (get-in screen [:table :rows 0 :attribute-value]))))
       (finally
         (stop-twice! lifecycle)))))
+
+(deftest file-configured-typed-log-query-survives-acquire-restart
+  (let [directory (java.nio.file.Files/createTempDirectory
+                   "oscope-typed-log-restart-"
+                   (make-array java.nio.file.attribute.FileAttribute 0))
+        root (java.io.File. (str directory))
+        database-path (str (.resolve directory "telemetry"))
+        manifest-path (str (.resolve directory "typed-log-manifest.edn"))
+        config-path (str (.resolve directory "oscope.edn"))
+        rendered (manifest/render (approved-log-manifest))
+        base (assoc config/defaults
+                    :server (assoc (:server config/defaults) :port 0)
+                    :storage {:type :local-path :path database-path})
+        install (assoc base :typed-attributes
+                       {:mode :install
+                        :manifest {:path manifest-path
+                                   :sha256 (typed-schema-config/sha256-bytes
+                                            (.getBytes rendered "UTF-8"))}
+                        :registry log-selector})
+        acquire (assoc base :typed-attributes
+                       {:mode :acquire :registry log-selector})
+        install* (atom nil) acquire* (atom nil)]
+    (try
+      (spit manifest-path rendered)
+      (spit config-path (config/encode install))
+      (let [lifecycle (server/start!
+                       (config-cli/server-options
+                        (config-cli/load-config ["--config" config-path] {})))]
+        (reset! install* lifecycle)
+        (is (= 200 (:status (post-logs! (:port lifecycle)
+                                        (otlp-encode/logs-request
+                                         [(typed-log-record)])))))
+        (let [binding (first (:typed-log-fields (:source lifecycle)))]
+          (is (= 9007199254740993
+                 (get-in (log-screen (:source lifecycle) binding)
+                         [:table :rows 0 :attribute-value]))))
+        (stop-twice! lifecycle))
+      (spit config-path (config/encode acquire))
+      (let [lifecycle (server/start!
+                       (config-cli/server-options
+                        (config-cli/load-config ["--config" config-path] {})))]
+        (reset! acquire* lifecycle)
+        (let [binding (first (:typed-log-fields (:source lifecycle)))
+              screen (log-screen (:source lifecycle) binding)]
+          (is (= :telemetry-typed-log-filter (:view screen)))
+          (is (= 9007199254740993
+                 (get-in screen [:table :rows 0 :attribute-value]))))
+        (stop-twice! lifecycle))
+      (finally
+        (doseq [lifecycle [@acquire* @install*]]
+          (when lifecycle (server/stop! lifecycle)))
+        (delete-tree! root)
+        (is (not (.exists root)))))))

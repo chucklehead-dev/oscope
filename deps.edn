@@ -13,7 +13,7 @@
          :git/sha "dbc2db22130c7e783739c79bc24691dcbba21906"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "96e68eddbe897e566ec3a7564609c49b0794e59d"}
+         :git/sha "14a2998a27f64a9bff329811461be9157a00c849"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
@@ -68,6 +68,10 @@
   :test-typed-socket
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.typed-socket-test-runner"]}
+
+  :test-typed-log-filter
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.typed-log-filter-test-runner"]}
 
   :test-langfuse
   {:extra-paths ["test"]
@@ -133,6 +137,10 @@
   :typed-browser-server
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.typed-browser-server-main"]}
+
+  :typed-log-browser-server
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.typed-log-browser-server-main"]}
   :emit-sample {:main-opts ["-m" "oscope.sample-emitter"]}
   :live-web {:main-opts ["-m" "oscope.live-main" "web"]}
 

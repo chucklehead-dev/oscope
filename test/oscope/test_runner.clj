@@ -25,6 +25,7 @@
             [oscope.typed-schema-config-test]
             [oscope.typed-schema-runtime-test]
             [oscope.typed-schema-test]
+            [oscope.typed-log-filter-test]
             [oscope.typed-span-aggregate-test]
             [oscope.typed-span-filter-test]
             [oscope.visualization-editor-test]
@@ -51,6 +52,7 @@
                         'oscope.typed-schema-config-test
                         'oscope.typed-schema-runtime-test
                         'oscope.typed-schema-test
+                        'oscope.typed-log-filter-test
                         'oscope.typed-span-aggregate-test
                         'oscope.typed-span-filter-test
                         'oscope.web-test

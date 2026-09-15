@@ -188,6 +188,32 @@ async function emitTypedLocations(request, baseURL) {
   });
 }
 
+async function emitTypedLogs(request, baseURL) {
+  const now = BigInt(Date.now()) * 1000000n;
+  const logBaseURL = new URL(baseURL);
+  logBaseURL.port = "18319";
+  const record = (suffix, body, attributes) => ({
+    timeUnixNano: String(now - BigInt(suffix) * 1000000n),
+    severityText: "WARN", body: {stringValue: body},
+    traceId: `c${String(suffix).padStart(31, "0")}`,
+    spanId: `c${String(suffix).padStart(15, "0")}`,
+    attributes,
+  });
+  await postSignal(request, logBaseURL.origin, "/v1/logs", {
+    resourceLogs: [{
+      resource: {attributes: [attribute("service.name", "oscope-typed-logs")]},
+      scopeLogs: [{scope: {name: "oscope.browser.typed-logs", version: "1.0"},
+        logRecords: [
+          record(4, "exact large integer", [{key: "job.attempt", value: {intValue: "9007199254740993"}}]),
+          record(3, "small integer", [{key: "job.attempt", value: {intValue: "3"}}]),
+          record(2, "invalid integer", [attribute("job.attempt", "not-an-int")]),
+          record(1, "absent integer", []),
+        ]}],
+    }],
+  });
+  return logBaseURL.origin;
+}
+
 async function openCheckoutTrace(page) {
   await page.goto("/oscope/telemetry");
   await page.getByLabel("Service").selectOption(SERVICE);
@@ -205,6 +231,7 @@ module.exports = {
   emitTypedBoolean,
   emitTypedInt64,
   emitTypedLocations,
+  emitTypedLogs,
   openCheckoutTrace,
   SERVICE,
   TRACE_ID,

@@ -2,11 +2,13 @@
   "Embedded chDB execution adapter for pure oscope query plans."
   (:require [oscope.query :as query]
             [oscope.typed-query :as typed-query]
-            [otel.exporter.chdb.explorer :as explorer]))
+            [otel.exporter.chdb.explorer :as explorer]
+            [otel.exporter.chdb.typed-log-explorer :as log-explorer]))
 
 (defn run
   ([connection plan] (run connection plan {}))
-  ([connection plan {:keys [typed-span-descriptors typed-span-fields]}]
+  ([connection plan {:keys [typed-span-descriptors typed-span-fields
+                            typed-log-descriptors typed-log-fields]}]
   (let [{:keys [selection request]} (query/validate-plan plan)]
     (case (:mode selection)
       :typed-span-int64-aggregate
@@ -49,6 +51,21 @@
          connection typed-span-descriptors
          (-> request (dissoc :schema-binding)
              (assoc :signal :spans
+                    :attribute-key (:attribute-key binding)
+                    :attribute-location (:attribute-location binding)))))
+
+      :typed-log-filter
+      (let [binding (typed-query/resolve-binding typed-log-fields
+                                                  (:schema-binding request))]
+        (when-not (= typed-query/log-filter-capability
+                     (log-explorer/supported-typed-log-filters))
+          (throw (ex-info "oscope typed log filter choices do not match the chDB explorer"
+                          {:oscope.query/error true
+                           :type ::incompatible-typed-log-filter})))
+        (log-explorer/typed-log-filtered-records
+         connection typed-log-descriptors
+         (-> request (dissoc :schema-binding)
+             (assoc :schema-binding binding :signal :logs
                     :attribute-key (:attribute-key binding)
                     :attribute-location (:attribute-location binding)))))
 

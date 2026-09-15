@@ -4,9 +4,8 @@
             [clojure.test :refer [deftest is testing]]
             [jolt.process :as process]))
 
-(def ^:private exporter-root
-  (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
-       "96e68eddbe897e566ec3a7564609c49b0794e59d/"))
+(def ^:private exporter-sha
+  "14a2998a27f64a9bff329811461be9157a00c849")
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -32,14 +31,13 @@
        "{:git/url \"https://github.com/casselc/http-client.git\" "
        ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
-(def ^:private prior-exporter-root
-  (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
-       "812957b85ea3717b28ad0e7a101a483f8a5f6deb/"))
+(def ^:private prior-exporter-sha
+  "96e68eddbe897e566ec3a7564609c49b0794e59d")
 
 (def ^:private prior-exporter-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
-       ":git/sha \"812957b85ea3717b28ad0e7a101a483f8a5f6deb\"}}}"))
+       ":git/sha \"96e68eddbe897e566ec3a7564609c49b0794e59d\"}}}"))
 
 (defn- dependency-roots [classpath dependency]
   (->> (str/split (str classpath) #":")
@@ -50,6 +48,17 @@
   (let [roots (dependency-roots classpath dependency)]
     (and (= 1 (count roots))
          (str/includes? (first roots) expected-root))))
+
+(defn- exact-exporter-resolution? [classpath sha]
+  (let [roots (dependency-roots classpath "jolt-otel-clickhouse")
+        suffix (str "/" sha "/")]
+    (and (= 1 (count roots))
+         (let [root (first roots)]
+           (and (or (str/includes?
+                     root "io.github.chucklehead-dev/jolt-otel-clickhouse/")
+                    (str/includes?
+                     root "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"))
+                (str/includes? root suffix))))))
 
 (defn- exact-coordinate? [classpath dependency expected-root]
   (let [roots (dependency-roots classpath dependency)]
@@ -74,12 +83,25 @@
   (and (map? result)
        (zero? (:exit result))))
 
+(deftest exporter-root-layouts-are-closed-and-sha-bound
+  (let [coordinate (str "/cache/io.github.chucklehead-dev/"
+                        "jolt-otel-clickhouse/" exporter-sha "/src")
+        url-root (str "/cache/https___github.com_chucklehead-dev_"
+                      "jolt-otel-clickhouse.git/" exporter-sha "/src")]
+    (is (exact-exporter-resolution? coordinate exporter-sha))
+    (is (exact-exporter-resolution? url-root exporter-sha))
+    (is (false? (exact-exporter-resolution? coordinate prior-exporter-sha)))
+    (is (false? (exact-exporter-resolution?
+                 (str "/cache/unowned/jolt-otel-clickhouse/" exporter-sha "/src")
+                 exporter-sha)))
+    (is (false? (exact-exporter-resolution?
+                 (str coordinate ":" url-root) exporter-sha)))))
+
 (deftest reviewed-exporter-and-otel-revisions-are-the-resolved-roots
   (let [result (dependency-report [])]
     (is (successful-report? result))
     (when (map? result)
-      (is (exact-resolution? (:out result) "jolt-otel-clickhouse.git"
-                             exporter-root))
+      (is (exact-exporter-resolution? (:out result) exporter-sha))
       (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root))
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
@@ -89,12 +111,10 @@
     (is (successful-report? result))
     (when (map? result)
       (testing "the real mutation resolves the prior exporter coordinate"
-        (is (exact-resolution? (:out result) "jolt-otel-clickhouse.git"
-                               prior-exporter-root)))
+        (is (exact-exporter-resolution? (:out result) prior-exporter-sha)))
       (testing "the reviewed exporter-root oracle rejects that resolution"
-        (is (false? (exact-resolution? (:out result)
-                                       "jolt-otel-clickhouse.git"
-                                       exporter-root)))))))
+        (is (false? (exact-exporter-resolution? (:out result)
+                                                exporter-sha)))))))
 
 (deftest prior-otel-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-otel-coordinate])]
