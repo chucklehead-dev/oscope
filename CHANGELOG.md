@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Requalify the minimal embedded profile at OTel `4d61f8e9` and jolt-chDB
+  `95d7b2b3`, retaining the already-current ClickHouse exporter `14a2998a`.
+  The real fixture selects the converged interruptible HTTP provider under the
+  application's canonical key, stalls independent application and remote OTLP
+  requests, and proves prompt application cancellation, local typed Durable
+  readback, bounded redacted status, failed non-replayed remote delivery, and
+  ordered idempotent shutdown. Its parent removes native scratch only after
+  the anchored chDB child exits. Refs #77.
+
 - Replace the minimal embedded profile's graph-only stub fixture with a fresh
   hosted-Linux native process using the converged `jolt-lang/db` provider. It
   keeps authoritative SQLite application state beside one real local-POSIX

@@ -25,18 +25,21 @@ selects converged `casselc/db` `96324713` under the canonical `jolt-lang/db`
 key. In one fresh Jolt process it opens a real SQLite file for authoritative
 application state and a real local-POSIX Durable chDB writer for telemetry,
 installs an approved typed span manifest, starts one SDK owner, emits and
-flushes one span through the real chDB exporter, and reads that span back
-through a bounded typed query. Shutdown retires the query before the Oscope
-embedded lifecycle begins. That lifecycle then shuts down the SDK terminal
-action once, retires its Oscope query source, checkpoints and closes Durable,
-and returns before the fixture closes its outer SQLite application connection.
-Repeated query and embedded stop calls prove that the underlying terminal
-actions are idempotent; post-close queries prove both database handles are
-retired.
+exports one span through independent local and remote pipelines, and reads it
+back locally through a bounded typed query while a hermetic remote OTLP peer
+withholds its response. A second stalled peer proves that the application's
+canonical HTTP provider still returns a blocked request promptly when its
+thread is interrupted. The status snapshot remains bounded and redacted while
+both pipelines are live. Shutdown retires the query first, cancels and records
+the failed remote delivery without replay, shuts down the SDK terminal action
+once, retires its Oscope source, checkpoints and closes Durable, and returns
+before the fixture closes its outer SQLite connection. Repeated query and
+embedded stop calls prove idempotence; the parent test removes chDB scratch
+only after the anchored native child process exits.
 
 The fixture loads neither `oscope.server` nor `oscope.embedded.viewer`. The
-profile still supplies no listener or viewer dependency, and this acceptance
-does not exercise remote OTLP or Samizdat HTTP behavior.
+profile still supplies no listener or viewer dependency. It models Samizdat's
+required canonical HTTP-coordinate migration but does not change Samizdat.
 
 Run its focused graph and lifecycle qualification with:
 
@@ -71,8 +74,8 @@ it is not the as-pinned `22be90d` graph. The runnable minimal application uses
 the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
-`0c50b0f8254713ce9df8a3f201f345b1854000b8`, jolt-chDB
-`3552a2575a96e3c9dd7b495a9b16b1e9c3317eee`, and jolt-otel-clickhouse
+`4d61f8e921d1310bc7ba39d7208cc38ac14a3215`, jolt-chDB
+`95d7b2b31c95e007d5065e3950deb1869e2d0f8a`, and jolt-otel-clickhouse
 `14a2998a27f64a9bff329811461be9157a00c849`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
@@ -93,8 +96,10 @@ The separate `samizdat-pre-convergence-db-graph` fixture pins the old
 `io.github.casselc/db@a5bf25d9`) beside `jolt-lang/db@d85f391c` as a causal red
 control and proves that graph has two provider roots.
 
-This requalification does not migrate Samizdat's HTTP coordinate or qualify
-the remote-stall/Langfuse path. The converged-DB fixture intentionally
+This requalification does not migrate Samizdat's repository. The runnable
+minimal application selects the reviewed provider under Samizdat's canonical
+key and qualifies the local plus stalled-remote contract without requiring a
+live Langfuse service. The converged-DB fixture intentionally
 continues to observe both pre-migration HTTP roots as a tripwire so that
 residual work is not mistaken for part of the database result.
 
