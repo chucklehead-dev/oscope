@@ -1,0 +1,18 @@
+{:paths []
+ :jolt/min-version "0.8.6"
+ :deps {io.github.chucklehead-dev/oscope-embedded
+        {:local/root "../../../profiles/embedded"}
+
+        ;; Exact application-side selections audited at casselc/samizdat
+        ;; 22be90ddf9b05ba8406d6ec231d2748a4da22d8e. This fixture must remain a
+        ;; rejected red control until the owning provider libraries converge.
+        jolt-lang/http-client
+        {:git/url "https://github.com/jolt-lang/http-client"
+         :git/sha "ccce992d6e3d0035a5ffd1d4364cdb39df4af2f0"}
+        jolt-lang/db
+        {:git/url "https://github.com/jolt-lang/db"
+         :git/sha "d85f391ca521da389b935c38f3d78b30eaa23208"}
+        metosin/malli {:mvn/version "0.17.0"}
+        org.clojure/data.json
+        {:git/url "https://github.com/clojure/data.json"
+         :git/sha "94463ffb54482427fd9b31f264b06bff6dcfd557"}}}

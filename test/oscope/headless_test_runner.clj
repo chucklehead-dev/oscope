@@ -13,6 +13,7 @@
             [oscope.durable-config-runtime-test]
             [oscope.durable-observability-test]
             [oscope.dependency-resolution-test]
+            [oscope.embedded-profile-test]
             [oscope.embedded-query-test]
             [oscope.embedded-viewer-test]
             [oscope.events-test]
@@ -51,6 +52,7 @@
                         'oscope.durable-config-runtime-test
                         'oscope.durable-observability-test
                         'oscope.dependency-resolution-test
+                        'oscope.embedded-profile-test
                         'oscope.embedded-query-test
                         'oscope.embedded-viewer-test
                         'oscope.events-test

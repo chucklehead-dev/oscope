@@ -1,0 +1,5 @@
+{:paths ["src"]
+ :jolt/min-version "0.8.6"
+ :deps {io.github.chucklehead-dev/oscope-embedded
+        {:local/root "../../../profiles/embedded"}}
+ :aliases {:test {:main-opts ["-m" "minimal-embedded-app"]}}}

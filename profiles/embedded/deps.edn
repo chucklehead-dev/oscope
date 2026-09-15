@@ -1,0 +1,19 @@
+{:paths ["../../src"]
+
+ :jolt/min-version "0.8.6"
+
+ ;; Same-repository library profile for applications which own their ingress.
+ ;; Server/viewer dependencies intentionally remain in the root coordinate.
+ :deps {io.github.casselc/otel
+        {:git/url "https://github.com/casselc/otel.git"
+         :git/sha "0c50b0f8254713ce9df8a3f201f345b1854000b8"}
+        io.github.chucklehead-dev/jolt-chdb
+        {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
+         :git/sha "dbc2db22130c7e783739c79bc24691dcbba21906"}
+        io.github.chucklehead-dev/jolt-otel-clickhouse
+        {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+         :git/sha "14a2998a27f64a9bff329811461be9157a00c849"}
+        metosin/malli {:mvn/version "0.20.1"}
+        org.clojure/data.json
+        {:git/url "https://github.com/casselc/data.json.git"
+         :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}}

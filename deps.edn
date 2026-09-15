@@ -23,7 +23,11 @@
          :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}
 
  :aliases
- {:test-config
+ {:test-embedded-profile
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.embedded-profile-test-runner"]}
+
+  :test-config
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.config-test-runner"]}
 
@@ -195,6 +199,7 @@
    :main-opts ["-m" "oscope.typed-check"]}}
 
  :tasks {test "jolt -M:test"
+         test-embedded-profile "jolt -M:test-embedded-profile"
          test-config "jolt -M:test-config"
          test-headless "jolt -M:test-headless"
          test-chdb "jolt -M:test-chdb"

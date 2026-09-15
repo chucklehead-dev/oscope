@@ -11,6 +11,14 @@
   coverage, and canonical URL reload without conflating trace capabilities.
   Refs #93.
 
+- Add a same-repository `profiles/embedded` dependency root which exposes the
+  canonical embedded lifecycle and bounded query helper without jolt-http or
+  jolt-otel-viewer dependencies. A runnable fixture proves one SDK owner,
+  listener/UI namespace isolation, query retirement, and exact-once resource
+  close. The pinned Samizdat 22be90d graph is retained as a causal rejected
+  control while its divergent DB providers remain unconverged; no dependency
+  winner is presented as SQLite plus Durable qualification. Refs #77.
+
 - Route installer-confirmed `otel_logs` / log-record attribute capabilities to
   the exporter's typed-log projection in both standalone and embedded startup.
   The generic log attribute map remains intact.
