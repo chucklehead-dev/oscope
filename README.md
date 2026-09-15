@@ -1050,7 +1050,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 - `casselc/otel` `0c50b0f8254713ce9df8a3f201f345b1854000b8`
 - resolved OTLP transport `casselc/http-client`
   `eab6b78d5957f88690faf6768360572a3f185341`
-- `chucklehead-dev/jolt-otel-clickhouse` `96e68eddbe897e566ec3a7564609c49b0794e59d`
+- `chucklehead-dev/jolt-otel-clickhouse` `14a2998a27f64a9bff329811461be9157a00c849`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
 - `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`

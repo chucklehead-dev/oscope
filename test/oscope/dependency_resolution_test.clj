@@ -6,7 +6,7 @@
 
 (def ^:private exporter-root
   (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
-       "96e68eddbe897e566ec3a7564609c49b0794e59d/"))
+       "14a2998a27f64a9bff329811461be9157a00c849/"))
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -34,12 +34,12 @@
 
 (def ^:private prior-exporter-root
   (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/"
-       "812957b85ea3717b28ad0e7a101a483f8a5f6deb/"))
+       "96e68eddbe897e566ec3a7564609c49b0794e59d/"))
 
 (def ^:private prior-exporter-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
-       ":git/sha \"812957b85ea3717b28ad0e7a101a483f8a5f6deb\"}}}"))
+       ":git/sha \"96e68eddbe897e566ec3a7564609c49b0794e59d\"}}}"))
 
 (defn- dependency-roots [classpath dependency]
   (->> (str/split (str classpath) #":")
