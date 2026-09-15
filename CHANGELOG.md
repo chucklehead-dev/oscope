@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Replace embedded-query snapshot exception class/message prefixes with a
+  closed failure type, phase, and category for load, executor-submission, and
+  timeout outcomes. Throwable details, SQL and values, paths, endpoints, and
+  credentials are never retained; bounded string length is explicitly not
+  treated as redaction. Last-good rows, stale/error publication, timeout
+  diagnosis, and later-sample recovery remain intact. Refs #97.
+
 - Add schema-bound typed-log discovery, filters, projected values, and six-way
   historical coverage to the embedded and standalone viewer. String, Boolean,
   and Int64 fields are acquired only from the installer-confirmed capability;

@@ -11,8 +11,7 @@
   {:interval-ms 1000
    :timeout-ms 5000
    :stop-timeout-ms 1000
-   :max-rows 100
-   :max-error-chars 160})
+   :max-rows 100})
 
 (def ^:private timeout-token ::timeout)
 (def ^:private continue-token ::continue)
@@ -44,26 +43,18 @@
         (update :interval-ms bounded-integer! :interval-ms 1 60000)
         (update :timeout-ms bounded-integer! :timeout-ms 1 60000)
         (update :stop-timeout-ms bounded-integer! :stop-timeout-ms 1 60000)
-        (update :max-rows bounded-integer! :max-rows 1 1000)
-        (update :max-error-chars bounded-integer! :max-error-chars 0 1000))))
+        (update :max-rows bounded-integer! :max-rows 1 1000))))
 
-(defn- bounded-string [value limit]
-  (let [value (str (or value ""))
-        length (count value)]
-    {:text (subs value 0 (min length limit))
-     :truncated? (> length limit)}))
+(defn- failure-summary
+  "Return a closed public query-failure descriptor.
 
-(defn- error-summary [error max-error-chars]
-  (let [{class-text :text class-truncated? :truncated?}
-        (bounded-string (str (class error)) max-error-chars)
-        {message-text :text message-truncated? :truncated?}
-        (bounded-string (try (ex-message error) (catch Throwable _ nil))
-                        max-error-chars)]
-    {:type :query-error
-     :class class-text
-     :class-truncated? class-truncated?
-     :message message-text
-     :message-truncated? message-truncated?}))
+  The Throwable is deliberately not accepted: class names, messages, causes,
+  ex-data, stacks, SQL, values, paths, endpoints, and credentials therefore
+  cannot become reachable from the immutable snapshot."
+  [phase category]
+  {:type :query-failure
+   :phase phase
+   :category category})
 
 (defn- bounded-rows [rows max-rows]
   (when-not (or (nil? rows) (sequential? rows))
@@ -74,23 +65,29 @@
   ;; cadence fiber or a UI/render caller.
   (vec (take max-rows rows)))
 
-(defn- submit-query! [executor {:keys [load! max-rows max-error-chars]}]
+(defn- execute-query! [executor task]
+  (.execute executor task))
+
+(defn- submit-query! [executor {:keys [load! max-rows]}]
   (let [result (promise)
         attempted-at (System/currentTimeMillis)]
     (try
-      (.execute executor
-                (fn []
-                  (deliver
-                   result
-                   (try
-                     {:status :ready
-                      :rows (bounded-rows (load!) max-rows)}
-                     (catch Throwable error
-                       {:status :failed
-                        :failure (error-summary error max-error-chars)})))))
-      (catch Throwable error
+      (execute-query!
+       executor
+       (fn []
+         (deliver
+          result
+          (try
+            {:status :ready
+             :rows (bounded-rows (load!) max-rows)}
+            (catch Throwable _
+              {:status :failed
+               :failure (failure-summary :load :load-failed)})))))
+      (catch Throwable _
         (deliver result {:status :failed
-                         :failure (error-summary error max-error-chars)})))
+                         :failure (failure-summary
+                                   :submission
+                                   :executor-submission-failed)})))
     {:result result :attempted-at-unix-ms attempted-at}))
 
 (defn- publish-outcome! [model job outcome]
@@ -115,7 +112,8 @@
             (assoc prior
                    :status (if usable? :stale :error)
                    :attempted-at-unix-ms (:attempted-at-unix-ms job)
-                   :failure {:type :timeout :timeout-ms timeout-ms}))))
+                   :failure (assoc (failure-summary :load :timeout)
+                                   :timeout-ms timeout-ms)))))
 
 (defn- stop-requested? [stop-signal timeout-ms]
   (not= tick-token (deref stop-signal timeout-ms tick-token)))
