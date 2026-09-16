@@ -21,6 +21,26 @@ The five stills capture the [trace detail](01-checkout-trace.png),
 [metric average/p95 series](04-metric-series.png), and
 [Plotje source edit](04-plotje-line-edit.png).
 
+## Full-page workbench: desktop and mobile
+
+These local captures show the trace-detail attribute layout at **1440px** and
+**390px**. The full-page workbench uses its own dark page theme: long attribute
+labels and values stay visible, with columns on desktop and stacked rows on
+mobile. Open either image for the full-resolution capture.
+
+[![Desktop trace detail showing the complete long lifecycle attribute label and
+literal HTML/Unicode value in columns](workbench-attributes-1440.png)](workbench-attributes-1440.png)
+
+[![Mobile trace detail showing the same complete attribute label and value in
+stacked, wrapping rows](workbench-attributes-390.png)](workbench-attributes-390.png)
+
+These screenshots use a synthetic local trace, not production or Samizdat
+telemetry. The browser test checks readable heading/navigation contrast,
+complete text and no horizontal scrolling at these two widths; this is not a
+complete accessibility audit.
+
+Captured with Oscope `2d1f2df`, Playwright 1.61.1 and chDB 26.7.3.
+
 Run the regression tests and regenerate captures with:
 
 ```sh

@@ -10,6 +10,9 @@
   HTTP acknowledgement, without changing persistence, retry, or failure behavior
   (Refs #4). An optional diagnostic sink receives only the bounded observation.
 
+- Add desktop/mobile full-page workbench captures to the existing browser demo
+  guide, documenting the synthetic local fixture and bounded usability checks.
+
 - Register readiness regression tests in both canonical test runners so
   ordinary and hosted headless CI exercise the listener discovery contract;
   real native readiness gates remain explicit opt-in qualification.
