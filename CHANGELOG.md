@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Run each typed socket fixture in a fresh bounded child process, preserving
+  chDB's immutable physical-path lifetime and all restart/readback assertions.
+  Require an absolute child executable and real execution/count/exit receipts;
+  retain evidence when child settlement is uncertain. Refs #109.
+
+- Add an always-registered local SDK-to-OTLP-socket/native-storage regression
+  for synchronous finite counter admission, signed up/down values and false/zero
+  metric attributes (Refs casselc/otel#3). Qualification requires the reviewed
+  dependency stack; metric typed-column promotion is not claimed.
+
 - Confirm timed-out test children have exited before deleting native fixture
   scratch; preserve unconfirmed fixtures and fail with closed cleanup status
   rather than treating a termination request as child retirement (Refs #108).

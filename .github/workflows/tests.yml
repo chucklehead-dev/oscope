@@ -109,6 +109,8 @@ jobs:
       - name: Install checksum-pinned chDB asset
         run: jolt -Srepro -M -m jdbc.chdb.install
       - name: Qualify typed direct and loopback socket ingestion
+        env:
+          JOLT_TEST_CHILD_EXECUTABLE: ${{ runner.temp }}/jolt-bin/jolt
         run: jolt -Srepro -M:test-typed-socket
       - name: Install browser test dependencies
         run: npm ci
