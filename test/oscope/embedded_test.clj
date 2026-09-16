@@ -27,6 +27,37 @@
     (is (not-any? #(and (string? %) (str/includes? % canary)) values))
     (is (not (str/includes? (pr-str result) canary)))))
 
+(deftest invalid-typed-envelope-is-rejected-before-owner-acquisition
+  (let [acquisitions (atom [])
+        acquire (fn [phase]
+                  (fn [& _]
+                    (swap! acquisitions conj phase)
+                    (throw (ex-info "unexpected owner acquisition" {}))))]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (acquire :connection)
+                  otlp/exporter (acquire :remote-exporter)
+                  chdb-export/exporter (acquire :local-exporter)
+                  live/open! (acquire :source)
+                  sdk/init! (acquire :sdk)]
+      (doseq [invalid [false true 0 {} [] "not-an-envelope" ::not-an-envelope
+                       {:approved-manifest {:secret "private-envelope-marker"}
+                        :registry-backend ::registry
+                        :unexpected "private-envelope-marker"}]]
+        (let [error (try (embedded/start!
+                         {:db-spec ::durable :typed-schema invalid
+                          :span-pipelines {:local {}
+                                           :remote {:traces-url "https://example.invalid/v1/traces"}}})
+                         (catch Throwable error error))]
+          (is (= "oscope typed schema requires a closed startup envelope" (ex-message error)))
+          (is (= {:oscope.typed-schema/error true
+                  :type :oscope.typed-schema/invalid-options} (ex-data error)))
+          (is (nil? (ex-cause error)))
+          (assert-public-result-safe! [(ex-message error) (ex-data error)]
+                                     "private-envelope-marker")))
+      (is (empty? @acquisitions)))))
+
 (deftest embedded-runtime-shares-one-writer-and-retires-in-order
   (let [events (atom [])
         connection (reify java.io.Closeable

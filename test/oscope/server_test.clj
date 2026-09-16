@@ -17,6 +17,32 @@
             [otel.sdk.export :as export]
             [otel.sdk.logs :as logs]))
 
+(deftest invalid-typed-envelope-is-rejected-before-standalone-acquisition
+  (let [acquisitions (atom [])
+        acquire (fn [phase]
+                  (fn [& _]
+                    (swap! acquisitions conj phase)
+                    (throw (ex-info "unexpected standalone acquisition" {}))))]
+    (with-redefs [jdbc/connection (acquire :connection)
+                  http-executor/start! (acquire :http-workers)
+                  chdb-export/exporter (acquire :exporter)
+                  live/open! (acquire :source)
+                  http/run-server (acquire :listener)
+                  typed-schema/install! (acquire :schema)]
+      (doseq [invalid [false true 0 {} [] "not-an-envelope" ::not-an-envelope
+                       {:approved-manifest {:secret "private-envelope-marker"}
+                        :registry-backend ::registry
+                        :unexpected "private-envelope-marker"}]]
+        (let [error (try (server/start! {:port 0 :db-spec ::database :typed-schema invalid})
+                         (catch Throwable error error))]
+          (is (= "oscope typed schema requires a closed startup envelope" (ex-message error)))
+          (is (= {:oscope.typed-schema/error true
+                  :type :oscope.typed-schema/invalid-options} (ex-data error)))
+          (is (nil? (ex-cause error)))
+          (is (not (str/includes? (pr-str [(ex-message error) (ex-data error)])
+                                  "private-envelope-marker")))))
+      (is (empty? @acquisitions)))))
+
 (deftest storage-documentation-pins-the-current-recovery-boundary
   (let [readme (str/replace (slurp "README.md") #"\s+" " ")
         durable-sha "dbc2db22130c7e783739c79bc24691dcbba21906"

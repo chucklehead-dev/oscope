@@ -39,7 +39,7 @@
 (defn validate-options
   "Validate the closed startup envelope without performing schema effects."
   [options]
-  (when options
+  (when (some? options)
     ;; Do not attach Malli's explanation: it contains the manifest and registry
     ;; capabilities that this boundary must never expose through diagnostics.
     (when-not (m/validate startup-options-schema options)
