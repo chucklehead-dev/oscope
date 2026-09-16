@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Register readiness regression tests in both canonical test runners so
+  ordinary and hosted headless CI exercise the listener discovery contract;
+  real native readiness gates remain explicit opt-in qualification.
+
 - Reject explicit false typed-schema startup envelopes with the canonical safe
   validation error before schema effects or embedded owner acquisition; retain
   nil as absent and add cause-free, secret-safe boundary regressions. Refs #107.
