@@ -10,6 +10,11 @@
   responsive attribute layout, preserving full labels and values without
   changing shared viewer fragments. Add source and browser regressions. Refs #106.
 
+- Add opt-in embedded-viewer and standalone-listener readiness callbacks and
+  private atomic readiness files, with actual ephemeral ports, launch identities,
+  nonblocking lifetime ownership, and retryable terminal publication/rollback.
+  Readiness reports listener discovery, not Durable freshness. Refs #35.
+
 - Requalify the minimal embedded profile at OTel `4d61f8e9` and jolt-chDB
   `95d7b2b3`, retaining the already-current ClickHouse exporter `14a2998a`.
   The real fixture selects the converged interruptible HTTP provider under the

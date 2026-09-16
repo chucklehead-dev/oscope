@@ -9,6 +9,7 @@
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
+            [oscope.readiness :as readiness]
             [oscope.typed-schema :as typed-schema]
             [oscope.ui.events :as events]
             [oscope.ui.workbench :as workbench]
@@ -106,11 +107,13 @@
       true)))
 
 (defn- stop-lifecycle!
-  [{:keys [server http-executor source exporter connection state lock]}]
+  [{:keys [server http-executor source exporter connection state lock
+           readiness-handle]}]
   (locking lock
     (if (= :closed (:phase @state))
-      (stop-result @state nil)
+      (readiness/finish-stop! readiness-handle (stop-result @state nil))
       (try
+        (readiness/terminal! readiness-handle :stopping)
         (when-not (:ingress-stopped? @state)
           (http/stop-server server)
           (swap! state assoc :ingress-stopped? true
@@ -130,7 +133,7 @@
         (when-not (:connection-closed? @state)
           (.close connection)
           (swap! state assoc :connection-closed? true :phase :closed))
-        (stop-result @state nil)
+        (readiness/finish-stop! readiness-handle (stop-result @state nil))
         (catch Throwable error
           (let [current @state]
             (stop-result current
@@ -149,7 +152,7 @@
   on each call."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema]
+            typed-schema readiness]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
           http-queue-capacity default-http-queue-capacity}}]
@@ -172,7 +175,12 @@
                                   (:checkpoint-every-batches durability)))))))
      (throw (ex-info "oscope durability requires checkpoint! and flush! functions"
                      {:oscope.server/error true :type ::invalid-durability})))
-   (let [conn (jdbc/connection db-spec)
+   (let [readiness-handle (readiness/prepare! readiness (if durability :durable :local))
+         conn (try (jdbc/connection db-spec)
+                   (catch Throwable cause
+                     (if readiness-handle
+                       (readiness/fail-startup! readiness-handle cause [])
+                       (throw cause))))
          exporter* (atom nil)
          source* (atom nil)
          server* (atom nil)
@@ -246,6 +254,7 @@
               {:host host :port (:port server) :db-spec db-spec
                :connection conn :exporter exporter :source source
                :server server
+               :readiness-handle readiness-handle
                :http-executor owned-http-executor
                :state (atom {:phase :open :ingress-stopped? false
                              :http-executor-stopped? false
@@ -253,21 +262,40 @@
                              :connection-closed? false})
                :lock (Object.)}
                schema-context
-               (merge (typed-schema/descriptor-options schema-context)))]
+               (merge (typed-schema/descriptor-options schema-context)))
+             _ (readiness/ready! readiness-handle host (:port server)
+                                 (str "http://" host ":" (:port server)
+                                      workbench/default-path))]
          (assoc lifecycle :stop! #(stop-lifecycle! lifecycle)))
        (catch Throwable error
-         (when-let [server @server*]
-           (try (http/stop-server server) (catch Throwable _ nil)))
-         (when-let [owned-http-executor @http-executor*]
-           (try (http-executor/stop! owned-http-executor)
-                (catch Throwable _ nil)))
-         (when-let [source @source*]
-           (try (live/close! source) (catch Throwable _ nil)))
-         (when-let [exporter @exporter*]
-           (doseq [face [:spans :logs :metrics]]
-             (try (close-face! face exporter) (catch Throwable _ nil))))
-         (try (.close conn) (catch Throwable _ nil))
-         (throw error))))))
+         (reset! authority* nil)
+         (if readiness-handle
+           (readiness/fail-startup!
+            readiness-handle error
+            (concat
+             (when-let [listener @server*]
+               [[:stop-listener #(http/stop-server listener)]])
+             (when-let [executor @http-executor*]
+               [[:stop-http-executor #(http-executor/stop! executor)]])
+             (when-let [source @source*]
+               [[:retire-source #(live/close! source)]])
+             (when-let [exporter @exporter*]
+               (mapv (fn [face] [face #(close-face! face exporter)])
+                     [:spans :logs :metrics]))
+             [[:close-connection #(.close conn)]]))
+           (do
+             (when-let [server @server*]
+               (try (http/stop-server server) (catch Throwable _ nil)))
+             (when-let [owned-http-executor @http-executor*]
+               (try (http-executor/stop! owned-http-executor)
+                    (catch Throwable _ nil)))
+             (when-let [source @source*]
+               (try (live/close! source) (catch Throwable _ nil)))
+             (when-let [exporter @exporter*]
+               (doseq [face [:spans :logs :metrics]]
+                 (try (close-face! face exporter) (catch Throwable _ nil))))
+             (try (.close conn) (catch Throwable _ nil))
+             (throw error))))))))
 
 (defn stop! [lifecycle]
   (if-let [stop-fn (:stop! lifecycle)]

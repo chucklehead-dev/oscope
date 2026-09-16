@@ -109,3 +109,71 @@ residual work is not mistaken for part of the database result.
 the last successful persistence boundary as `:unavailable`. This slice does
 not adopt or expose a Durable freshness/status capability, and it does not
 pin an unpublished status branch or infer freshness from an open connection.
+
+## Listener readiness
+
+Both `oscope.embedded.viewer/start!` and `oscope.server/start!` accept an
+optional `:readiness` map. Without it, startup and shutdown remain unchanged.
+The minimal library profile does not load either listener.
+
+```clojure
+(def launch-id (str (random-uuid)))
+(def listener-state (atom nil))
+
+(viewer/start! owner
+  {:port 0
+   :readiness {:instance-id launch-id
+               :publish! #(reset! listener-state %)
+               :file "/tmp/my-app-readiness/listener.edn"}})
+```
+
+`:publish!` is a callback receiving a small map. An atom adapter can use
+`reset!`, as above; an existing channel can use an application-owned adapter
+such as `#(clojure.core.async/put! readiness-channel %)`. Use a bounded buffered
+channel and arrange consumer ownership yourself. Callbacks must return promptly;
+they run on the caller's startup/shutdown thread, not a new Oscope worker.
+At least one callback or file sink is required. Only `:publish!`, `:file`, and
+`:instance-id` are accepted. A file requires an explicit fresh launch identity
+(1–128 ASCII letters, digits, `_` or `-`); callback-only startup generates one
+if omitted.
+
+Records have `:oscope.readiness/version 1`, the launch `:instance-id`,
+`:storage-mode`, and `:status`: `:starting`, `:ready`, or `:terminal`.
+A ready record adds the numeric loopback `:host`, actual bound `:port`, and
+viewer `:url`. The transport has bound and registered its accepting listener,
+and Oscope has installed its exact numeric authority before publication.
+Terminal reasons are `:stopping`, `:closed`, or `:startup-failed`.
+No credentials, dbspec, telemetry values, or Durable freshness are included.
+The embedded owner is Durable; standalone mode is `:durable` only when its
+Durability callbacks are configured, otherwise `:local`.
+
+The file sink currently supports Linux x86-64 only. Its dedicated containing
+directory must be owned by the current user and have mode `0700`; the existing
+parent must be a real directory. Oscope creates the dedicated directory when
+absent, refuses unsafe targets, and verifies mode `0600` for lock, temporary,
+and published files. Publication uses same-directory POSIX atomic replacement
+without pre-deleting the old file, followed by file/directory persistence
+boundaries. A nonblocking lifetime lock rejects another live owner before any
+database, query worker, or listener acquisition. A crashed owner releases its
+lock through process exit; a new launch replaces its stale record with
+`:starting`. Do not share this directory with the managed configuration store
+or another readiness file.
+
+Launchers must accept only their expected launch identity's `:ready` record
+and confirm current listener liveness; a file alone never proves a process is
+still alive. Shutdown first attempts to mark readiness terminal. It reports
+`:closed` only after owned listener/workers/resources retire and terminal
+publication succeeds. Sink failure returns bounded `:closing` /
+`:publishing-readiness`; repeat `stop!` retries publication without closing
+already retired resources again. An ambiguous lock-descriptor close failure
+is reported as incomplete and is not retried against a possibly reused FD.
+
+Startup callback/file publication failure revokes request authority and rolls
+back acquired resources in order. Successful rollback rethrows the original
+startup error. If rollback or terminal publication remains incomplete, the
+opt-in path instead throws a cause-free
+`:oscope.readiness/startup-cleanup-incomplete` error with a bounded operation
+and an opaque `:retry-stop!` capability in `ex-data`. The application must own
+and call that capability until it reports `{:status :closed :phase :closed}`,
+or terminate the owning process. Successful rollback steps are not repeated.
+Do not serialize this ownership capability as configuration or diagnostics.

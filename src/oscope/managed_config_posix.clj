@@ -48,6 +48,7 @@
 (def ^:private type-regular 32768)
 (def ^:private type-directory 16384)
 (def ^:private lock-exclusive 2)
+(def ^:private lock-nonblocking 4)
 (def ^:private eintr 4)
 (def ^:private enoent 2)
 (def ^:private eexist 17)
@@ -255,7 +256,8 @@
 
   Other hosts are intentionally unsupported until their native ABI and crash
   semantics are exercised independently."
-  [max-bytes]
+  ([max-bytes] (operations max-bytes {}))
+  ([max-bytes {:keys [nonblocking-lock?]}]
   (if-not (supported-host?)
     {:supported? false}
     {:supported? true
@@ -277,7 +279,9 @@
                     (throw error)))]
          (try
            (stat! fd type-regular mode-0600 :permission-unverified)
-           (retry-zero! #(c-flock fd lock-exclusive) :conflict)
+           (retry-zero! #(c-flock fd (if nonblocking-lock?
+                                     (bit-or lock-exclusive lock-nonblocking)
+                                     lock-exclusive)) :conflict)
            {:lock-fd fd :directory-fd directory-fd}
            (catch Throwable error
              (try (close! fd) (catch Throwable _ nil))
@@ -358,4 +362,4 @@
                      (let [close-error (try (close-token! token) nil
                                             (catch Throwable error error))]
                        (unlink-temp! token)
-                       (when close-error (throw close-error))))}))
+                       (when close-error (throw close-error))))})))
