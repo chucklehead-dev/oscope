@@ -84,8 +84,17 @@
                        :status status})))
     true))
 
+(defn- observe-durability! [observation sink operation outcome failure]
+  ;; Neither display classification nor an optional sink can replace the
+  ;; original persistence result/Throwable. No payload is logged by default.
+  (try
+    (let [record (error/durability-boundary-observation operation outcome failure)]
+      (reset! observation record)
+      (when sink (sink record)))
+    (catch Throwable _ nil)))
+
 (defn- complete-durability-boundary!
-  [durability connection batches-since-checkpoint lock]
+  [durability connection batches-since-checkpoint lock observation sink]
   (locking lock
     (let [checkpoint-every (:checkpoint-every-batches durability)
           next-count (inc @batches-since-checkpoint)
@@ -95,16 +104,18 @@
           allowed (if checkpoint?
                     #{:committed :reconciled}
                     #{:empty :committed :reconciled})
-          result ((get durability (if checkpoint?
-                                    :checkpoint!
-                                    :flush!))
-                  connection)]
+          persist! (get durability (if checkpoint? :checkpoint! :flush!))]
       ;; Advance cadence only after the selected persistence operation is
       ;; confirmed. A thrown or unconfirmed checkpoint remains due, so the
       ;; next admitted batch cannot silently fall back to another WAL flush.
-      (require-durability-status! operation allowed result)
-      (reset! batches-since-checkpoint (if checkpoint? 0 next-count))
-      true)))
+      (try
+        (require-durability-status! operation allowed (persist! connection))
+        (reset! batches-since-checkpoint (if checkpoint? 0 next-count))
+        (observe-durability! observation sink operation :confirmed nil)
+        true
+        (catch Throwable failure
+          (observe-durability! observation sink operation :failed failure)
+          (throw failure))))))
 
 (defn- stop-lifecycle!
   [{:keys [server http-executor source exporter connection state lock
@@ -149,10 +160,16 @@
   manifest, registry backend, and optional event sink; Oscope binds all
   database effects to its owned connection. The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary
-  on each call."
+  on each call. `:durability-observation` is an atom containing nil or the last
+  closed request-barrier observation. Optional `:durability-diagnostic!` is a
+  function receiving that same safe map; its failures do not affect persistence
+  results. The sink runs synchronously under the durability lock: it must be
+  fast, nonblocking, and nonreentrant. A blocked sink delays acknowledgement;
+  this option does not provide latency isolation. No payload is logged by
+  default and no internal CAS phase is inferred."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema readiness]
+            typed-schema readiness durability-diagnostic!]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
           http-queue-capacity default-http-queue-capacity}}]
@@ -163,6 +180,9 @@
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
    (validate-http-executor-options! http-workers http-queue-capacity)
+   (when (and (some? durability-diagnostic!) (not (fn? durability-diagnostic!)))
+     (throw (ex-info "oscope durability diagnostic sink must be a function"
+                     {:oscope.server/error true :type ::invalid-durability-diagnostic})))
    (typed-schema/validate-options typed-schema)
    (when (and durability
               (not (and (map? durability)
@@ -186,6 +206,7 @@
          server* (atom nil)
          http-executor* (atom nil)
          batches-since-checkpoint (atom 0)
+         durability-observation (atom nil)
          durability-lock (Object.)
          authority* (atom (when (pos? port) (str host ":" port)))]
      (try
@@ -226,7 +247,8 @@
                                        #(complete-durability-boundary!
                                          durability conn
                                          batches-since-checkpoint
-                                         durability-lock)})
+                                         durability-lock durability-observation
+                                         durability-diagnostic!)})
                                      (otlp/handler exporter))
                                    :workbench-handler
                                    (workbench/handler conn)
@@ -255,6 +277,7 @@
                :connection conn :exporter exporter :source source
                :server server
                :readiness-handle readiness-handle
+               :durability-observation durability-observation
                :http-executor owned-http-executor
                :state (atom {:phase :open :ingress-stopped? false
                              :http-executor-stopped? false

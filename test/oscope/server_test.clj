@@ -4,6 +4,7 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
+            [oscope.error :as error]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
@@ -465,6 +466,157 @@
         (is (true? (after-success!)))
         (is (= [:flush :checkpoint-failed :checkpoint-retried] @events))
         (server/stop! lifecycle)))))
+
+(deftest durability-observations-use-the-actual-startup-and-http-path
+  (doseq [operation [:flush :checkpoint]
+          known? [false true]]
+    (let [events (atom [])
+          conn (reify java.io.Closeable (close [_] nil))
+          exporter (reify
+                     export/SpanExporter
+                     (export-spans! [_ spans]
+                       (swap! events conj [:exported (count spans)]) true)
+                     (flush-exporter! [_] true)
+                     (shutdown-exporter! [_] true)
+                     export/MetricExporter
+                     (export-metrics! [_ _ _] true)
+                     (shutdown-metric-exporter! [_] true)
+                     logs/LogRecordExporter
+                     (export-logs! [_ _] true)
+                     (shutdown-log-exporter! [_] true))
+          app* (atom nil)
+          options* (atom nil)
+          observations (atom [])
+          original-handler otlp/handler
+          failure (ex-info "private-failure-marker"
+                           {:type (if known?
+                                    :jdbc.chdb.durable.control/lease-fenced
+                                    ::private-type)
+                            :sql "private-failure-marker"
+                            :endpoint "private-failure-marker"})
+          attempt (atom 0)
+          fail-first! (fn [_]
+                        (swap! events conj :persist)
+                        (if (= 1 (swap! attempt inc))
+                          (throw failure)
+                          {:status :reconciled}))]
+      (with-redefs [jdbc/connection (constantly conn)
+                    chdb-export/exporter (constantly exporter)
+                    live/open! (constantly {:close! (fn [] nil)})
+                    web/handler (fn [& _] (constantly {:status 200}))
+                    otlp/handler (fn [exporter options]
+                                   (reset! options* options)
+                                   (original-handler exporter options))
+                    http/run-server (fn [app & _] (reset! app* app) {:port 9197})
+                    http/stop-server (fn [_] nil)]
+        (let [startup? (atom true)
+              runtime
+              (server/start!
+               {:port 0
+                :durability-diagnostic!
+                (fn [record]
+                  (swap! events conj :observed)
+                  (swap! observations conj record)
+                  ;; A throwing sink must not replace persistence failure.
+                  (throw (ex-info "private-sink-marker" {})))
+                :durability
+                {:checkpoint! (fn [actual]
+                                (if (compare-and-set! startup? true false)
+                                  {:status :committed}
+                                  (fail-first! actual)))
+                 :flush! fail-first!
+                 :checkpoint-every-batches (when (= :checkpoint operation) 1)}})
+              expected {:oscope.durability-boundary/version 1
+                        :operation operation
+                        :phase :after-export-before-http-ack
+                        :outcome :failed
+                        :category (if known? :lease-fenced :unclassified)}
+              request {:request-method :post :uri "/v1/traces"
+                       :headers {"content-type" "application/json"
+                                 "host" "127.0.0.1:9197"}
+                       :body "{\"resourceSpans\":[{\"scopeSpans\":[{\"spans\":[{\"traceId\":\"10000000000000000000000000000000\",\"spanId\":\"2000000000000000\",\"name\":\"fixture\",\"startTimeUnixNano\":\"1\",\"endTimeUnixNano\":\"2\"}]}]}]}"}]
+          (try
+            ;; Directly invoke the real startup-created barrier once to witness
+            ;; original exception identity, despite a throwing diagnostic sink.
+            (is (identical? failure
+                            (try ((:after-success! @options*))
+                                 (catch Throwable error error))))
+            (is (= expected (some-> runtime :durability-observation deref)))
+            (is (= [expected] @observations))
+            ;; Repeat the persistence fault through the actual HTTP adapter.
+            (reset! attempt 0)
+            (let [response (@app* request)]
+              (is (= 503 (:status response)))
+              (is (= "durability boundary failed\n" (:body response)))
+              (is (= expected (some-> runtime :durability-observation deref))))
+            (is (not (str/includes? (pr-str @observations) "private-")))
+            (is (= 200 (:status (@app* request))))
+            (is (= (assoc expected :outcome :confirmed :category :none)
+                   (some-> runtime :durability-observation deref)))
+            (is (= 2 @attempt))
+            (is (= 3 (count @observations)))
+            (is (= [:persist :observed [:exported 1] :persist :observed
+                    [:exported 1] :persist :observed] @events))
+            (finally (server/stop! runtime))))))))
+
+(deftest invalid-durability-diagnostic-sink-fails-before-acquisition
+  (let [opened (atom 0)]
+    (with-redefs [jdbc/connection (fn [_] (swap! opened inc))]
+      (doseq [invalid [false {} :not-a-function]]
+        (let [failure (try (server/start! {:durability-diagnostic! invalid})
+                           (catch Throwable failure failure))]
+          (is (= {:oscope.server/error true
+                  :type :oscope.server/invalid-durability-diagnostic}
+                 (ex-data failure)))))
+      (is (zero? @opened)))))
+
+(defn- diagnostic-observation [& args]
+  ;; Missing baseline API is an assertion failure, never an analyzer abort.
+  (let [observe (ns-resolve 'oscope.error 'durability-boundary-observation)]
+    (is (some? observe) "the closed observation API must exist")
+    (if observe (apply observe args) {:missing-observation-api true})))
+
+(deftest durability-classification-is-bounded-and-does-not-stop-at-unknown-types
+  (let [known (ex-info "private-root" {:type :jdbc.chdb.durable.control/commit-ambiguous})
+        wrap (fn [cause] (ex-info "private-wrapper" {:type ::unknown-wrapper} cause))
+        descriptor (fn [failure]
+                     (diagnostic-observation :flush :failed failure))]
+    (is (= :commit-ambiguous (:category (descriptor (wrap known)))))
+    (is (= :commit-ambiguous
+           (:category (descriptor (nth (iterate wrap known) 7)))))
+    (is (= :unclassified
+           (:category (descriptor (nth (iterate wrap known) 8)))))
+    (is (= #{:oscope.durability-boundary/version :operation :phase :outcome :category}
+           (set (keys (descriptor known)))))
+    (is (not (str/includes? (pr-str (descriptor (wrap known))) "private")))))
+
+(deftest unknown-diagnostic-types-are-not-hashed-or-realized
+  (let [realized (atom 0)
+        bomb (lazy-seq (swap! realized inc)
+                       (throw (ex-info "private-realization-marker" {})))
+        known (ex-info "private-root" {:type :jdbc.chdb.durable.control/timeout})
+        expected {:oscope.durability-boundary/version 1
+                  :operation :flush :phase :after-export-before-http-ack
+                  :outcome :failed :category :storage-timeout}]
+    (doseq [type [bomb {"private" "fixture"} "private-type" false nil]]
+      (is (= expected
+             (diagnostic-observation
+              :flush :failed (ex-info "private-wrapper" {:type type} known))))
+      (is (= (assoc expected :category :unclassified)
+             (diagnostic-observation
+              :flush :failed (ex-info "private-wrapper" {:type type})))))
+    (is (zero? @realized))))
+
+(deftest unknown-diagnostic-operations-are-not-hashed-or-realized
+  (let [realized (atom 0)
+        bomb (lazy-seq (swap! realized inc)
+                       (throw (ex-info "private-operation-marker" {})))
+        expected {:oscope.durability-boundary/version 1
+                  :operation :unknown :phase :after-export-before-http-ack
+                  :outcome :confirmed :category :none}]
+    (doseq [operation [bomb {} "flush" false nil :unknown-operation]]
+      (is (= expected (diagnostic-observation operation :confirmed nil))))
+    (is (zero? @realized))))
 
 (deftest concurrent-durability-boundaries-select-one-checkpoint
   (let [events (atom [])

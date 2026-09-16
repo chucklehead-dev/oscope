@@ -6,6 +6,10 @@
   scratch; preserve unconfirmed fixtures and fail with closed cleanup status
   rather than treating a termination request as child retirement (Refs #108).
 
+- Retain closed, payload-free per-request flush/checkpoint observations before
+  HTTP acknowledgement, without changing persistence, retry, or failure behavior
+  (Refs #4). An optional diagnostic sink receives only the bounded observation.
+
 - Register readiness regression tests in both canonical test runners so
   ordinary and hosted headless CI exercise the listener discovery contract;
   real native readiness gates remain explicit opt-in qualification.
