@@ -3,9 +3,132 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [jolt.process :as process]
-            [oscope.child-support :as child]))
+            [oscope.child-support :as child]
+            [oscope.typed-socket-test-runner :as socket-runner]))
 
 (def ^:private embedded-profile-dir "profiles/embedded")
+
+(defn- socket-control! [scenario]
+  (let [directory (str (java.nio.file.Files/createTempDirectory
+                        "oscope-socket-runner-control-"
+                        (make-array java.nio.file.attribute.FileAttribute 0)))
+        calls (atom [])
+        actual (atom nil)
+        original-run child/run!
+        timeout-result (atom nil)
+        output
+        (with-out-str
+          (with-redefs
+            [child/run!
+             (fn [command options bounds]
+               (let [index (parse-long (last command))]
+                 (swap! calls conj index)
+                 (is (= ["/bin/sleep" "-Srepro" "-A:test-typed-socket" "-m"
+                         "oscope.typed-socket-test-runner" "--fixture" (str index)]
+                        command))
+                 (is (= {:timeout-ms 120000 :settlement-ms 5000} bounds))
+                 (when (and (= :unconfirmed scenario) (pos? index))
+                   (throw (ex-info "unexpected later child" {})))
+                 ;; Independently authored synthetic reports exercise the
+                 ;; maintained parser; they are NOT native qualification.
+                 (spit (:out options)
+                       (str ":typed-socket-executed " index "\n"
+                            (if (zero? index)
+                              (case scenario
+                                :wrong-index ":typed-socket-receipt 1 1 3 0 0\n"
+                                :zero-assertions ":typed-socket-receipt 0 1 0 0 0\n"
+                                (:reported-fail-zero :reported-fail-nonzero)
+                                ":typed-socket-receipt 0 1 2 1 0\n"
+                                (:reported-error-zero :reported-error-nonzero)
+                                ":typed-socket-receipt 0 1 2 0 1\n"
+                                ":typed-socket-receipt 0 1 3 0 0\n")
+                              (str ":typed-socket-receipt " index " 1 3 0 0\n"))
+                            (when (zero? index)
+                              (case scenario
+                                :duplicate ":typed-socket-receipt malformed\n"
+                                :valid-duplicate ":typed-socket-receipt 0 1 3 0 0\n"
+                                :duplicate-execution ":typed-socket-executed 0\n"
+                                nil))))
+                 (spit (:err options) "")
+                 (if (zero? index)
+                   (case scenario
+                     :nonzero {:exit 7}
+                     (:reported-fail-nonzero :reported-error-nonzero) {:exit 7}
+                     :unconfirmed {:exit 1 :child/terminal? false
+                                   :child/status :cleanup-incomplete}
+                     :timeout {:exit 1 :child/terminal? true
+                               :child/status :settled-failure :child/primary :timeout}
+                     :real-timeout
+                     (let [result (original-run ["/bin/sleep" "5"] options
+                                                {:timeout-ms 20 :settlement-ms 5000})]
+                       (reset! timeout-result result)
+                       result)
+                     {:exit 0})
+                   {:exit 0})))]
+            (reset! actual (socket-runner/run-isolated! "/bin/sleep" directory))))]
+    {:result @actual :output output :calls @calls
+     :timeout-result @timeout-result :directory directory}))
+
+(deftest socket-runner-retains-strict-receipts-and-truthful-counts
+  (doseq [scenario [:success :duplicate :valid-duplicate :wrong-index
+                    :duplicate-execution :zero-assertions :nonzero :timeout :unconfirmed
+                    :reported-fail-zero :reported-fail-nonzero
+                    :reported-error-zero :reported-error-nonzero]]
+    (testing (name scenario)
+      (let [{:keys [result output calls directory]} (socket-control! scenario)
+            all? (not= :unconfirmed scenario)
+            accepted (case scenario
+                       (:duplicate :valid-duplicate :wrong-index
+                        :duplicate-execution :zero-assertions :timeout) 4
+                       :unconfirmed 0 5)
+            expected (case scenario
+                       (:reported-fail-zero :reported-fail-nonzero)
+                       {:test 5 :pass 14 :fail 1 :error 0}
+                       (:reported-error-zero :reported-error-nonzero)
+                       {:test 5 :pass 14 :fail 0 :error 1}
+                       {:test accepted :pass (* 3 accepted) :fail 0 :error 0})
+            summary? (= 5 accepted)
+            expected-summary (case scenario
+                               (:reported-fail-zero :reported-fail-nonzero)
+                               "Ran 5 tests. 14 assertions passed, 1 failures, 0 errors."
+                               (:reported-error-zero :reported-error-nonzero)
+                               "Ran 5 tests. 14 assertions passed, 0 failures, 1 errors."
+                               "Ran 5 tests. 15 assertions passed, 0 failures, 0 errors.")]
+        (is (= (if all? [0 1 2 3 4] [0]) calls))
+        (is (= (if (= :success scenario) 0 1) (:exit result)))
+        (is (= (= :success scenario) (:qualified? result)))
+        (is (= all? (:settled? result)))
+        (is (= expected (:totals result)))
+        (is (= (if summary? 1 0)
+               (count (filter #(= expected-summary %)
+                              (str/split-lines output)))))
+        (is (= (= :success scenario) (str/includes? output ":typed-socket-qualified")))
+        (when (= :unconfirmed scenario)
+          (is (not (str/includes? output ":typed-socket-executed"))))
+        (doseq [index calls]
+          (is (.isFile (java.io.File. (str directory "/fixture-" index ".log"))))
+          (is (.isFile (java.io.File. (str directory "/fixture-" index ".err")))))
+        ;; Delete only synthetic controls after every owned mock has settled.
+        ;; Unconfirmed evidence deliberately remains for inspection.
+        (when all?
+          (doseq [file (.listFiles (java.io.File. directory))] (.delete file))
+          (.delete (java.io.File. directory)))))))
+
+(deftest socket-runner-real-tiny-timeout-remains-failure-after-settlement
+  (let [{:keys [result timeout-result calls output directory]}
+        (socket-control! :real-timeout)]
+    (is (= :timeout (:child/primary timeout-result)))
+    (is (true? (:child/terminal? timeout-result)))
+    (is (= [0 1 2 3 4] calls))
+    (is (= 1 (:exit result)))
+    (is (= {:test 4 :pass 12 :fail 0 :error 0} (:totals result)))
+    (is (false? (:qualified? result)))
+    (is (not (str/includes? output ":typed-socket-qualified")))
+    (is (.isFile (java.io.File. (str directory "/fixture-0.log"))))
+    ;; Preserve evidence if the genuine direct child is not confirmed retired.
+    (when (true? (:child/terminal? timeout-result))
+      (doseq [file (.listFiles (java.io.File. directory))] (.delete file))
+      (.delete (java.io.File. directory)))))
 (def ^:private minimal-fixture-dir "test/fixtures/minimal-embedded-app")
 (def ^:private minimal-fixture-source
   (str minimal-fixture-dir "/src/minimal_embedded_app.clj"))

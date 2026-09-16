@@ -40,12 +40,11 @@
       (throw (ex-info "absolute child executable required" {})))
     path))
 
-(defn- run-isolated! []
-  (let [executable (executable!)
-        directory (str (java.nio.file.Files/createTempDirectory
-                        "oscope-typed-socket-children-"
-                        (make-array java.nio.file.attribute.FileAttribute 0)))
-        totals (atom {:test 0 :pass 0 :fail 0 :error 0})
+(defn run-isolated!
+  "Test-only orchestration seam. Callers own directory; logs are retained.
+  The CLI validates its executable and allocates its own directory first."
+  [executable directory]
+  (let [totals (atom {:test 0 :pass 0 :fail 0 :error 0})
         qualified (atom true)
         settled (atom true)]
     (println :typed-socket-evidence directory)
@@ -100,14 +99,21 @@
                     (:error @totals) " errors.")))
     (when (and @qualified (= (count fixtures) (:test @totals)))
       (println :typed-socket-qualified))
-    (System/exit (if (and @qualified (= (count fixtures) (:test @totals))) 0 1))))
+    {:exit (if (and @qualified (= (count fixtures) (:test @totals))) 0 1)
+     :totals @totals :qualified? (and @qualified (= (count fixtures) (:test @totals)))
+     :settled? @settled :directory directory}))
 
 (defn -main [& args]
   (try
     (if (and (= 2 (count args)) (= "--fixture" (first args))
              (re-matches #"[0-4]" (second args)))
       (run-fixture! (parse-long (second args)))
-      (if (empty? args) (run-isolated!)
+      (if (empty? args)
+        (let [executable (executable!)
+              directory (str (java.nio.file.Files/createTempDirectory
+                              "oscope-typed-socket-children-"
+                              (make-array java.nio.file.attribute.FileAttribute 0)))]
+          (System/exit (:exit (run-isolated! executable directory))))
           (throw (ex-info "unknown runner arguments" {}))))
     (catch Throwable _
       (println :typed-socket-runner-failed)

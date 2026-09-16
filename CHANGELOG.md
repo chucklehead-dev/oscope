@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retain cheap canonical regressions for typed socket receipt rejection,
+  nonzero and timeout accounting, and stopping after unconfirmed settlement;
+  keep native fixture reports truthful and evidence retained. Refs #109.
+
 - Run each typed socket fixture in a fresh bounded child process, preserving
   chDB's immutable physical-path lifetime and all restart/readback assertions.
   Require an absolute child executable and real execution/count/exit receipts;
