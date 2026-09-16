@@ -1,6 +1,70 @@
 const {test, expect} = require("@playwright/test");
 const {emitCheckout, emitGaugeBuckets, openCheckoutTrace} = require("./helpers");
 
+test("full-page workbench preserves contrast and long attributes responsively", async ({page, request, baseURL}, testInfo) => {
+  const traceId = "abababababababababababababababab";
+  const label = "samizdat.application.request.lifecycle.completion.status";
+  const value = "complete / preserved <literal> & Unicode λ " + "x".repeat(160);
+  const now = BigInt(Date.now()) * 1000000n;
+  const response = await request.post(`${baseURL}/v1/traces`, {data: {
+    resourceSpans: [{resource: {attributes: [{key: "service.name", value: {stringValue: "theme-regression"}}]},
+      scopeSpans: [{scope: {name: "oscope.theme-regression"}, spans: [{
+        traceId, spanId: "abababababababab", name: "theme regression", kind: 1,
+        startTimeUnixNano: String(now - 1000000n), endTimeUnixNano: String(now),
+        attributes: [{key: label, value: {stringValue: value}}], status: {code: 1},
+      }]}]}],
+  }});
+  expect(response.status()).toBe(200);
+  await page.goto("/oscope/telemetry");
+  await page.screenshot({path: testInfo.outputPath("workbench-index.png"), fullPage: true});
+  // Read actual computed styles: no injected CSS or repaired screenshot.
+  const contrasts = await page.locator(".otel-header h1, .otel-eyebrow, .oscope-nav a").evaluateAll(elements => {
+    const luminance = color => {
+      const rgb = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => {
+        const s = v / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4;
+      });
+      return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+    };
+    // Transparent body/html paint the browser's white canvas, not black.
+    // Walk to the actual opaque page background rather than dropping alpha.
+    let backgroundColor = "rgb(255, 255, 255)";
+    for (let node = document.body; node; node = node.parentElement) {
+      const color = getComputedStyle(node).backgroundColor;
+      if (color !== "transparent" && !/rgba\([^)]*,\s*0\s*\)/.test(color)) {
+        backgroundColor = color; break;
+      }
+    }
+    const background = luminance(backgroundColor);
+    return elements.map(el => {
+      const foreground = luminance(getComputedStyle(el).color);
+      return (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+    });
+  });
+  expect(contrasts.length).toBeGreaterThanOrEqual(5);
+  console.log("workbench computed contrast ratios", contrasts);
+  for (const contrast of contrasts) expect(contrast).toBeGreaterThanOrEqual(4.5);
+  await expect(page.locator("html")).toHaveClass(/otel-page/);
+  await page.goto(`/oscope/telemetry/traces/${traceId}`);
+  const term = page.locator(".otel-span-meta dt").filter({hasText: label});
+  await expect(term).toHaveCount(1);
+  const definition = term.locator("..").locator("dd");
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({width, height: 1000});
+    await expect(term).toHaveText(label);
+    await expect(definition).toHaveText(value);
+    const layout = await term.locator("..").evaluate(row => {
+      const dt = row.querySelector("dt").getBoundingClientRect();
+      const dd = row.querySelector("dd").getBoundingClientRect();
+      return {dt: {x: dt.x, y: dt.y, bottom: dt.bottom}, dd: {x: dd.x, y: dd.y},
+        overflow: document.documentElement.scrollWidth > innerWidth};
+    });
+    expect(layout.overflow).toBe(false);
+    if (width === 390) expect(layout.dd.y).toBeGreaterThanOrEqual(layout.dt.bottom);
+    else expect(layout.dd.x).toBeGreaterThan(layout.dt.x);
+    await page.screenshot({path: testInfo.outputPath(`workbench-${width}.png`), fullPage: true});
+  }
+});
+
 test("investigates checkout telemetry and changes its visual grammar", async ({page, request, baseURL}) => {
   await emitCheckout(request, baseURL);
   const dialog = await openCheckoutTrace(page);

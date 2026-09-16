@@ -6,6 +6,10 @@
   validation error before schema effects or embedded owner acquisition; retain
   nil as absent and add cause-free, secret-safe boundary regressions. Refs #107.
 
+- Give the full-page telemetry workbench its explicit dark theme and a
+  responsive attribute layout, preserving full labels and values without
+  changing shared viewer fragments. Add source and browser regressions. Refs #106.
+
 - Requalify the minimal embedded profile at OTel `4d61f8e9` and jolt-chDB
   `95d7b2b3`, retaining the already-current ClickHouse exporter `14a2998a`.
   The real fixture selects the converged interruptible HTTP provider under the
