@@ -2,7 +2,8 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [jolt.process :as process]))
+            [jolt.process :as process]
+            [oscope.child-support :as child]))
 
 (def ^:private embedded-profile-dir "profiles/embedded")
 (def ^:private minimal-fixture-dir "test/fixtures/minimal-embedded-app")
@@ -67,18 +68,87 @@
   "96324713500c96ae97c0deaf84691f31df158f25")
 
 (defn- run-jolt [dir & args]
-  (let [jolt-bin (or (System/getenv "JOLT_BIN") "jolt")
-        child (process/process (into [jolt-bin "-Srepro"] args)
-                               {:dir dir :out :string :err :string})
-        result (deref child 120000 ::timeout)]
-    (when (= ::timeout result)
-      (try (process/destroy-tree child) (catch Throwable _ nil)))
-    result))
+  (child/run! (into [(or (System/getenv "JOLT_BIN") "jolt") "-Srepro"] args)
+              {:dir dir :out :string :err :string} {}))
 
 (defn- delete-tree! [root]
   (when (and root (.exists root))
     (doseq [file (reverse (file-seq root))]
       (java.nio.file.Files/deleteIfExists (.toPath file)))))
+
+(deftest owned-child-settlement-controls-cross-the-shared-helper
+  (doseq [scenario [:success :nonzero :timeout :wait-threw :unconfirmed
+                    :termination-threw :cleanup-threw :nonzero-cleanup-threw]]
+    (let [events (atom [])
+          waits (atom 0)
+          owned (Object.)
+          original-deref clojure.core/deref
+          result {:exit (if (contains? #{:nonzero :nonzero-cleanup-threw} scenario) 7 0)
+                  :out "fixture" :err ""}]
+      (with-redefs [process/process (fn [& _] (swap! events conj :spawn) owned)
+                    process/destroy-tree
+                    (fn [actual]
+                      (is (identical? owned actual))
+                      (swap! events conj :terminate)
+                      (when (= :termination-threw scenario)
+                        (throw (ex-info "private-termination-marker" {}))))
+                    clojure.core/deref
+                    (fn [& args]
+                      (if (identical? owned (first args))
+                        (let [ordinal (swap! waits inc)]
+                          (swap! events conj [:wait ordinal])
+                          (cond
+                            (and (= :wait-threw scenario) (= 1 ordinal))
+                            (throw (ex-info "private-wait-marker" {}))
+                            (or (= :unconfirmed scenario)
+                                (and (= 1 ordinal)
+                                     (contains? #{:timeout :termination-threw} scenario)))
+                            (nth args 2)
+                            :else result))
+                        (apply original-deref args)))]
+        (let [actual (child/run! ["fixture"] {}
+                                {:timeout-ms 1 :settlement-ms 1
+                                 :after-terminal!
+                                 #(do (swap! events conj :delete)
+                                      (when (contains? #{:cleanup-threw :nonzero-cleanup-threw}
+                                                       scenario)
+                                        (throw (ex-info "private-cleanup-marker" {}))))})
+              timed? (contains? #{:timeout :wait-threw :unconfirmed :termination-threw}
+                               scenario)]
+          (is (= (if timed? 2 1) @waits))
+          (is (= (cond
+                   (= :unconfirmed scenario) [:spawn [:wait 1] :terminate [:wait 2]]
+                   timed? [:spawn [:wait 1] :terminate [:wait 2] :delete]
+                   :else [:spawn [:wait 1] :delete]) @events))
+          (if (contains? #{:success :nonzero} scenario)
+            (is (= result actual))
+            (do
+              (is (= 1 (:exit actual)))
+              (is (= (not= :unconfirmed scenario) (:child/terminal? actual)))
+              (is (= (case scenario
+                       :wait-threw :wait-threw
+                       :cleanup-threw :none
+                       :nonzero-cleanup-threw :nonzero-exit
+                       :timeout) (:child/primary actual)))
+              (is (= (case scenario
+                       :unconfirmed :preserved
+                       :cleanup-threw :cleanup-threw
+                       :nonzero-cleanup-threw :cleanup-threw
+                       :completed) (:child/cleanup actual)))
+              (is (not (str/includes? (pr-str actual) "private-"))))))))))
+
+(deftest owned-child-real-timeout-confirms-terminal-before-cleanup
+  ;; A direct tiny child, no shell or descendants; timeout stays a failure even
+  ;; after termination confirms exit. No native fixture is needed for this cut.
+  (let [cleanups (atom 0)
+        result (child/run! ["/bin/sleep" "5"] {:out :string :err :string}
+                           {:timeout-ms 20 :settlement-ms 5000
+                            :after-terminal! #(swap! cleanups inc)})]
+    (is (= 1 (:exit result)))
+    (is (= :timeout (:child/primary result)))
+    (is (true? (:child/terminal? result)))
+    (is (= 1 @cleanups))
+    (is (= :completed (:child/cleanup result)))))
 
 (defn- classpath-roots [classpath fragments]
   (let [fragments (if (string? fragments) [fragments] fragments)]
@@ -98,11 +168,7 @@
                  paths))))
 
 (defn- run-command [dir args]
-  (let [child (process/process args {:dir dir :out :string :err :string})
-        result (deref child 10000 ::timeout)]
-    (when (= ::timeout result)
-      (try (process/destroy-tree child) (catch Throwable _ nil)))
-    result))
+  (child/run! args {:dir dir :out :string :err :string} {:timeout-ms 10000}))
 
 (defn- namespace-providers [classpath source-path]
   (->> (str/split (str classpath) #":")
@@ -161,18 +227,17 @@
               (java.nio.file.Files/createTempDirectory
                "oscope-minimal-embedded-parent-"
                (make-array java.nio.file.attribute.FileAttribute 0)))]
-    (try
-      (let [run-result (run-jolt minimal-fixture-dir "-M:test" (str root))]
-        (is (map? run-result))
-        (when (map? run-result)
-          (is (zero? (:exit run-result))
-              (str (:out run-result) (:err run-result)))
-          (is (str/includes? (:out run-result)
-                             "minimal embedded native fixture: PASS"))))
-      (finally
-        ;; jolt-chDB's process anchor owns its scratch tree until the child
-        ;; exits; only this parent process may remove the fixture root safely.
-        (delete-tree! root)))))
+    (let [run-result
+          (child/run!
+           [(or (System/getenv "JOLT_BIN") "jolt") "-Srepro" "-M:test" (str root)]
+           {:dir minimal-fixture-dir :out :string :err :string}
+           {:after-terminal! #(delete-tree! root)})]
+      (is (map? run-result))
+      (when (map? run-result)
+        (is (zero? (:exit run-result))
+            (str (:out run-result) (:err run-result)))
+        (is (str/includes? (:out run-result)
+                           "minimal embedded native fixture: PASS"))))))
 
 (deftest converged-database-coordinate-qualifies-one-provider
   (let [result (run-jolt samizdat-converged-fixture-dir "-Spath")]

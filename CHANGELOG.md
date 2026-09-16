@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Confirm timed-out test children have exited before deleting native fixture
+  scratch; preserve unconfirmed fixtures and fail with closed cleanup status
+  rather than treating a termination request as child retirement (Refs #108).
+
 - Register readiness regression tests in both canonical test runners so
   ordinary and hosted headless CI exercise the listener discovery contract;
   real native readiness gates remain explicit opt-in qualification.

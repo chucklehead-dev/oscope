@@ -2,7 +2,8 @@
   "Checks resolved OTel/exporter roots rather than trusting declarations."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [jolt.process :as process]))
+            [jolt.process :as process]
+            [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
   "14a2998a27f64a9bff329811461be9157a00c849")
@@ -70,14 +71,9 @@
         (dependency-roots classpath dependency)))
 
 (defn- dependency-report [extra-args]
-  (let [jolt-bin (or (System/getenv "JOLT_BIN") "jolt")
-        child (process/process (into [jolt-bin "-Srepro"]
-                                     (concat extra-args ["-Spath"]))
-                               {:out :string :err :string})
-        result (deref child 120000 ::timeout)]
-    (when (= ::timeout result)
-      (try (process/destroy-tree child) (catch Throwable _ nil)))
-    result))
+  (child/run! (into [(or (System/getenv "JOLT_BIN") "jolt") "-Srepro"]
+                    (concat extra-args ["-Spath"]))
+              {:out :string :err :string} {}))
 
 (defn- successful-report? [result]
   (and (map? result)
