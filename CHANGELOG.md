@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Load the JDBC shim before standalone typed socket fixtures compile, and
+  report startup failures using fixed phase/type labels without exception
+  payloads or false execution receipts. Keep strict counts and child settlement
+  checks unchanged. Refs #109.
+
 - Retain cheap canonical regressions for typed socket receipt rejection,
   nonzero and timeout accounting, and stopping after unconfirmed settlement;
   keep native fixture reports truthful and evidence retained. Refs #109.

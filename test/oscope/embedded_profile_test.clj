@@ -8,6 +8,34 @@
 
 (def ^:private embedded-profile-dir "profiles/embedded")
 
+(deftest socket-startup-require-failure-reports-fixed-phase-without-exception-content
+  (let [forged ":typed-socket-executed 0\n:typed-socket-receipt 0 1 99 0 0\nsecret-payload"
+        error (ex-info forged {:payload forged} (ex-info forged {}))
+        phase (atom :unknown)
+        caught (atom nil)
+        output (with-out-str
+                 (with-redefs [clojure.core/require (fn [& _] (throw error))]
+                   (try
+                     (socket-runner/prepare-fixture! 0 phase)
+                     (catch Throwable failure
+                       (reset! caught failure)
+                       (socket-runner/report-startup-failure! @phase failure)))))]
+    (is (identical? error @caught))
+    (is (= :fixture-require @phase))
+    (is (= ":typed-socket-startup-failure :phase :fixture-require :type :exception-info\n"
+           output))
+    (is (not (str/includes? output "secret-payload")))
+    (is (not (str/includes? output ":typed-socket-executed")))
+    (is (not (str/includes? output ":typed-socket-receipt")))))
+
+(deftest socket-startup-unknown-phase-and-type-do-not-become-output
+  (let [forged ":typed-socket-receipt 0 1 99 0 0\nsecret-payload"]
+    (is (= {:phase :unknown :type :other}
+           (socket-runner/startup-failure-summary forged nil)))
+    (is (= {:phase :fixture-inventory :type :illegal-argument}
+           (socket-runner/startup-failure-summary
+            :fixture-inventory (IllegalArgumentException. forged))))))
+
 (defn- socket-control! [scenario]
   (let [directory (str (java.nio.file.Files/createTempDirectory
                         "oscope-socket-runner-control-"

@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [jdbc.chdb.durable.backend :as backend]
+            [db.jdbc]
             [jdbc.core :as jdbc]
             [oscope.config :as config]
             [oscope.config-cli :as config-cli]
