@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Distinguish retryable readiness publication failures from an unconfirmed
+  claim-descriptor close. Report the latter as non-retryable without claiming
+  successful closure or risking another owner's reused descriptor.
+  Fence synchronous publication callbacks against ready-after-terminal and
+  repeated claim release during nested stop calls.
+
 - Load the JDBC shim before standalone typed socket fixtures compile, and
   report startup failures using fixed phase/type labels without exception
   payloads or false execution receipts. Keep strict counts and child settlement

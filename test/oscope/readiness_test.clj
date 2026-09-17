@@ -146,3 +146,175 @@
         (reset! broken? false)
         (is (= {:status :closed :phase :closed} ((:retry-stop! (ex-data error)))))
         (is (nil? @owner))))))
+
+(defn ambiguous-release-file []
+  (let [{:keys [operations owner] :as file} (fake-file)
+        releases (atom 0) reused-descriptor (Object.)]
+    (assoc file :releases releases :reused-descriptor reused-descriptor
+           :operations
+           (assoc operations :release-lock!
+                  (fn [claim]
+                    (swap! releases inc)
+                    (is (identical? @owner claim))
+                    ;; Model close taking effect and its numeric slot being
+                    ;; reused BEFORE the caller observes an ambiguous error.
+                    (reset! owner reused-descriptor)
+                    (throw (ex-info "private-release-canary" {:claim claim})))))))
+
+(def unconfirmed-release-result
+  {:status :closing :phase :readiness-claim-release-unconfirmed
+   :retryable? false
+   :errors [{:type :oscope.readiness/claim-release-unconfirmed}]})
+
+(deftest reentrant-terminal-callback-releases-only-once
+  (let [{:keys [operations owner current]} (fake-file)
+        handle* (atom nil) entered? (atom false) releases (atom 0)
+        reused-descriptor (Object.) damaged? (atom false)]
+    (with-redefs [readiness/file-operations
+                  (constantly
+                   (assoc operations :release-lock!
+                          (fn [claim]
+                            (swap! releases inc)
+                            (if (identical? @owner claim)
+                              (reset! owner reused-descriptor)
+                              (reset! damaged? true)))))]
+      (reset! handle*
+              (readiness/prepare!
+               {:file "/tmp/readiness-test/A.edn" :instance-id "A"
+                :publish! (fn [record]
+                            (when (and (= :closed (:reason record))
+                                       (compare-and-set! entered? false true))
+                              (readiness/terminal! @handle* :closed)))} :local))
+      (is (= {:status :terminal} (readiness/terminal! @handle* :closed)))
+      (is (= 1 @releases))
+      (is (false? @damaged?))
+      (is (identical? reused-descriptor @owner))
+      (is (= :terminal (:status @current)))
+      (is (= {:status :terminal} (readiness/terminal! @handle* :closed)))
+      (is (= 1 @releases)))))
+
+(deftest reentrant-terminal-callback-cannot-republish-ready
+  (let [{:keys [operations owner current]} (fake-file)
+        handle* (atom nil) entered? (atom false) rejected (atom nil)]
+    (with-redefs [readiness/file-operations (constantly operations)]
+      (reset! handle*
+              (readiness/prepare!
+               {:file "/tmp/readiness-test/A.edn" :instance-id "A"
+                :publish! (fn [record]
+                            (when (and (= :closed (:reason record))
+                                       (compare-and-set! entered? false true))
+                              (reset! rejected
+                                      (try (readiness/ready!
+                                            @handle* "127.0.0.1" 12346
+                                            "http://127.0.0.1:12346/oscope")
+                                           nil
+                                           (catch Throwable error error)))))} :local))
+      (readiness/ready! @handle* "127.0.0.1" 12345 "http://127.0.0.1:12345/oscope")
+      (is (= {:status :terminal} (readiness/terminal! @handle* :closed)))
+      (is (= :retired-generation (:reason (ex-data @rejected))))
+      (is (nil? (some-> @rejected .getCause)))
+      (is (= :terminal (:status @current)))
+      (is (= :closed (:reason @current)))
+      (is (nil? @owner)))))
+
+(deftest ready-callback-stopping-retires-both-records-before-release
+  (let [{:keys [operations owner current]} (fake-file)
+        handle* (atom nil) entered? (atom false) releases (atom 0)
+        release! (:release-lock! operations)]
+    (with-redefs [readiness/file-operations
+                  (constantly (assoc operations :release-lock!
+                                     (fn [claim] (swap! releases inc) (release! claim))))]
+      (reset! handle*
+              (readiness/prepare!
+               {:file "/tmp/readiness-test/A.edn" :instance-id "A"
+                :publish! (fn [record]
+                            (when (and (= :ready (:status record))
+                                       (compare-and-set! entered? false true))
+                              (readiness/terminal! @handle* :stopping)))} :local))
+      (let [error (try (readiness/ready! @handle* "127.0.0.1" 12345
+                                       "http://127.0.0.1:12345/oscope")
+                       nil (catch Throwable error error))]
+        (is (= :publication-failed (:reason (ex-data error))))
+        (is (nil? (some-> error .getCause))))
+      (is (= :terminal (:status @current)))
+      (is (= :stopping (:reason @current)))
+      (is (= @current @(:record @handle*)))
+      (is (some? @owner))
+      (is (zero? @releases))
+      (let [before @current
+            error (try (readiness/ready! @handle* "127.0.0.1" 12346 "ignored")
+                       nil (catch Throwable error error))]
+        (is (= :retired-generation (:reason (ex-data error))))
+        (is (= before @current)))
+      (is (= {:status :closed :phase :closed}
+             (readiness/finish-stop! @handle* {:status :closed :phase :closed})))
+      (is (nil? @owner))
+      (is (= 1 @releases))
+      (is (= :terminal (:status @current)))
+      (is (= :closed (:reason @current))))))
+
+(deftest after-effect-claim-release-is-sticky-and-never-closes-reused-owner
+  (let [{:keys [operations owner current releases reused-descriptor]}
+        (ambiguous-release-file)]
+    (with-redefs [readiness/file-operations (constantly operations)]
+      (let [handle (readiness/prepare!
+                    {:file "/tmp/readiness-test/A.edn" :instance-id "A"} :local)]
+        (readiness/ready! handle "127.0.0.1" 12345 "http://127.0.0.1:12345/oscope")
+        (dotimes [_ 3]
+          ;; Old code reports retryable-looking publication failure: causal RED.
+          (is (= unconfirmed-release-result
+                 (readiness/finish-stop! handle {:status :closed :phase :closed}))))
+        (is (= 1 @releases))
+        (is (identical? reused-descriptor @owner))
+        (is (= {:oscope.readiness/version 1 :instance-id "A" :status :terminal
+                :storage-mode :local :host "127.0.0.1" :port 12345
+                :url "http://127.0.0.1:12345/oscope" :reason :closed} @current))
+        (let [error (try (readiness/ready! handle "127.0.0.1" 12346 "ignored")
+                         (catch Throwable error error))]
+          (is (= :retired-generation (:reason (ex-data error)))))
+        (is (not (.contains (pr-str unconfirmed-release-result) "private-release-canary")))))))
+
+(deftest startup-retry-owner-preserves-unconfirmed-release-without-repeating-effects
+  (let [{:keys [operations owner releases reused-descriptor]} (ambiguous-release-file)
+        retired (atom 0)]
+    (with-redefs [readiness/file-operations (constantly operations)]
+      (let [handle (readiness/prepare!
+                    {:file "/tmp/readiness-test/A.edn" :instance-id "A"} :local)
+            error (try (readiness/fail-startup!
+                        handle (ex-info "private-startup-canary" {})
+                        [[:listener #(swap! retired inc)]])
+                       (catch Throwable error error))
+            retry-stop! (:retry-stop! (ex-data error))]
+        (is (= :oscope.readiness/startup-cleanup-incomplete (:type (ex-data error))))
+        (is (nil? (.getCause error)))
+        (is (fn? retry-stop!))
+        (dotimes [_ 3] (is (= unconfirmed-release-result (retry-stop!))))
+        (is (= 1 @retired))
+        (is (= 1 @releases))
+        (is (identical? reused-descriptor @owner))))))
+
+(deftest before-effect-terminal-sink-failure-remains-retryable
+  (let [{:keys [operations owner]} (fake-file)
+        broken? (atom true) published (atom []) releases (atom 0)
+        release! (:release-lock! operations)]
+    (with-redefs [readiness/file-operations
+                  (constantly (assoc operations :release-lock!
+                                     (fn [claim] (swap! releases inc) (release! claim))))]
+      (let [handle (readiness/prepare!
+                    {:file "/tmp/readiness-test/A.edn" :instance-id "A"
+                     :publish! (fn [record]
+                                 (when (and @broken? (= :closed (:reason record)))
+                                   (throw (ex-info "private-sink-canary" {})))
+                                 (swap! published conj (:reason record)))} :local)]
+        (is (= {:status :closing :phase :publishing-readiness
+                :errors [{:type :oscope.readiness/terminal-publication-failed}]}
+               (readiness/finish-stop! handle {:status :closed :phase :closed})))
+        (is (some? @owner))
+        (is (zero? @releases))
+        (is (not-any? #{:closed} @published))
+        (reset! broken? false)
+        (is (= {:status :closed :phase :closed}
+               (readiness/finish-stop! handle {:status :closed :phase :closed})))
+        (is (nil? @owner))
+        (is (= 1 @releases))
+        (is (= 1 (count (filter #{:closed} @published))))))))

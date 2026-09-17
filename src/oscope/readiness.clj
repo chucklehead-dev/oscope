@@ -98,7 +98,8 @@
   [handle host port url]
   (when handle
     (locking (:lock handle)
-      (when @(:closed? handle) (throw (failure :retired-generation)))
+      (when (or @(:closed? handle) (= :terminal (:status @(:record handle))))
+        (throw (failure :retired-generation)))
       (when-not (and (= "127.0.0.1" host) (integer? port) (<= 1 port 65535)
                      (string? url))
         (throw (failure :invalid-bound-address)))
@@ -106,7 +107,8 @@
                           :host host :port port :url url)]
         (try
           (publish! handle record)
-          (when @(:closed? handle) (throw (failure :retired-generation)))
+          (when (or @(:closed? handle) (= :terminal (:status @(:record handle))))
+            (throw (failure :retired-generation)))
           (reset! (:record handle) record)
           (catch Throwable _ (throw (failure :publication-failed))))))))
 
@@ -123,9 +125,11 @@
           (reset! (:record handle) record)
           (try
             (publish! handle record)
-            (when (not= :stopping reason)
+            (when (and (not= :stopping reason)
+                       ;; A synchronous publication callback may reenter stop.
+                       ;; Only the first retired owner may attempt release.
+                       (compare-and-set! (:closed? handle) false true))
               ;; Never release a claim while a stale :ready record may remain.
-              (reset! (:closed? handle) true)
               ;; close(2) failure is ambiguous: never retry an old numeric FD.
               (try (release! handle)
                    (catch Throwable _
@@ -135,13 +139,19 @@
             (catch Throwable _
               {:status :failed :reason :terminal-publication-failed})))))))
 
+(defn- incomplete-terminal-result [terminal-result]
+  (when (= :failed (:status terminal-result))
+    (if (= :claim-release-unconfirmed (:reason terminal-result))
+      {:status :closing :phase :readiness-claim-release-unconfirmed
+       :retryable? false :errors [{:type ::claim-release-unconfirmed}]}
+      {:status :closing :phase :publishing-readiness
+       :errors [{:type ::terminal-publication-failed}]})))
+
 (defn finish-stop!
   "Retain ownership and expose a bounded retryable result on sink failure."
   [handle result]
-  (if (and (= :closed (:status result))
-           (= :failed (:status (terminal! handle :closed))))
-    {:status :closing :phase :publishing-readiness
-     :errors [{:type ::terminal-publication-failed}]}
+  (if (= :closed (:status result))
+    (or (incomplete-terminal-result (terminal! handle :closed)) result)
     result))
 
 (defn fail-startup!
@@ -162,10 +172,8 @@
                   (close!)
                   (swap! state update :done conj operation)))
               (swap! state assoc :operation :publish-readiness)
-              (if (= :terminal (:status (terminal! handle :startup-failed)))
-                {:status :closed :phase :closed}
-                {:status :closing :phase :publishing-readiness
-                 :errors [{:type ::terminal-publication-failed}]})
+              (or (incomplete-terminal-result (terminal! handle :startup-failed))
+                  {:status :closed :phase :closed})
               (catch Throwable _
                 {:status :closing :phase :startup-rollback
                  :errors [{:type ::cleanup-operation-failed
