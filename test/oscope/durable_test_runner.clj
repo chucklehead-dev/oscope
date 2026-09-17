@@ -5,6 +5,7 @@
             [jdbc.chdb.native :as native]
             [oscope.durable-native-child-runner :as native-child]
             [oscope.durable-native-child-runner-test]
+            [oscope.durable-composition-assertions-test]
             [oscope.durable-fault-target-test]
             [oscope.durable-config-runtime-test]
             [oscope.durable-integration-test]
@@ -18,7 +19,8 @@
 
 (defn -main [& _]
   (let [qualified? (= :supported (:status (native/durable-capability)))
-        namespaces ['oscope.durable-config-runtime-test
+        namespaces ['oscope.durable-composition-assertions-test
+                            'oscope.durable-config-runtime-test
                             'oscope.durable-server-main-test
                             'oscope.embedded-test
                             'oscope.embedded-viewer-test
