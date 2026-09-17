@@ -166,7 +166,14 @@ still alive. Shutdown first attempts to mark readiness terminal. It reports
 publication succeeds. Sink failure returns bounded `:closing` /
 `:publishing-readiness`; repeat `stop!` retries publication without closing
 already retired resources again. An ambiguous lock-descriptor close failure
-is reported as incomplete and is not retried against a possibly reused FD.
+returns `:closing` / `:readiness-claim-release-unconfirmed`, with
+`:retryable? false` and the fixed `:oscope.readiness/claim-release-unconfirmed`
+error type. It is not a publication failure or confirmation that the claim
+remains held: the close may already have happened. Further calls keep this
+honest unresolved result and never close a possibly reused descriptor again.
+Terminate the owning process rather than trying to repair it by repeating stop.
+Publication callbacks may synchronously call stop, but cannot republish ready
+after terminal retirement begins. A nested stop cannot release the claim twice.
 
 Startup callback/file publication failure revokes request authority and rolls
 back acquired resources in order. Successful rollback rethrows the original
@@ -174,6 +181,8 @@ startup error. If rollback or terminal publication remains incomplete, the
 opt-in path instead throws a cause-free
 `:oscope.readiness/startup-cleanup-incomplete` error with a bounded operation
 and an opaque `:retry-stop!` capability in `ex-data`. The application must own
-and call that capability until it reports `{:status :closed :phase :closed}`,
-or terminate the owning process. Successful rollback steps are not repeated.
+and call that capability while cleanup remains retryable, until it reports
+`{:status :closed :phase :closed}`, or terminate the owning process. A result
+with `:retryable? false` requires process termination; it cannot safely converge
+through another close attempt. Successful rollback steps are not repeated.
 Do not serialize this ownership capability as configuration or diagnostics.
