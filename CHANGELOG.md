@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Keep the S3 woven compiler separate from the authenticated ordinary runtime
+  used by its fresh recovery reader. Recheck the reader binary digest before
+  fixture startup; retain all history, readback, timeout and downstream gates
+  (Refs #113).
+
 - Recover the MinIO Durable fixture through an independently reconstructed,
   bounded fresh-process snapshot reader. Freeze the writer's complete head and
   check the two startup barriers plus three logical signal batches explicitly;
