@@ -40,7 +40,7 @@
                 :context-id :oscope-durable-s3-integration
                 :private-values private-values
                 :expected-publication-kinds
-                [:checkpoint :wal :checkpoint :wal]})
+                [:checkpoint :checkpoint :wal :wal :checkpoint :wal]})
               [spans _durations] (telemetry/validate!
                                   exporter handle private-values)]
           (println "oscope Durable S3 woven history and telemetry validated"

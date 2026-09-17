@@ -13,9 +13,22 @@
    'oscope.embedded-durable-integration-test/dual-export-preserves-local-and-remote-trace-identity])
 
 (def ^:private nested-settled? (atom true))
+
+(defn known-native-subtree-settled?
+  "Final receipt evidence for the independently joined recovery-reader seam."
+  []
+  @nested-settled?)
 (def ^:private readers
   {'standalone 'oscope.durable-integration-test/assert-fresh-reader!
-   'embedded 'oscope.embedded-durable-integration-test/assert-fresh-reader!})
+   'embedded 'oscope.embedded-durable-integration-test/assert-fresh-reader!
+   's3 'oscope.durable-s3-integration-test/assert-fresh-reader!})
+
+(defn reader-index! [reader]
+  (case reader
+    :standalone 0
+    :embedded 1
+    :s3 2
+    (throw (ex-info "unknown native reader" {}))))
 
 (defn executable! []
   (let [path (System/getenv "JOLT_BIN")
@@ -96,7 +109,7 @@
   [reader root settled]
   (reset! settled false)
   (reset! nested-settled? false)
-  (let [index (case reader :standalone 0 :embedded 1)
+  (let [index (reader-index! reader)
         directory (str (java.nio.file.Files/createTempDirectory
                         "oscope-durable-reader-" (make-array java.nio.file.attribute.FileAttribute 0)))
         receipt (launch! (executable!) directory "reader" index
@@ -146,7 +159,7 @@
            (contains? readers (symbol (second args))))
       (let [reader (symbol (second args)) fixture (get readers reader)
             n (symbol (namespace fixture))
-            index (if (= reader 'standalone) 0 1)]
+            index (reader-index! (keyword (str reader)))]
         (require n)
         (println :durable-native-executed "reader" index)
         ((ns-resolve n (symbol (name fixture))) (java.io.File. (nth args 2)))

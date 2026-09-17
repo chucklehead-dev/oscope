@@ -10,5 +10,5 @@
   :allow-control-aspects true
   :aspects
   [{:resource "META-INF/jolt/aspects/packs/chdb-durable-4a0b821.edn"
-    :providers [jolt.aspect-packs.chdb-durable.faults/aspect-provider]}]
+    :providers [oscope.durable-fault-server-main/aspect-provider]}]
   :aspect-report "target/aspects.edn"}}

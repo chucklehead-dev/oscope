@@ -4,7 +4,7 @@
 
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"
-         :git/sha "32b4d5b14c7f3a936a9067578161e9978e90bf75"}
+         :git/sha "88a63fd90e0969635dda75fbb9fe5ba2264c09d8"}
         io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
@@ -87,6 +87,10 @@
 
   :test-durable
   {:extra-paths ["test"]
+   :extra-deps
+   {io.github.chucklehead-dev/jolt-aspect-packs
+    {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
+     :git/sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"}}
    :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :test-durable-dev
@@ -96,6 +100,10 @@
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:local/root "../jolt-otel-clickhouse"}}
    :extra-paths ["test"]
+   :extra-deps
+   {io.github.chucklehead-dev/jolt-aspect-packs
+    {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
+     :git/sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"}}
    :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :durable-server-dev

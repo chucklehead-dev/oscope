@@ -8,6 +8,7 @@
             [jdbc.core :as jdbc]
             [oscope.config :as config]
             [oscope.durable-config-runtime :as durable-config-runtime]
+            [oscope.durable-native-child-runner :as native-child]
             [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.server :as server]
             [teensyp.client :as client]))
@@ -113,19 +114,9 @@
                          "bucketCounts" ["1" "1"]
                          "explicitBounds" [5.0]}]}}]}]}]})
 
-(deftest standalone-server-recovers-through-reconstructed-s3-backend
-  (let [endpoint (System/getenv "OSCOPE_TEST_S3_ENDPOINT")
-        auth {:access-key "MINIOACCESS" :secret-key "MINIOSECRET"}
-        bucket-result
-        (s3-curl/request!
-         {:method :put :url (str endpoint "/oscope-durable")
-          :headers {}
-          :request-body {:bytes (byte-array 0) :byte-count 0}
-          :auth auth :region "us-east-1"
-          :connect-timeout-ms 5000 :timeout-ms 30000})
-        storage
-        {:type :durable-s3
-         :instance "s3-writer"
+(defn- storage [endpoint instance]
+  {:type :durable-s3
+         :instance instance
          :lease-ttl-ms 30000
          :checkpoint-every-batches 2
          :s3 {:endpoint endpoint
@@ -135,59 +126,120 @@
               :object-id "private-object-7f2c91"
               :credentials {:type :environment
                             :access-key-env "MINIO_ACCESS"
-                            :secret-key-env "MINIO_SECRET"}}}
-        credentials {"MINIO_ACCESS" (:access-key auth)
-                     "MINIO_SECRET" (:secret-key auth)}
-        configured (fn [storage]
-                     (config/resolve-config
-                      [[:file {:version 2
-                               :server {:port 0}
-                               :storage storage}]]))
-        options (durable-config-runtime/server-options
-                 (configured storage) credentials)]
+                            :secret-key-env "MINIO_SECRET"}}})
+
+(defn- options [endpoint instance]
+  ;; Public synthetic MinIO credentials, resolved afresh in each process.
+  (durable-config-runtime/server-options
+   (config/resolve-config
+    [[:file {:version 2 :server {:port 0}
+             :storage (storage endpoint instance)}]])
+   {"MINIO_ACCESS" "MINIOACCESS" "MINIO_SECRET" "MINIOSECRET"}))
+
+(defn- object-store [db-spec]
+  (backend/object-backend (:namespace-backend db-spec) (:object-id db-spec)))
+
+(defn- sha256 [text]
+  (apply str
+         (map #(format "%02x" (bit-and % 255))
+              (.digest (java.security.MessageDigest/getInstance "SHA-256")
+                       (.getBytes text "UTF-8")))))
+
+(defn checked-seal! [seal]
+  ;; Freeze complete wire head identity, not only whichever seq was observed.
+  (let [wire (get seal "head-json")]
+    (when-not (and (= 1 (get seal "version"))
+                   (string? (get seal "endpoint"))
+                   (string? wire) (<= (count wire) 65536)
+                   (= (sha256 wire) (get seal "head-sha256")))
+      (throw (ex-info "invalid public S3 reader seal" {})))
+    (let [head (json/read-str wire)]
+      (when-not (and (nil? (get-in head ["lease" "owner"]))
+                     (= 6 (get-in head ["manifest" "seq"]))
+                     (some? (get-in head ["manifest" "base"]))
+                     (= 1 (count (get-in head ["manifest" "wal"]))))
+        (throw (ex-info "unexpected sealed S3 publication cadence" {})))
+      head)))
+
+(defn assert-fresh-reader! [seal-file]
+  ;; The child has never owned the writer's native lifetime or backend handle.
+  (let [seal (json/read-str (slurp seal-file))
+        expected (checked-seal! seal)
+        db-spec (:db-spec (options (get seal "endpoint") "s3-reader"))
+        head (:head (control/read-head! (object-store db-spec)))]
+    (is (= expected head) "reader sees the writer's complete frozen head")
+    ;; A mismatch must prevent readback, not merely increment a test counter.
+    (when-not (= expected head)
+      (throw (ex-info "S3 head changed before independent readback" {})))
+    (is (nil? (get-in head ["lease" "owner"])))
+    (is (= 6 (get-in head ["manifest" "seq"])))
+    (is (some? (get-in head ["manifest" "base"])))
+    (is (= 1 (count (get-in head ["manifest" "wal"]))))
+    (with-open [reader
+                (jdbc/connection
+                 (jdbc.chdb.durable/snapshot-dbspec
+                  {:namespace-backend (:namespace-backend db-spec)
+                   :object-id (:object-id db-spec)}))]
+      (doseq [table ["otel_traces" "otel_logs" "otel_metrics_gauge"
+                     "otel_metrics_sum" "otel_metrics_histogram"]]
+        (is (= 1 (:n (jdbc/fetch-one
+                      reader (str "select count() as n from " table))))))
+      (doseq [[signal kind]
+              [[:spans nil] [:logs nil] [:metrics :gauge]
+               [:metrics :sum] [:metrics :histogram]]]
+        (let [selection {:signal signal :metric-kind kind
+                         :start-unix-nano 0 :end-unix-nano 1
+                         :max-rows 10 :max-bytes (* 4 1024 1024)}
+              parquet (raw-export-chdb/execute!
+                       reader (assoc selection :format :parquet))
+              arrow (raw-export-chdb/execute!
+                     reader (assoc selection :format :arrow))]
+          (is (= [80 65 82 49] (unsigned-prefix (:bytes parquet) 4)))
+          (is (= [65 82 82 79 87 49] (unsigned-prefix (:bytes arrow) 6))))))))
+
+(deftest standalone-server-recovers-through-reconstructed-s3-backend
+  (let [endpoint (System/getenv "OSCOPE_TEST_S3_ENDPOINT")
+        bucket-result
+        (s3-curl/request!
+         {:method :put :url (str endpoint "/oscope-durable")
+          :headers {}
+          :request-body {:bytes (byte-array 0) :byte-count 0}
+          :auth {:access-key "MINIOACCESS" :secret-key "MINIOSECRET"}
+          :region "us-east-1" :connect-timeout-ms 5000 :timeout-ms 30000})
+        writer-options (options endpoint "s3-writer")
+        store (object-store (:db-spec writer-options))]
     (is (= 200 (:status bucket-result)))
-    (let [lifecycle (server/start! options)]
+    (let [lifecycle (server/start! writer-options)]
       (try
         (is (pos? (:port lifecycle)))
+        ;; Exporter and server each checkpoint startup; empty flushes do not
+        ;; advance seq. Five physical tables are three logical export batches.
+        (is (= 2 (get-in (control/read-head! store) [:head "manifest" "seq"])))
         (let [now (* (System/currentTimeMillis) 1000000)]
-          (doseq [[path payload]
-                  [["/v1/traces" (trace-wire now)]
-                   ["/v1/logs" (log-wire now)]
-                   ["/v1/metrics" (metric-wire now)]]]
-            (is (= 200 (post-json! (:port lifecycle) path payload)))))
+          (doseq [[path payload expected-seq]
+                  [["/v1/traces" (trace-wire now) 3]
+                   ["/v1/logs" (log-wire now) 5]
+                   ["/v1/metrics" (metric-wire now) 6]]]
+            (is (= 200 (post-json! (:port lifecycle) path payload)))
+            (is (= expected-seq
+                   (get-in (control/read-head! store) [:head "manifest" "seq"])))))
         (finally
           (is (= :closed (:status (server/stop! lifecycle)))))))
-    (let [db-spec (:db-spec (durable-config-runtime/server-options
-                             (configured (assoc storage
-                                                :instance "s3-reader"))
-                             credentials))
-          store (backend/object-backend (:namespace-backend db-spec)
-                                        (:object-id db-spec))
-          head (:head (control/read-head! store))]
+    (let [head (:head (control/read-head! store))
+          wire (json/write-str head)
+          seal-file (java.io.File/createTempFile "oscope-s3-reader-seal-" ".json")
+          reader-settled (atom false)
+          reader-qualified? (atom false)]
       (is (nil? (get-in head ["lease" "owner"])))
-      (is (= 4 (get-in head ["manifest" "seq"])))
+      (is (= 6 (get-in head ["manifest" "seq"])))
       (is (some? (get-in head ["manifest" "base"])))
       (is (= 1 (count (get-in head ["manifest" "wal"]))))
-      (with-open [reader
-                  (jdbc/connection
-                   (jdbc.chdb.durable/snapshot-dbspec
-                    {:namespace-backend (:namespace-backend db-spec)
-                     :object-id (:object-id db-spec)}))]
-        (doseq [table ["otel_traces" "otel_logs" "otel_metrics_gauge"
-                       "otel_metrics_sum" "otel_metrics_histogram"]]
-          (is (= 1 (:n (jdbc/fetch-one
-                        reader (str "select count() as n from " table))))))
-        (doseq [[signal kind]
-                [[:spans nil] [:logs nil] [:metrics :gauge]
-                 [:metrics :sum] [:metrics :histogram]]]
-          (let [selection {:signal signal :metric-kind kind
-                           :start-unix-nano 0 :end-unix-nano 1
-                           :max-rows 10 :max-bytes (* 4 1024 1024)}
-                parquet (raw-export-chdb/execute!
-                         reader (assoc selection :format :parquet))
-                arrow (raw-export-chdb/execute!
-                       reader (assoc selection :format :arrow))]
-            (is (= [80 65 82 49]
-                   (unsigned-prefix (:bytes parquet) 4)))
-            (is (= [65 82 82 79 87 49]
-                   (unsigned-prefix (:bytes arrow) 6)))))))))
+      (spit seal-file (json/write-str {"version" 1 "endpoint" endpoint
+                                      "head-json" wire "head-sha256" (sha256 wire)}))
+      (try
+        (native-child/run-reader! :s3 seal-file reader-settled)
+        (reset! reader-qualified? true)
+        (finally
+          ;; Retain semantic failure evidence even after physical settlement.
+          (when (and @reader-qualified? @reader-settled)
+            (.delete seal-file)))))))

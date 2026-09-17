@@ -37,6 +37,19 @@ test -x "$JOLT_ASPECT_JOLT"
 test -f "$JOLT_CHDB_LIB"
 test -f "$aspect_repo/test/assert-effect-report.sh"
 
+# Writer children execute the freshly built SAME woven image, not ordinary
+# Jolt. Recovery readers use the separately authenticated positive artifact.
+reader_jolt=${OSCOPE_DURABLE_READER_JOLT:-$(command -v jolt)}
+case "$reader_jolt" in
+  /*) ;;
+  *) echo "qualified reader executable must be absolute" >&2; exit 2 ;;
+esac
+test -f "$reader_jolt" && test -x "$reader_jolt" && test ! -L "$reader_jolt"
+test "$(realpath "$reader_jolt")" = "$reader_jolt"
+printf '%s  %s\n' \
+  31cff7ea89a652bd99848cf15686eb576d90d9ac3962ac07701fb6005e6eb458 \
+  "$reader_jolt" | sha256sum -c -
+
 if [ -n "${JOLT_BIN:-}" ]; then
   jolt_command=("$JOLT_BIN")
 else
@@ -46,10 +59,34 @@ fi
 
 (
   cd "$scenario"
+  # Maintained PURE contract gate: true fixture Vars and synthetic process
+  # receipts only. This must not spawn a native lifetime or woven writer.
+  "${jolt_command[@]}" -Srepro -e '
+    (require (quote db.jdbc))
+    (require (quote oscope.durable-aspect-child-runner-test))
+    (let [n (quote oscope.durable-aspect-child-runner-test)
+          expected #{(quote woven-native-inventory-retains-all-three-true-vars)
+                     (quote woven-final-receipts-require-real-history-and-nonzero-counts)
+                     (quote woven-orchestration-uses-the-same-image-and-stops-unconfirmed-ownership)}
+          actual (set (for [[name v] (ns-publics n) :when (:test (meta v))] name))]
+      (assert (= expected actual))
+      (let [result (clojure.test/run-tests n)]
+        ;; run-tests also returns :type :summary; counts are the contract.
+        (println :durable-woven-control-summary (select-keys result [:type]))
+        (assert (= {:test 3 :pass 28 :fail 0 :error 0}
+                   (select-keys result [:test :pass :fail :error])))))'
   "${jolt_command[@]}" build \
     -m oscope.durable-aspect-test-runner \
     -o target/oscope-durable-aspect-test
-  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" "$binary"
+)
+
+(
+  # Native reader commands need the root's maintained :test-durable alias;
+  # aliases in a local/root dependency are not inherited by scenario deps.
+  cd "$repo_root"
+  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" JOLT_BIN="$reader_jolt" \
+    OSCOPE_DURABLE_WOVEN_EXECUTABLE="$binary" \
+    timeout --kill-after=5s 210s "$binary"
 )
 
 (

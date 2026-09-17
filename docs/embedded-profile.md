@@ -19,17 +19,20 @@ jolt-http or jolt-otel-viewer, start a listener, or provide a second lifecycle
 implementation. A consumer's direct dependency selections still have normal
 precedence; this profile is not an override mechanism.
 
-The profile currently pins SDK checkpoint `32b4d5b1` from
-[casselc/otel PR #41](https://github.com/casselc/otel/pull/41), which is still
-a draft, not a released SDK revision. Its public shutdown status separates
+The profile currently pins SDK checkpoint `88a63fd9` from
+[casselc/otel PR #41](https://github.com/casselc/otel/pull/41), now merged into
+the SDK's main branch. Its public shutdown status separates
 delivery results from ownership settlement. Native cleanup requires confirmed
 SDK **and** exporter settlement; a failed delivery result is retained even if
 cleanup can safely complete. Unknown or still-active owners leave `stop!`
 in `:closing` / `:open`. Repeating `stop!` refreshes ownership evidence without
 replaying the cached SDK shutdown action. Custom settlement witnesses are
 trusted bounded, nonwaiting contracts, not sandboxed implementations.
-Native fixture qualification on this new SDK pin is still pending; earlier
-native evidence from the previous SDK pin does not qualify this revision.
+The prepared Oscope integration and this SDK pin passed the bounded Local Durable suite:
+101 pure tests / 1,186 assertions and six isolated native fixtures / 74
+assertions, with joined fresh readers and zero failures or errors. This is
+local integration evidence, not a universal native-persistence guarantee.
+Final consumer review and current-head hosted/S3 qualification remain pending.
 
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
 profile and asserts the exact dependency revisions. Its application coordinate
