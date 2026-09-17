@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Align standalone and minimal embedded dependency pins on the finite-input
+  OTel SDK and the ordinary ClickHouse exporter/provider stack, using the same
+  JSON implementation. Keep the later Durable checkpoint-retry candidate out
+  of this dependency update.
+
 - Load the JDBC shim before standalone typed socket fixtures compile, and
   report startup failures using fixed phase/type labels without exception
   payloads or false execution receipts. Keep strict counts and child settlement
