@@ -2,8 +2,13 @@
 
 ## Unreleased
 
-- Keep the ordinary application driver pin distinct from the older woven
-  qualification fixture in the runtime dependency regression test.
+- Align all native integration qualifiers with chDB 26.7.3 and authenticate one
+  immutable qualified runtime for positive Durable, recovery and SDK children.
+  Keep the explicit woven compiler and strict timestamp/provenance guards;
+  no branch/latest compiler fallback (Refs #113).
+
+- Track the application and woven qualification driver coordinates separately
+  in the runtime dependency regression test, even when their revisions converge.
   Explicitly select Durable export for standalone Durable writer dbspecs,
   rejecting missing barrier policies and reader roles before acquisition,
   retaining both the exporter's batch flush and the server's request barrier
