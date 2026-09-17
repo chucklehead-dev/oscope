@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Test partial two-component SDK settlement and fresh public-proof cleanup
+  ordering using a real exporter-owned background user. A causal aggregate
+  permission control checks the same consumer oracle; native owners are inert.
+
 - Gate embedded native cleanup on confirmed SDK and exporter settlement, not
   successful delivery alone. Cache shutdown delivery results once and refresh
   public ownership evidence without replaying shutdown (Refs #114). Modeling
