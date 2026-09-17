@@ -13,6 +13,11 @@
    'oscope.embedded-durable-integration-test/dual-export-preserves-local-and-remote-trace-identity])
 
 (def ^:private nested-settled? (atom true))
+
+(defn known-native-subtree-settled?
+  "Final receipt evidence for the independently joined recovery-reader seam."
+  []
+  @nested-settled?)
 (def ^:private readers
   {'standalone 'oscope.durable-integration-test/assert-fresh-reader!
    'embedded 'oscope.embedded-durable-integration-test/assert-fresh-reader!})

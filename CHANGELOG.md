@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Run Local Durable woven fixtures in separate executions of the same instrumented binary, retaining strict history/telemetry checks and joined fresh-reader recovery assertions (#113). Missing final receipts fail closed; positive readers use the authenticated runtime from the root application graph.
+
 - Run native Durable integration fixtures and their recovery readers in fresh,
   bounded processes. Require nonzero assertion receipts and confirmed child
   settlement before another native generation or store cleanup (Refs #113).
