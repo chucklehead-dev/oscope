@@ -1,9 +1,11 @@
 (ns oscope.durable-native-child-runner-test
-  (:require [clojure.test :as test :refer [deftest is]]
+  (:require [clojure.data.json :as json]
+            [clojure.test :as test :refer [deftest is]]
             [jdbc.chdb.durable.control :as control]
             [jdbc.chdb.durable.time-domain :as time-domain]
             [oscope.child-support :as child]
             [oscope.durable-integration-test]
+            [oscope.durable-s3-integration-test :as s3-fixture]
             [oscope.durable-native-child-runner :as runner]))
 
 (deftest lease-renewal-observer-preserves-v1-fractional-seconds
@@ -37,6 +39,69 @@
   (str ":durable-native-executed " kind " " index "\n"
        ":durable-native-receipt " kind " " index " " tests " " passes " "
        failures " " errors " " settled "\n"))
+
+(deftest s3-reader-dispatch-and-sealed-head-controls
+  ;; PURE: no backend, native connection or child process is created.
+  (is (= [0 1 2] (mapv runner/reader-index! [:standalone :embedded :s3])))
+  (doseq [unknown [nil :other 's3 "s3" 2]]
+    (is (try (runner/reader-index! unknown) false (catch Throwable _ true))))
+  (let [head {"lease" {"owner" nil}
+              "manifest" {"seq" 6 "base" {"key" "checkpoint-public"}
+                          "wal" [{"key" "wal-public"}]}}
+        hash! (ns-resolve 'oscope.durable-s3-integration-test 'sha256)
+        seal (fn [value]
+               (let [wire (json/write-str value)]
+                 {"version" 1 "endpoint" "http://127.0.0.1:1"
+                  "head-json" wire "head-sha256" (hash! wire)}))
+        good (seal head)
+        rejected? #(try (s3-fixture/checked-seal! %) false
+                        (catch Throwable _ true))]
+    (is (= head (s3-fixture/checked-seal! good)))
+    (doseq [bad [(assoc good "head-sha256" (apply str (repeat 64 "0")))
+                 (assoc good "head-json" (str (get good "head-json") " "))
+                 (assoc good "version" 2)
+                 (assoc good "endpoint" nil)
+                 (seal (assoc-in head ["manifest" "seq"] 4))
+                 (seal (assoc-in head ["lease" "owner"] "writer"))
+                 (seal (assoc-in head ["manifest" "base"] nil))
+                 (seal (assoc-in head ["manifest" "wal"] []))]]
+      (is (rejected? bad))))
+  (let [good (receipt "reader" 2 0 20 0 0 1)]
+    (is (:ok? (runner/checked-receipt {:exit 0} good "reader" 2)))
+    (doseq [bad ["" (str good good)
+                 (receipt "reader" 1 0 20 0 0 1)
+                 (receipt "fixture" 2 1 20 0 0 1)
+                 (receipt "reader" 2 0 20 0 0 0)]]
+      (is (not (:ok? (runner/checked-receipt {:exit 0} bad "reader" 2)))))
+    (is (not (:ok? (runner/checked-receipt {:exit 1} good "reader" 2))))))
+
+(deftest s3-reader-handoff-is-bounded-and-source-coupled
+  (let [root (java.io.File. "/public/sealed-head.json")
+        settled (atom false)
+        calls (atom [])]
+    (with-redefs [runner/executable! (fn [] "/approved/root-jolt")
+                  test/counters (atom {:test 0 :pass 0 :fail 0 :error 0})
+                  child/run! (fn [command options bounds]
+                               (swap! calls conj [command bounds])
+                               (spit (:out options) (receipt "reader" 2 0 20 0 0 1))
+                               {:exit 0})]
+      (binding [test/*report-counters* nil]
+        (runner/run-reader! :s3 root settled)))
+    (is (true? @settled))
+    (is (= [["/usr/bin/timeout" "--kill-after=5s" "30s"
+             "/approved/root-jolt" "-Srepro" "-A:test-durable" "-m"
+             "oscope.durable-native-child-runner" "--reader" "s3"
+             "/public/sealed-head.json"]
+            {:timeout-ms 35000 :settlement-ms 5000}]
+           (first @calls)))
+    (is (= 1 (count @calls)))
+    (with-redefs [runner/executable! (fn [] "/approved/root-jolt")
+                  child/run! (fn [_ options _]
+                               (spit (:out options) ":durable-native-executed reader 2\n")
+                               {:exit 143})]
+      (is (try (runner/run-reader! :s3 root settled) false
+               (catch Throwable _ true))))
+    (is (false? @settled))))
 
 (deftest strict-native-receipts-reject-missing-extra-empty-and-wrong-counts
   (let [result {:exit 0}

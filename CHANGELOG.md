@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Recover the MinIO Durable fixture through an independently reconstructed,
+  bounded fresh-process snapshot reader. Freeze the writer's complete head and
+  check the two startup barriers plus three logical signal batches explicitly;
+  retain exact publication cadence and all table/format readback assertions.
+  This changes test qualification, not the persistence protocol or throughput.
+
 - Run Local Durable woven fixtures in separate executions of the same instrumented binary, retaining strict history/telemetry checks and joined fresh-reader recovery assertions (#113). Missing final receipts fail closed; positive readers use the authenticated runtime from the root application graph.
 
 - Run native Durable integration fixtures and their recovery readers in fresh,
