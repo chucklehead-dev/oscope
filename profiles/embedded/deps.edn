@@ -6,7 +6,7 @@
  ;; Server/viewer dependencies intentionally remain in the root coordinate.
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"
-         :git/sha "0e701ceff526d159884fadae98dcca61272ef6e0"}
+         :git/sha "32b4d5b14c7f3a936a9067578161e9978e90bf75"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
          :git/sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"}

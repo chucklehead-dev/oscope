@@ -19,6 +19,18 @@ jolt-http or jolt-otel-viewer, start a listener, or provide a second lifecycle
 implementation. A consumer's direct dependency selections still have normal
 precedence; this profile is not an override mechanism.
 
+The profile currently pins SDK checkpoint `32b4d5b1` from
+[casselc/otel PR #41](https://github.com/casselc/otel/pull/41), which is still
+a draft, not a released SDK revision. Its public shutdown status separates
+delivery results from ownership settlement. Native cleanup requires confirmed
+SDK **and** exporter settlement; a failed delivery result is retained even if
+cleanup can safely complete. Unknown or still-active owners leave `stop!`
+in `:closing` / `:open`. Repeating `stop!` refreshes ownership evidence without
+replaying the cached SDK shutdown action. Custom settlement witnesses are
+trusted bounded, nonwaiting contracts, not sandboxed implementations.
+Native fixture qualification on this new SDK pin is still pending; earlier
+native evidence from the previous SDK pin does not qualify this revision.
+
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
 profile and asserts the exact dependency revisions. Its application coordinate
 selects converged `casselc/db` `96324713` under the canonical `jolt-lang/db`
@@ -32,7 +44,8 @@ canonical HTTP provider still returns a blocked request promptly when its
 thread is interrupted. The status snapshot remains bounded and redacted while
 both pipelines are live. Shutdown retires the query first, cancels and records
 the failed remote delivery without replay, shuts down the SDK terminal action
-once, retires its Oscope source, checkpoints and closes Durable, and returns
+once, and retires its Oscope source, checkpoints and closes Durable only after
+SDK and exporter settlement is confirmed. It then returns
 before the fixture closes its outer SQLite connection. Repeated query and
 embedded stop calls prove idempotence; the parent test removes chDB scratch
 only after the anchored native child process exits.

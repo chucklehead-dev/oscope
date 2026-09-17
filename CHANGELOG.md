@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Gate embedded native cleanup on confirmed SDK and exporter settlement, not
+  successful delivery alone. Cache shutdown delivery results once and refresh
+  public ownership evidence without replaying shutdown (Refs #114). Modeling
+  and native integration qualification remain pending.
+
 - Align all native integration qualifiers with chDB 26.7.3 and authenticate one
   immutable qualified runtime for positive Durable, recovery and SDK children.
   Keep the explicit woven compiler and strict timestamp/provenance guards;
