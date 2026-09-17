@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Target acknowledgement faults at the first nonempty WAL commit, not a
+  startup commit ordinal. Freeze the pre-request head and preserve exact
+  before/after manifest and fresh-readback checks, retaining private evidence
+  when qualification fails (Refs #113, #116).
+
 - Keep the S3 woven compiler separate from the authenticated ordinary runtime
   used by its fresh recovery reader. Recheck the reader binary digest before
   fixture startup; retain all history, readback, timeout and downstream gates
