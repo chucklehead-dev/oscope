@@ -276,7 +276,7 @@
             (server/stop! lifecycle)))
         (let [head (:head (control/read-head! store))]
           (is (nil? (get-in head ["lease" "owner"])))
-          (is (= 4 (get-in head ["manifest" "seq"])))
+          (is (= 5 (get-in head ["manifest" "seq"])))
           (is (some? (get-in head ["manifest" "base"])))
           (is (= 3 (count (get-in head ["manifest" "wal"]))))
           ;; Schema migration history contains now64 and is intentionally

@@ -4,7 +4,9 @@
             [clojure.test :refer [deftest is testing]]))
 
 (def ^:private runtime-floor "0.8.6")
-(def ^:private durable-sha
+(def ^:private ordinary-driver-sha
+  "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
+(def ^:private woven-qualification-driver-sha
   "dbc2db22130c7e783739c79bc24691dcbba21906")
 (def ^:private aspect-sha
   "3773a67801bdcbd63c6484f95fa07a4b8afddb72")
@@ -42,13 +44,13 @@
     (is (str/includes? s3-workflow ".jolt-cache-v0.8.6"))
     (is (str/includes? s3-workflow ".jolt-gitlibs-v0.8.6"))))
 
-(deftest durable-revisions-remain-at-the-prior-qualified-boundary
+(deftest ordinary-and-woven-driver-revisions-remain-explicit
   (let [deps (edn/read-string (slurp "deps.edn"))
         s3-workflow (slurp ".github/workflows/durable-s3-e2e.yml")]
-    (is (= durable-sha
+    (is (= ordinary-driver-sha
            (get-in deps [:deps 'io.github.chucklehead-dev/jolt-chdb
                          :git/sha])))
-    (is (str/includes? s3-workflow durable-sha))
+    (is (str/includes? s3-workflow woven-qualification-driver-sha))
     (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes? s3-workflow aspect-compiler-sha))))
 

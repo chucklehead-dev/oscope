@@ -210,6 +210,74 @@
     (is (not-any? #(and (string? %) (str/includes? % canary)) values))
     (is (not (str/includes? (pr-str result) canary)))))
 
+(deftest standalone-rejects-unqualified-durable-mode-before-acquisition
+  (let [policy {:checkpoint! (fn [_] {:status :committed})
+                :flush! (fn [_] {:status :empty})}]
+    (doseq [[options expected-type]
+            (concat
+             (map (fn [invalid]
+                    [{:db-spec {:vendor "chdb-durable"}
+                      :durability invalid} :oscope.server/invalid-durability])
+                  [nil false {} [] {:flush! (fn [_])}
+                   {:checkpoint! 42 :flush! (fn [_])}])
+             (map (fn [read-only]
+                    [{:db-spec {:vendor "chdb-durable" :read-only? read-only}
+                      :durability policy} :oscope.server/durable-writer-required])
+                  [true 0 "reader"]))]
+      (let [acquisitions (atom [])
+            acquire (fn [phase]
+                      (fn [& _]
+                        (swap! acquisitions conj phase)
+                        (throw (ex-info "unexpected acquisition" {}))))]
+        (with-redefs [jdbc/connection (acquire :connection)
+                      typed-schema/install! (acquire :typed-ddl)
+                      http-executor/start! (acquire :workers)
+                      chdb-export/exporter (acquire :exporter)
+                      live/open! (acquire :source)
+                      http/run-server (acquire :ingress)]
+          (let [error (try (server/start! (assoc options :port 0))
+                           (catch Throwable error error))]
+            (is (= expected-type (:type (ex-data error))))
+            (is (nil? (ex-cause error)))
+            (is (empty? @acquisitions))))))))
+
+(deftest standalone-selects-exporter-mode-from-canonical-dbspec
+  (doseq [[db-spec durable?]
+          [[{:vendor "chdb-durable"} true]
+           [{:vendor "chdb"} false]
+           ["chdb::memory:" false]]]
+    (let [events (atom [])
+          seen (atom [])
+          conn (reify java.io.Closeable (close [_]))
+          exporter (fake-exporter events)]
+      (with-redefs [jdbc/connection (constantly conn)
+                    chdb-export/exporter
+                    (fn [options] (swap! seen conj options) exporter)
+                    live/open! (constantly {:close! (fn [])})
+                    otlp/handler (fn [& _] (constantly {:status 200}))
+                    web/handler (fn [& _] (constantly {:status 200}))
+                    http/run-server (fn [& _]
+                                      (swap! events conj :ingress)
+                                      {:port 9190})
+                    http/stop-server (fn [_])]
+        (let [lifecycle
+              (server/start!
+               {:port 0 :db-spec db-spec
+                ;; Custom persistence callbacks alone do not identify a
+                ;; Durable JDBC connection: ordinary modes keep their contract.
+                :durability {:checkpoint! (fn [actual]
+                                            (is (identical? conn actual))
+                                            (swap! events conj :checkpoint)
+                                            {:status :committed})
+                             :flush! (fn [_] {:status :empty})}})]
+          (try
+            (is (= 1 (count @seen)))
+            (is (identical? conn (:connection (first @seen))))
+            (is (= durable? (true? (:durable? (first @seen)))))
+            (is (nil? (:persistence-barrier (first @seen))))
+            (is (= [:checkpoint :ingress] @events))
+            (finally (server/stop! lifecycle))))))))
+
 (deftest standalone-shares-one-connection-and-retires-in-order
   (let [events (atom [])
         conn (reify java.io.Closeable

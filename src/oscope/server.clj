@@ -26,6 +26,9 @@
 (def default-http-workers http-app/default-http-workers)
 (def default-http-queue-capacity http-app/default-http-queue-capacity)
 
+(defn- durable-dbspec? [db-spec]
+  (and (map? db-spec) (= "chdb-durable" (:vendor db-spec))))
+
 (defn- validate-http-executor-options!
   [http-workers http-queue-capacity]
   (when-not (and (integer? http-workers) (pos? http-workers))
@@ -157,7 +160,9 @@
   `:port` may be zero for an ephemeral test port. jolt-http currently binds
   loopback at the transport layer, so `:host` deliberately accepts only
   127.0.0.1. Optional `:typed-schema` is a closed operator-supplied approved
-  manifest, registry backend, and optional event sink; Oscope binds all
+  manifest, registry backend, and optional event sink. A canonical Durable
+  dbspec requires explicit valid `:durability` callbacks and a writer role;
+  reader dbspecs are rejected before acquisition. Oscope binds all
   database effects to its owned connection. The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary
   on each call. `:durability-observation` is an atom containing nil or the last
@@ -184,7 +189,12 @@
      (throw (ex-info "oscope durability diagnostic sink must be a function"
                      {:oscope.server/error true :type ::invalid-durability-diagnostic})))
    (typed-schema/validate-options typed-schema)
-   (when (and durability
+   ;; The receiver always writes. Reject readers before acquisition or typed
+   ;; schema effects; truthy read-only matches the prior qualified adapter too.
+   (when (and (durable-dbspec? db-spec) (:read-only? db-spec))
+     (throw (ex-info "oscope standalone Durable storage requires a writer"
+                     {:oscope.server/error true :type ::durable-writer-required})))
+   (when (and (or durability (durable-dbspec? db-spec))
               (not (and (map? durability)
                         (ifn? (:checkpoint! durability))
                         (ifn? (:flush! durability))
@@ -222,7 +232,13 @@
               ;; The no-manifest path remains unchanged: create-schema? is
               ;; absent and the exporter applies its default base migrations.
               (typed-schema/exporter-options
-               {:connection conn :signals #{:spans :logs :metrics}}
+               ;; Durable's public JDBC constructor requires a map with this
+               ;; exact vendor (and no URI prefix). Its exporter verifies the
+               ;; opened connection is a writer before schema/data effects.
+               ;; Persistence callbacks alone must not classify ordinary JDBC.
+               (cond-> {:connection conn :signals #{:spans :logs :metrics}}
+                 (durable-dbspec? db-spec)
+                 (assoc :durable? true))
                schema-context))
              _ (reset! exporter* exporter)
              ;; Durable mode checkpoints base and typed schema changes before

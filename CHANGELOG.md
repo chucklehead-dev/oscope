@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Keep the ordinary application driver pin distinct from the older woven
+  qualification fixture in the runtime dependency regression test.
+  Explicitly select Durable export for standalone Durable writer dbspecs,
+  rejecting missing barrier policies and reader roles before acquisition,
+  retaining both the exporter's batch flush and the server's request barrier
+  (Refs #113).
+
 - Pin the minimal embedded application fixture's JSON dependency explicitly,
   so its database dependency cannot select an older revision than the profile
   (Refs #111).
