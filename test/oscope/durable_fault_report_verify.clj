@@ -29,7 +29,7 @@
       (when-not (and (= entry (get-in aspect [:match :entry]))
                      (= 1 (count (:sites aspect)))
                      (= 1 (count (:consumers aspect)))
-                     (= 'jolt.aspect-packs.chdb-durable.faults/aspect-provider
+                     (= 'oscope.durable-fault-server-main/aspect-provider
                         (:provider consumer))
                      (= :control-v1 (:contract consumer)))
         (throw (ex-info "Durable fault join point was not woven exactly once"

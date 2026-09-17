@@ -36,6 +36,10 @@
                               :uri "/oscope/telemetry/refresh"})
             live (handler {:request-method :get :uri "/oscope/telemetry/live.js"})]
         (is (= 200 (:status page)))
+        (is (str/includes? (:body page) "class=\"otel-page oscope-workbench-page\""))
+        (is (str/includes? (:body page) ".oscope-workbench-page .otel-span-meta div"))
+        (is (not (str/includes? (:body refresh) "oscope-workbench-page"))
+            "refresh fragments must not opt arbitrary hosts into full-page styles")
         (is (str/includes? (:body page) "Telemetry workbench"))
         (is (str/includes? (:body page) "Traces &amp; correlated logs"))
         (is (str/includes? (:body page) "Logs &amp; metrics"))

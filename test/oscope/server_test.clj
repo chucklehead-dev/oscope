@@ -4,6 +4,7 @@
             [db.jdbc]
             [jdbc.core :as jdbc]
             [jolt.http.server :as http]
+            [oscope.error :as error]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
@@ -17,9 +18,38 @@
             [otel.sdk.export :as export]
             [otel.sdk.logs :as logs]))
 
+(deftest invalid-typed-envelope-is-rejected-before-standalone-acquisition
+  (let [acquisitions (atom [])
+        acquire (fn [phase]
+                  (fn [& _]
+                    (swap! acquisitions conj phase)
+                    (throw (ex-info "unexpected standalone acquisition" {}))))]
+    (with-redefs [jdbc/connection (acquire :connection)
+                  http-executor/start! (acquire :http-workers)
+                  chdb-export/exporter (acquire :exporter)
+                  live/open! (acquire :source)
+                  http/run-server (acquire :listener)
+                  typed-schema/install! (acquire :schema)]
+      (doseq [invalid [false true 0 {} [] "not-an-envelope" ::not-an-envelope
+                       {:approved-manifest {:secret "private-envelope-marker"}
+                        :registry-backend ::registry
+                        :unexpected "private-envelope-marker"}]]
+        (let [error (try (server/start! {:port 0 :db-spec ::database :typed-schema invalid})
+                         (catch Throwable error error))]
+          (is (= "oscope typed schema requires a closed startup envelope" (ex-message error)))
+          (is (= {:oscope.typed-schema/error true
+                  :type :oscope.typed-schema/invalid-options} (ex-data error)))
+          (is (nil? (ex-cause error)))
+          (is (not (str/includes? (pr-str [(ex-message error) (ex-data error)])
+                                  "private-envelope-marker")))))
+      (is (empty? @acquisitions)))))
+
 (deftest storage-documentation-pins-the-current-recovery-boundary
   (let [readme (str/replace (slurp "README.md") #"\s+" " ")
-        durable-sha "dbc2db22130c7e783739c79bc24691dcbba21906"
+        ;; README retains the historical qualification receipt; live CI uses
+        ;; the current driver/native qualification coordinate independently.
+        historical-durable-sha "dbc2db22130c7e783739c79bc24691dcbba21906"
+        live-driver-sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"
         aspect-sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"
         compiler-sha "f00bc93bdd8274b14087b74272aadeffb60e0447"
         compiler-version "jolt v0.8.6-5-gf00bc93b"
@@ -43,9 +73,9 @@
     (is (str/includes?
          readme
          "Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend."))
-    (is (str/includes? readme durable-sha))
-    (is (str/includes? s3-workflow durable-sha))
-    (is (str/includes? aws-workflow durable-sha))
+    (is (str/includes? readme historical-durable-sha))
+    (is (str/includes? s3-workflow live-driver-sha))
+    (is (str/includes? aws-workflow live-driver-sha))
     (is (str/includes? readme aspect-sha))
     (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes? readme compiler-sha))
@@ -182,6 +212,74 @@
     (is (not-any? #(instance? Throwable %) values))
     (is (not-any? #(and (string? %) (str/includes? % canary)) values))
     (is (not (str/includes? (pr-str result) canary)))))
+
+(deftest standalone-rejects-unqualified-durable-mode-before-acquisition
+  (let [policy {:checkpoint! (fn [_] {:status :committed})
+                :flush! (fn [_] {:status :empty})}]
+    (doseq [[options expected-type]
+            (concat
+             (map (fn [invalid]
+                    [{:db-spec {:vendor "chdb-durable"}
+                      :durability invalid} :oscope.server/invalid-durability])
+                  [nil false {} [] {:flush! (fn [_])}
+                   {:checkpoint! 42 :flush! (fn [_])}])
+             (map (fn [read-only]
+                    [{:db-spec {:vendor "chdb-durable" :read-only? read-only}
+                      :durability policy} :oscope.server/durable-writer-required])
+                  [true 0 "reader"]))]
+      (let [acquisitions (atom [])
+            acquire (fn [phase]
+                      (fn [& _]
+                        (swap! acquisitions conj phase)
+                        (throw (ex-info "unexpected acquisition" {}))))]
+        (with-redefs [jdbc/connection (acquire :connection)
+                      typed-schema/install! (acquire :typed-ddl)
+                      http-executor/start! (acquire :workers)
+                      chdb-export/exporter (acquire :exporter)
+                      live/open! (acquire :source)
+                      http/run-server (acquire :ingress)]
+          (let [error (try (server/start! (assoc options :port 0))
+                           (catch Throwable error error))]
+            (is (= expected-type (:type (ex-data error))))
+            (is (nil? (ex-cause error)))
+            (is (empty? @acquisitions))))))))
+
+(deftest standalone-selects-exporter-mode-from-canonical-dbspec
+  (doseq [[db-spec durable?]
+          [[{:vendor "chdb-durable"} true]
+           [{:vendor "chdb"} false]
+           ["chdb::memory:" false]]]
+    (let [events (atom [])
+          seen (atom [])
+          conn (reify java.io.Closeable (close [_]))
+          exporter (fake-exporter events)]
+      (with-redefs [jdbc/connection (constantly conn)
+                    chdb-export/exporter
+                    (fn [options] (swap! seen conj options) exporter)
+                    live/open! (constantly {:close! (fn [])})
+                    otlp/handler (fn [& _] (constantly {:status 200}))
+                    web/handler (fn [& _] (constantly {:status 200}))
+                    http/run-server (fn [& _]
+                                      (swap! events conj :ingress)
+                                      {:port 9190})
+                    http/stop-server (fn [_])]
+        (let [lifecycle
+              (server/start!
+               {:port 0 :db-spec db-spec
+                ;; Custom persistence callbacks alone do not identify a
+                ;; Durable JDBC connection: ordinary modes keep their contract.
+                :durability {:checkpoint! (fn [actual]
+                                            (is (identical? conn actual))
+                                            (swap! events conj :checkpoint)
+                                            {:status :committed})
+                             :flush! (fn [_] {:status :empty})}})]
+          (try
+            (is (= 1 (count @seen)))
+            (is (identical? conn (:connection (first @seen))))
+            (is (= durable? (true? (:durable? (first @seen)))))
+            (is (nil? (:persistence-barrier (first @seen))))
+            (is (= [:checkpoint :ingress] @events))
+            (finally (server/stop! lifecycle))))))))
 
 (deftest standalone-shares-one-connection-and-retires-in-order
   (let [events (atom [])
@@ -439,6 +537,157 @@
         (is (true? (after-success!)))
         (is (= [:flush :checkpoint-failed :checkpoint-retried] @events))
         (server/stop! lifecycle)))))
+
+(deftest durability-observations-use-the-actual-startup-and-http-path
+  (doseq [operation [:flush :checkpoint]
+          known? [false true]]
+    (let [events (atom [])
+          conn (reify java.io.Closeable (close [_] nil))
+          exporter (reify
+                     export/SpanExporter
+                     (export-spans! [_ spans]
+                       (swap! events conj [:exported (count spans)]) true)
+                     (flush-exporter! [_] true)
+                     (shutdown-exporter! [_] true)
+                     export/MetricExporter
+                     (export-metrics! [_ _ _] true)
+                     (shutdown-metric-exporter! [_] true)
+                     logs/LogRecordExporter
+                     (export-logs! [_ _] true)
+                     (shutdown-log-exporter! [_] true))
+          app* (atom nil)
+          options* (atom nil)
+          observations (atom [])
+          original-handler otlp/handler
+          failure (ex-info "private-failure-marker"
+                           {:type (if known?
+                                    :jdbc.chdb.durable.control/lease-fenced
+                                    ::private-type)
+                            :sql "private-failure-marker"
+                            :endpoint "private-failure-marker"})
+          attempt (atom 0)
+          fail-first! (fn [_]
+                        (swap! events conj :persist)
+                        (if (= 1 (swap! attempt inc))
+                          (throw failure)
+                          {:status :reconciled}))]
+      (with-redefs [jdbc/connection (constantly conn)
+                    chdb-export/exporter (constantly exporter)
+                    live/open! (constantly {:close! (fn [] nil)})
+                    web/handler (fn [& _] (constantly {:status 200}))
+                    otlp/handler (fn [exporter options]
+                                   (reset! options* options)
+                                   (original-handler exporter options))
+                    http/run-server (fn [app & _] (reset! app* app) {:port 9197})
+                    http/stop-server (fn [_] nil)]
+        (let [startup? (atom true)
+              runtime
+              (server/start!
+               {:port 0
+                :durability-diagnostic!
+                (fn [record]
+                  (swap! events conj :observed)
+                  (swap! observations conj record)
+                  ;; A throwing sink must not replace persistence failure.
+                  (throw (ex-info "private-sink-marker" {})))
+                :durability
+                {:checkpoint! (fn [actual]
+                                (if (compare-and-set! startup? true false)
+                                  {:status :committed}
+                                  (fail-first! actual)))
+                 :flush! fail-first!
+                 :checkpoint-every-batches (when (= :checkpoint operation) 1)}})
+              expected {:oscope.durability-boundary/version 1
+                        :operation operation
+                        :phase :after-export-before-http-ack
+                        :outcome :failed
+                        :category (if known? :lease-fenced :unclassified)}
+              request {:request-method :post :uri "/v1/traces"
+                       :headers {"content-type" "application/json"
+                                 "host" "127.0.0.1:9197"}
+                       :body "{\"resourceSpans\":[{\"scopeSpans\":[{\"spans\":[{\"traceId\":\"10000000000000000000000000000000\",\"spanId\":\"2000000000000000\",\"name\":\"fixture\",\"startTimeUnixNano\":\"1\",\"endTimeUnixNano\":\"2\"}]}]}]}"}]
+          (try
+            ;; Directly invoke the real startup-created barrier once to witness
+            ;; original exception identity, despite a throwing diagnostic sink.
+            (is (identical? failure
+                            (try ((:after-success! @options*))
+                                 (catch Throwable error error))))
+            (is (= expected (some-> runtime :durability-observation deref)))
+            (is (= [expected] @observations))
+            ;; Repeat the persistence fault through the actual HTTP adapter.
+            (reset! attempt 0)
+            (let [response (@app* request)]
+              (is (= 503 (:status response)))
+              (is (= "durability boundary failed\n" (:body response)))
+              (is (= expected (some-> runtime :durability-observation deref))))
+            (is (not (str/includes? (pr-str @observations) "private-")))
+            (is (= 200 (:status (@app* request))))
+            (is (= (assoc expected :outcome :confirmed :category :none)
+                   (some-> runtime :durability-observation deref)))
+            (is (= 2 @attempt))
+            (is (= 3 (count @observations)))
+            (is (= [:persist :observed [:exported 1] :persist :observed
+                    [:exported 1] :persist :observed] @events))
+            (finally (server/stop! runtime))))))))
+
+(deftest invalid-durability-diagnostic-sink-fails-before-acquisition
+  (let [opened (atom 0)]
+    (with-redefs [jdbc/connection (fn [_] (swap! opened inc))]
+      (doseq [invalid [false {} :not-a-function]]
+        (let [failure (try (server/start! {:durability-diagnostic! invalid})
+                           (catch Throwable failure failure))]
+          (is (= {:oscope.server/error true
+                  :type :oscope.server/invalid-durability-diagnostic}
+                 (ex-data failure)))))
+      (is (zero? @opened)))))
+
+(defn- diagnostic-observation [& args]
+  ;; Missing baseline API is an assertion failure, never an analyzer abort.
+  (let [observe (ns-resolve 'oscope.error 'durability-boundary-observation)]
+    (is (some? observe) "the closed observation API must exist")
+    (if observe (apply observe args) {:missing-observation-api true})))
+
+(deftest durability-classification-is-bounded-and-does-not-stop-at-unknown-types
+  (let [known (ex-info "private-root" {:type :jdbc.chdb.durable.control/commit-ambiguous})
+        wrap (fn [cause] (ex-info "private-wrapper" {:type ::unknown-wrapper} cause))
+        descriptor (fn [failure]
+                     (diagnostic-observation :flush :failed failure))]
+    (is (= :commit-ambiguous (:category (descriptor (wrap known)))))
+    (is (= :commit-ambiguous
+           (:category (descriptor (nth (iterate wrap known) 7)))))
+    (is (= :unclassified
+           (:category (descriptor (nth (iterate wrap known) 8)))))
+    (is (= #{:oscope.durability-boundary/version :operation :phase :outcome :category}
+           (set (keys (descriptor known)))))
+    (is (not (str/includes? (pr-str (descriptor (wrap known))) "private")))))
+
+(deftest unknown-diagnostic-types-are-not-hashed-or-realized
+  (let [realized (atom 0)
+        bomb (lazy-seq (swap! realized inc)
+                       (throw (ex-info "private-realization-marker" {})))
+        known (ex-info "private-root" {:type :jdbc.chdb.durable.control/timeout})
+        expected {:oscope.durability-boundary/version 1
+                  :operation :flush :phase :after-export-before-http-ack
+                  :outcome :failed :category :storage-timeout}]
+    (doseq [type [bomb {"private" "fixture"} "private-type" false nil]]
+      (is (= expected
+             (diagnostic-observation
+              :flush :failed (ex-info "private-wrapper" {:type type} known))))
+      (is (= (assoc expected :category :unclassified)
+             (diagnostic-observation
+              :flush :failed (ex-info "private-wrapper" {:type type})))))
+    (is (zero? @realized))))
+
+(deftest unknown-diagnostic-operations-are-not-hashed-or-realized
+  (let [realized (atom 0)
+        bomb (lazy-seq (swap! realized inc)
+                       (throw (ex-info "private-operation-marker" {})))
+        expected {:oscope.durability-boundary/version 1
+                  :operation :unknown :phase :after-export-before-http-ack
+                  :outcome :confirmed :category :none}]
+    (doseq [operation [bomb {} "flush" false nil :unknown-operation]]
+      (is (= expected (diagnostic-observation operation :confirmed nil))))
+    (is (zero? @realized))))
 
 (deftest concurrent-durability-boundaries-select-one-checkpoint
   (let [events (atom [])

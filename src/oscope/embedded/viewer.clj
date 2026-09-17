@@ -4,6 +4,7 @@
             [oscope.error :as error]
             [oscope.http-app :as http-app]
             [oscope.http-executor :as http-executor]
+            [oscope.readiness :as readiness]
             [oscope.ui.events :as events]
             [oscope.ui.visualization-editor :as visualization-editor]
             [oscope.ui.web :as web]
@@ -18,11 +19,12 @@
     failure (assoc :errors [failure])))
 
 (defn- stop-lifecycle!
-  [{:keys [server http-executor state lock]}]
+  [{:keys [server http-executor state lock readiness-handle]}]
   (locking lock
     (if (= :closed (:phase @state))
-      (stop-result @state nil)
+      (readiness/finish-stop! readiness-handle (stop-result @state nil))
       (try
+        (readiness/terminal! readiness-handle :stopping)
         (when-not (:listener-stopped? @state)
           (http/stop-server server)
           (swap! state assoc :listener-stopped? true
@@ -31,7 +33,7 @@
         (when-not (:query-workers-stopped? @state)
           (http-executor/stop! http-executor)
           (swap! state assoc :query-workers-stopped? true :phase :closed))
-        (stop-result @state nil)
+        (readiness/finish-stop! readiness-handle (stop-result @state nil))
         (catch Throwable cause
           (let [current @state]
             (stop-result current
@@ -50,7 +52,7 @@
   port. Only the numeric loopback host is accepted."
   ([owner] (start! owner {}))
   ([{:keys [source connection]} {:keys [host port http-workers
-                                        http-queue-capacity]
+                                        http-queue-capacity readiness]
                                  :or {host http-app/default-host
                                       port 0
                                       http-workers http-app/default-http-workers
@@ -67,7 +69,8 @@
                   (integer? http-queue-capacity)
                   (pos? http-queue-capacity))
      (invalid! "oscope viewer worker limits must be positive" ::invalid-workers))
-   (let [owned-http-executor* (atom nil)
+   (let [readiness-handle (readiness/prepare! readiness :durable)
+         owned-http-executor* (atom nil)
          server* (atom nil)
          authority* (atom (when (pos? port) (str host ":" port)))]
      (try
@@ -100,23 +103,36 @@
                            ::invalid-bound-port))
              _ (reset! authority* (str host ":" actual-port))
              internal {:server listener
+                       :readiness-handle readiness-handle
                        :http-executor owned-http-executor
                        :state (atom {:phase :open
                                      :operation :stop-listener
                                      :listener-stopped? false
                                      :query-workers-stopped? false})
-                       :lock (Object.)}]
+                       :lock (Object.)}
+             url (str "http://" host ":" actual-port workbench/default-path)
+             _ (readiness/ready! readiness-handle host actual-port url)]
          {:host host
           :port actual-port
-          :url (str "http://" host ":" actual-port workbench/default-path)
+          :url url
           :stop! #(stop-lifecycle! internal)})
-       (catch Throwable cause
-         (when-let [listener @server*]
-           (try (http/stop-server listener) (catch Throwable _ nil)))
-         (when-let [owned-http-executor @owned-http-executor*]
-           (try (http-executor/stop! owned-http-executor)
-                (catch Throwable _ nil)))
-         (throw cause))))))
+      (catch Throwable cause
+        (reset! authority* nil)
+        (if readiness-handle
+          (readiness/fail-startup!
+           readiness-handle cause
+           (concat
+            (when-let [listener @server*]
+              [[:stop-listener #(http/stop-server listener)]])
+            (when-let [executor @owned-http-executor*]
+              [[:stop-query-workers #(http-executor/stop! executor)]])))
+          (do
+            (when-let [listener @server*]
+              (try (http/stop-server listener) (catch Throwable _ nil)))
+            (when-let [owned-http-executor @owned-http-executor*]
+              (try (http-executor/stop! owned-http-executor)
+                   (catch Throwable _ nil)))
+            (throw cause))))))))
 
 (defn stop! [lifecycle]
   (if-let [stop-fn (:stop! lifecycle)]

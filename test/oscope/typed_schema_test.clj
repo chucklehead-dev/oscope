@@ -9,6 +9,36 @@
   {:approved-manifest ::approved
    :registry-backend ::registry})
 
+(deftest explicit-false-is-not-an-absent-startup-envelope
+  (is (nil? (typed-schema/validate-options nil)))
+  (doseq [invalid [false true 0 {} [] "not-an-envelope" ::not-an-envelope
+                   (assoc (options) :approved-manifest {:secret "private-envelope-marker"}
+                          :unexpected "private-envelope-marker")]]
+    (let [error (try (typed-schema/validate-options invalid)
+                     (catch Throwable error error))]
+      (is (= "oscope typed schema requires a closed startup envelope" (ex-message error)))
+      (is (= {:oscope.typed-schema/error true
+              :type :oscope.typed-schema/invalid-options} (ex-data error)))
+      (is (nil? (ex-cause error)))
+      (is (not (.contains (pr-str [(ex-message error) (ex-data error)])
+                          "private-envelope-marker"))))))
+
+(deftest false-installation-is-rejected-before-schema-effects
+  (let [effects (atom [])
+        effect (fn [phase] (fn [& _] (swap! effects conj phase)))]
+    (with-redefs [schema/ensure-schema! (effect :schema)
+                  installer/install-approved! (effect :install)
+                  installer/acquire-active! (effect :acquire)
+                  jdbc/execute! (effect :ddl)
+                  jdbc/fetch (effect :observe)]
+      (is (nil? (typed-schema/install! ::connection nil)))
+      (doseq [invalid [false true 0 {} [] "not-an-envelope" ::not-an-envelope]]
+        (let [error (try (typed-schema/install! ::connection invalid)
+                         (catch Throwable error error))]
+          (is (= :oscope.typed-schema/invalid-options (:type (ex-data error))))
+          (is (nil? (ex-cause error)))))
+      (is (empty? @effects)))))
+
 (deftest approved-installation-owns-base-schema-and-connection-target
   (let [events (atom [])
         descriptor-set (Object.)

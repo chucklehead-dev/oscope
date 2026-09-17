@@ -9,6 +9,7 @@
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
             [oscope.otlp :as otlp]
+            [oscope.readiness :as readiness]
             [oscope.typed-schema :as typed-schema]
             [oscope.ui.events :as events]
             [oscope.ui.workbench :as workbench]
@@ -24,6 +25,9 @@
 (def default-db-spec "chdb:./oscope-data")
 (def default-http-workers http-app/default-http-workers)
 (def default-http-queue-capacity http-app/default-http-queue-capacity)
+
+(defn- durable-dbspec? [db-spec]
+  (and (map? db-spec) (= "chdb-durable" (:vendor db-spec))))
 
 (defn- validate-http-executor-options!
   [http-workers http-queue-capacity]
@@ -83,8 +87,17 @@
                        :status status})))
     true))
 
+(defn- observe-durability! [observation sink operation outcome failure]
+  ;; Neither display classification nor an optional sink can replace the
+  ;; original persistence result/Throwable. No payload is logged by default.
+  (try
+    (let [record (error/durability-boundary-observation operation outcome failure)]
+      (reset! observation record)
+      (when sink (sink record)))
+    (catch Throwable _ nil)))
+
 (defn- complete-durability-boundary!
-  [durability connection batches-since-checkpoint lock]
+  [durability connection batches-since-checkpoint lock observation sink]
   (locking lock
     (let [checkpoint-every (:checkpoint-every-batches durability)
           next-count (inc @batches-since-checkpoint)
@@ -94,23 +107,27 @@
           allowed (if checkpoint?
                     #{:committed :reconciled}
                     #{:empty :committed :reconciled})
-          result ((get durability (if checkpoint?
-                                    :checkpoint!
-                                    :flush!))
-                  connection)]
+          persist! (get durability (if checkpoint? :checkpoint! :flush!))]
       ;; Advance cadence only after the selected persistence operation is
       ;; confirmed. A thrown or unconfirmed checkpoint remains due, so the
       ;; next admitted batch cannot silently fall back to another WAL flush.
-      (require-durability-status! operation allowed result)
-      (reset! batches-since-checkpoint (if checkpoint? 0 next-count))
-      true)))
+      (try
+        (require-durability-status! operation allowed (persist! connection))
+        (reset! batches-since-checkpoint (if checkpoint? 0 next-count))
+        (observe-durability! observation sink operation :confirmed nil)
+        true
+        (catch Throwable failure
+          (observe-durability! observation sink operation :failed failure)
+          (throw failure))))))
 
 (defn- stop-lifecycle!
-  [{:keys [server http-executor source exporter connection state lock]}]
+  [{:keys [server http-executor source exporter connection state lock
+           readiness-handle]}]
   (locking lock
     (if (= :closed (:phase @state))
-      (stop-result @state nil)
+      (readiness/finish-stop! readiness-handle (stop-result @state nil))
       (try
+        (readiness/terminal! readiness-handle :stopping)
         (when-not (:ingress-stopped? @state)
           (http/stop-server server)
           (swap! state assoc :ingress-stopped? true
@@ -130,7 +147,7 @@
         (when-not (:connection-closed? @state)
           (.close connection)
           (swap! state assoc :connection-closed? true :phase :closed))
-        (stop-result @state nil)
+        (readiness/finish-stop! readiness-handle (stop-result @state nil))
         (catch Throwable error
           (let [current @state]
             (stop-result current
@@ -143,13 +160,21 @@
   `:port` may be zero for an ephemeral test port. jolt-http currently binds
   loopback at the transport layer, so `:host` deliberately accepts only
   127.0.0.1. Optional `:typed-schema` is a closed operator-supplied approved
-  manifest, registry backend, and optional event sink; Oscope binds all
+  manifest, registry backend, and optional event sink. A canonical Durable
+  dbspec requires explicit valid `:durability` callbacks and a writer role;
+  reader dbspecs are rejected before acquisition. Oscope binds all
   database effects to its owned connection. The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary
-  on each call."
+  on each call. `:durability-observation` is an atom containing nil or the last
+  closed request-barrier observation. Optional `:durability-diagnostic!` is a
+  function receiving that same safe map; its failures do not affect persistence
+  results. The sink runs synchronously under the durability lock: it must be
+  fast, nonblocking, and nonreentrant. A blocked sink delays acknowledgement;
+  this option does not provide latency isolation. No payload is logged by
+  default and no internal CAS phase is inferred."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema]
+            typed-schema readiness durability-diagnostic!]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
           http-queue-capacity default-http-queue-capacity}}]
@@ -160,8 +185,16 @@
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
    (validate-http-executor-options! http-workers http-queue-capacity)
+   (when (and (some? durability-diagnostic!) (not (fn? durability-diagnostic!)))
+     (throw (ex-info "oscope durability diagnostic sink must be a function"
+                     {:oscope.server/error true :type ::invalid-durability-diagnostic})))
    (typed-schema/validate-options typed-schema)
-   (when (and durability
+   ;; The receiver always writes. Reject readers before acquisition or typed
+   ;; schema effects; truthy read-only matches the prior qualified adapter too.
+   (when (and (durable-dbspec? db-spec) (:read-only? db-spec))
+     (throw (ex-info "oscope standalone Durable storage requires a writer"
+                     {:oscope.server/error true :type ::durable-writer-required})))
+   (when (and (or durability (durable-dbspec? db-spec))
               (not (and (map? durability)
                         (ifn? (:checkpoint! durability))
                         (ifn? (:flush! durability))
@@ -172,12 +205,18 @@
                                   (:checkpoint-every-batches durability)))))))
      (throw (ex-info "oscope durability requires checkpoint! and flush! functions"
                      {:oscope.server/error true :type ::invalid-durability})))
-   (let [conn (jdbc/connection db-spec)
+   (let [readiness-handle (readiness/prepare! readiness (if durability :durable :local))
+         conn (try (jdbc/connection db-spec)
+                   (catch Throwable cause
+                     (if readiness-handle
+                       (readiness/fail-startup! readiness-handle cause [])
+                       (throw cause))))
          exporter* (atom nil)
          source* (atom nil)
          server* (atom nil)
          http-executor* (atom nil)
          batches-since-checkpoint (atom 0)
+         durability-observation (atom nil)
          durability-lock (Object.)
          authority* (atom (when (pos? port) (str host ":" port)))]
      (try
@@ -193,7 +232,13 @@
               ;; The no-manifest path remains unchanged: create-schema? is
               ;; absent and the exporter applies its default base migrations.
               (typed-schema/exporter-options
-               {:connection conn :signals #{:spans :logs :metrics}}
+               ;; Durable's public JDBC constructor requires a map with this
+               ;; exact vendor (and no URI prefix). Its exporter verifies the
+               ;; opened connection is a writer before schema/data effects.
+               ;; Persistence callbacks alone must not classify ordinary JDBC.
+               (cond-> {:connection conn :signals #{:spans :logs :metrics}}
+                 (durable-dbspec? db-spec)
+                 (assoc :durable? true))
                schema-context))
              _ (reset! exporter* exporter)
              ;; Durable mode checkpoints base and typed schema changes before
@@ -218,7 +263,8 @@
                                        #(complete-durability-boundary!
                                          durability conn
                                          batches-since-checkpoint
-                                         durability-lock)})
+                                         durability-lock durability-observation
+                                         durability-diagnostic!)})
                                      (otlp/handler exporter))
                                    :workbench-handler
                                    (workbench/handler conn)
@@ -246,6 +292,8 @@
               {:host host :port (:port server) :db-spec db-spec
                :connection conn :exporter exporter :source source
                :server server
+               :readiness-handle readiness-handle
+               :durability-observation durability-observation
                :http-executor owned-http-executor
                :state (atom {:phase :open :ingress-stopped? false
                              :http-executor-stopped? false
@@ -253,21 +301,40 @@
                              :connection-closed? false})
                :lock (Object.)}
                schema-context
-               (merge (typed-schema/descriptor-options schema-context)))]
+               (merge (typed-schema/descriptor-options schema-context)))
+             _ (readiness/ready! readiness-handle host (:port server)
+                                 (str "http://" host ":" (:port server)
+                                      workbench/default-path))]
          (assoc lifecycle :stop! #(stop-lifecycle! lifecycle)))
        (catch Throwable error
-         (when-let [server @server*]
-           (try (http/stop-server server) (catch Throwable _ nil)))
-         (when-let [owned-http-executor @http-executor*]
-           (try (http-executor/stop! owned-http-executor)
-                (catch Throwable _ nil)))
-         (when-let [source @source*]
-           (try (live/close! source) (catch Throwable _ nil)))
-         (when-let [exporter @exporter*]
-           (doseq [face [:spans :logs :metrics]]
-             (try (close-face! face exporter) (catch Throwable _ nil))))
-         (try (.close conn) (catch Throwable _ nil))
-         (throw error))))))
+         (reset! authority* nil)
+         (if readiness-handle
+           (readiness/fail-startup!
+            readiness-handle error
+            (concat
+             (when-let [listener @server*]
+               [[:stop-listener #(http/stop-server listener)]])
+             (when-let [executor @http-executor*]
+               [[:stop-http-executor #(http-executor/stop! executor)]])
+             (when-let [source @source*]
+               [[:retire-source #(live/close! source)]])
+             (when-let [exporter @exporter*]
+               (mapv (fn [face] [face #(close-face! face exporter)])
+                     [:spans :logs :metrics]))
+             [[:close-connection #(.close conn)]]))
+           (do
+             (when-let [server @server*]
+               (try (http/stop-server server) (catch Throwable _ nil)))
+             (when-let [owned-http-executor @http-executor*]
+               (try (http-executor/stop! owned-http-executor)
+                    (catch Throwable _ nil)))
+             (when-let [source @source*]
+               (try (live/close! source) (catch Throwable _ nil)))
+             (when-let [exporter @exporter*]
+               (doseq [face [:spans :logs :metrics]]
+                 (try (close-face! face exporter) (catch Throwable _ nil))))
+             (try (.close conn) (catch Throwable _ nil))
+             (throw error))))))))
 
 (defn stop! [lifecycle]
   (if-let [stop-fn (:stop! lifecycle)]

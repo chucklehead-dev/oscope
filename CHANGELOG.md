@@ -2,6 +2,107 @@
 
 ## Unreleased
 
+- Qualify Durable acknowledgement faults at the exporter's own publication
+  barrier using its exact OTLP rejection and an identity-checked, unique fault
+  witness. Preserve the frozen head and definite/ambiguous fresh recovery
+  oracles rather than accepting an arbitrary HTTP 503 (Refs #113, #116).
+
+- Target acknowledgement faults at the first nonempty WAL commit, not a
+  startup commit ordinal. Freeze the pre-request head and preserve exact
+  before/after manifest and fresh-readback checks, retaining private evidence
+  when qualification fails (Refs #113, #116).
+
+- Keep the S3 woven compiler separate from the authenticated ordinary runtime
+  used by its fresh recovery reader. Recheck the reader binary digest before
+  fixture startup; retain all history, readback, timeout and downstream gates
+  (Refs #113).
+
+- Recover the MinIO Durable fixture through an independently reconstructed,
+  bounded fresh-process snapshot reader. Freeze the writer's complete head and
+  check the two startup barriers plus three logical signal batches explicitly;
+  retain exact publication cadence and all table/format readback assertions.
+  This changes test qualification, not the persistence protocol or throughput.
+
+- Run Local Durable woven fixtures in separate executions of the same instrumented binary, retaining strict history/telemetry checks and joined fresh-reader recovery assertions (#113). Missing final receipts fail closed; positive readers use the authenticated runtime from the root application graph.
+
+- Run native Durable integration fixtures and their recovery readers in fresh,
+  bounded processes. Require nonzero assertion receipts and confirmed child
+  settlement before another native generation or store cleanup (Refs #113).
+
+- Align all native integration qualifiers with chDB 26.7.3 and authenticate one
+  immutable qualified runtime for positive Durable, recovery and SDK children.
+  Keep the explicit woven compiler and strict timestamp/provenance guards;
+  no branch/latest compiler fallback (Refs #113).
+
+- Track the application and woven qualification driver coordinates separately
+  in the runtime dependency regression test, even when their revisions converge.
+  Explicitly select Durable export for standalone Durable writer dbspecs,
+  rejecting missing barrier policies and reader roles before acquisition,
+  retaining both the exporter's batch flush and the server's request barrier
+  (Refs #113).
+
+- Pin the minimal embedded application fixture's JSON dependency explicitly,
+  so its database dependency cannot select an older revision than the profile
+  (Refs #111).
+
+- Align standalone and minimal embedded dependency pins on the finite-input
+  OTel SDK and the ordinary ClickHouse exporter/provider stack, using the same
+  JSON implementation. Keep the later Durable checkpoint-retry candidate out
+  of this dependency update.
+
+- Distinguish retryable readiness publication failures from an unconfirmed
+  claim-descriptor close. Report the latter as non-retryable without claiming
+  successful closure or risking another owner's reused descriptor.
+  Fence synchronous publication callbacks against ready-after-terminal and
+  repeated claim release during nested stop calls.
+
+- Load the JDBC shim before standalone typed socket fixtures compile, and
+  report startup failures using fixed phase/type labels without exception
+  payloads or false execution receipts. Keep strict counts and child settlement
+  checks unchanged. Refs #109.
+
+- Retain cheap canonical regressions for typed socket receipt rejection,
+  nonzero and timeout accounting, and stopping after unconfirmed settlement;
+  keep native fixture reports truthful and evidence retained. Refs #109.
+
+- Run each typed socket fixture in a fresh bounded child process, preserving
+  chDB's immutable physical-path lifetime and all restart/readback assertions.
+  Require an absolute child executable and real execution/count/exit receipts;
+  retain evidence when child settlement is uncertain. Refs #109.
+
+- Add an always-registered local SDK-to-OTLP-socket/native-storage regression
+  for synchronous finite counter admission, signed up/down values and false/zero
+  metric attributes (Refs casselc/otel#3). Qualification requires the reviewed
+  dependency stack; metric typed-column promotion is not claimed.
+
+- Confirm timed-out test children have exited before deleting native fixture
+  scratch; preserve unconfirmed fixtures and fail with closed cleanup status
+  rather than treating a termination request as child retirement (Refs #108).
+
+- Retain closed, payload-free per-request flush/checkpoint observations before
+  HTTP acknowledgement, without changing persistence, retry, or failure behavior
+  (Refs #4). An optional diagnostic sink receives only the bounded observation.
+
+- Add desktop/mobile full-page workbench captures to the existing browser demo
+  guide, documenting the synthetic local fixture and bounded usability checks.
+
+- Register readiness regression tests in both canonical test runners so
+  ordinary and hosted headless CI exercise the listener discovery contract;
+  real native readiness gates remain explicit opt-in qualification.
+
+- Reject explicit false typed-schema startup envelopes with the canonical safe
+  validation error before schema effects or embedded owner acquisition; retain
+  nil as absent and add cause-free, secret-safe boundary regressions. Refs #107.
+
+- Give the full-page telemetry workbench its explicit dark theme and a
+  responsive attribute layout, preserving full labels and values without
+  changing shared viewer fragments. Add source and browser regressions. Refs #106.
+
+- Add opt-in embedded-viewer and standalone-listener readiness callbacks and
+  private atomic readiness files, with actual ephemeral ports, launch identities,
+  nonblocking lifetime ownership, and retryable terminal publication/rollback.
+  Readiness reports listener discovery, not Durable freshness. Refs #35.
+
 - Requalify the minimal embedded profile at OTel `4d61f8e9` and jolt-chDB
   `95d7b2b3`, retaining the already-current ClickHouse exporter `14a2998a`.
   The real fixture selects the converged interruptible HTTP provider under the

@@ -82,6 +82,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   linux-x86-64:
@@ -91,13 +92,25 @@ jobs:
       JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.6
       JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.6
       MINIO_IMAGE: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+      # Authenticated producer83 tuple; rotate explicitly before artifact expiry.
+      QUALIFIED_RUNTIME_REPOSITORY: casselc/jolt
+      QUALIFIED_RUNTIME_COMPILER_SOURCE: aea91781bbab68bf174fef4a689bb00dcf834ded
+      QUALIFIED_RUNTIME_COMPILER_TREE: a31de1596fcabd0e45fbcbc528842805acea0ee7
+      QUALIFIED_RUNTIME_RUN_ID: '35188849252'
+      QUALIFIED_RUNTIME_RUN_ATTEMPT: '1'
+      QUALIFIED_RUNTIME_ARTIFACT_ID: '10483062488'
+      QUALIFIED_RUNTIME_WORKFLOW_SHA: '6bf745bf6101f2c3481d0ffe16401843c7675050'
+      QUALIFIED_RUNTIME_ARTIFACT_SHA256: '353670dda1447d96d46aa1e133e4910481caf2f328d159a9bde76ed863e41524'
+      QUALIFIED_RUNTIME_BINARY_SHA256: '31cff7ea89a652bd99848cf15686eb576d90d9ac3962ac07701fb6005e6eb458'
+      QUALIFIED_RUNTIME_HELPER_SOURCE: https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/c26c9bfcf071112531974729b15469b8c9fe713a/scripts/fetch-qualified-durable-runtime.sh
+      QUALIFIED_RUNTIME_HELPER_SHA256: e962976aea263f00440fdf9bfa53c36a158c501f2b87d15aa8a84867fe51caae
     steps:
       - uses: actions/checkout@v4
       - name: Checkout canonical chDB native qualification
         uses: actions/checkout@v4
         with:
           repository: chucklehead-dev/jolt-chdb
-          ref: dbc2db22130c7e783739c79bc24691dcbba21906
+          ref: 19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774
           path: .qualification/jolt-chdb
           persist-credentials: false
       - name: Checkout canonical Durable aspect pack
@@ -135,13 +148,39 @@ jobs:
         run: >-
           test "$(.qualification/jolt/bin/jolt --version)"
           = "jolt v0.8.6-5-gf00bc93b"
+      - name: Authenticate and select qualified positive runtime
+        timeout-minutes: 3
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/fetch-qualified-durable-runtime.sh"
+          curl -fsSL --connect-timeout 15 --max-time 30 "$QUALIFIED_RUNTIME_HELPER_SOURCE" -o "$helper"
+          printf '%s  %s\n' "$QUALIFIED_RUNTIME_HELPER_SHA256" "$helper" | sha256sum -c -
+          TMPDIR=/tmp timeout --signal=TERM --kill-after=5s 120s bash "$helper" \
+            | tee "$RUNNER_TEMP/oscope-qualified-runtime.log"
+          test "$(grep -c '^QUALIFIED_RUNTIME_BIN=' "$RUNNER_TEMP/oscope-qualified-runtime.log")" = 1
+          QUALIFIED_RUNTIME_BIN=$(sed -n 's/^QUALIFIED_RUNTIME_BIN=//p' "$RUNNER_TEMP/oscope-qualified-runtime.log")
+          [[ "$QUALIFIED_RUNTIME_BIN" =~ ^/tmp/qualified-durable-runtime\.[A-Za-z0-9]+/jolt$ ]]
+          test -f "$QUALIFIED_RUNTIME_BIN" && test ! -L "$QUALIFIED_RUNTIME_BIN"
+          test "$(realpath "$QUALIFIED_RUNTIME_BIN")" = "$QUALIFIED_RUNTIME_BIN"
+          test "$(sha256sum "$QUALIFIED_RUNTIME_BIN" | cut -d ' ' -f1)" = "$QUALIFIED_RUNTIME_BINARY_SHA256"
+          # Positive qualifier/SDK/native children use this exact artifact.
+          # Woven steps retain their explicit f00 compiler override.
+          echo "JOLT_BIN=$QUALIFIED_RUNTIME_BIN" >> "$GITHUB_ENV"
+          echo "JOLT_WRAPPER=" >> "$GITHUB_ENV"
+          echo "JOLT_CACHE_DIR=$GITHUB_WORKSPACE/.jolt-cache-durable-aea" >> "$GITHUB_ENV"
+          dirname "$QUALIFIED_RUNTIME_BIN" >> "$GITHUB_PATH"
       - name: Qualify pinned Durable native ABI and asset
         working-directory: .qualification/jolt-chdb
         run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/chdb-durable"
       - name: Test direct in-process Durable SDK and oscope composition
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
-        run: jolt -M:test-durable
+        # Parent bound only; missing final nested receipts remain unconfirmed.
+        # A surviving owned reader guardian may retire its leaf up to35s later.
+        run: timeout --kill-after=5s 415s jolt -M:test-durable
       - name: Validate renewal-before-release through local woven history
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
@@ -158,13 +197,13 @@ jobs:
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
           JOLT_ASPECT_JOLT: ${{ github.workspace }}/.qualification/jolt/bin/jolt
-          JOLT_BIN: ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          # Inherit authenticated JOLT_BIN for independently executed readers;
+          # JOLT_ASPECT_JOLT alone selects the woven compiler in this gate.
           OSCOPE_DURABLE_ASPECT_BUILD_ALIAS: published
         run: test/durable_s3_aspect_smoke.sh
       - name: Recover oscope after process crashes through pinned MinIO
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
-          JOLT_BIN: jolt
           OSCOPE_DURABLE_CRASH_BUILD_ALIAS: test-durable-s3
         run: test/durable_s3_crash_reopen.sh
       - name: Reject definite and ambiguous Durable acknowledgements

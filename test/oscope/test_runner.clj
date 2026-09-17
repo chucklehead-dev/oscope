@@ -18,6 +18,9 @@
             [oscope.query-expression-property-test]
             [oscope.query-view-test]
             [oscope.raw-export-test]
+            [oscope.readiness-test]
+            [oscope.readiness-listener-test]
+            [oscope.readiness-posix-options-test]
             [oscope.runtime-floor-test]
             [oscope.sample-emitter-test]
             [oscope.server-test]
@@ -45,6 +48,9 @@
                         'oscope.query-expression-test
                         'oscope.query-expression-property-test
                         'oscope.query-view-test 'oscope.raw-export-test
+                        'oscope.readiness-test
+                        'oscope.readiness-listener-test
+                        'oscope.readiness-posix-options-test
                         'oscope.runtime-floor-test
                         'oscope.sample-emitter-test
                         'oscope.server-test 'oscope.visualization-editor-test

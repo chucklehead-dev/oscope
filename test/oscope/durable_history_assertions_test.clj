@@ -33,6 +33,27 @@
          (mapv :kind
                (assertions/assert-publication-order! (valid-commands) 3)))))
 
+(deftest exporter-and-server-startup-checkpoints-are-checked-exactly
+  (let [commands (valid-commands)
+        second-reference {:kind :checkpoint :object "opaque-10"}
+        second-checkpoint [(publication :checkpoint-publish second-reference)
+                           (commit :checkpoint second-reference)]
+        layered (vec (concat (take 2 commands) second-checkpoint
+                             (drop 2 commands)))
+        expected [:checkpoint :checkpoint :wal :wal :wal]]
+    (is (= expected (mapv :kind
+                         (assertions/assert-publication-order! layered expected))))
+    (is (thrown? Exception
+                 (assertions/assert-publication-order! commands expected)))
+    (is (thrown? Exception
+                 (assertions/assert-publication-order!
+                  (vec (concat (take 2 layered) second-checkpoint
+                               (drop 2 layered))) expected)))
+    (is (thrown? Exception
+                 (assertions/assert-publication-order!
+                  (vec (concat (take 2 commands) (take 2 (drop 2 commands))
+                               second-checkpoint (drop 4 commands))) expected)))))
+
 (deftest periodic-checkpoint-cadence-is-checked-exactly
   (let [commands (valid-commands)
         periodic (-> commands

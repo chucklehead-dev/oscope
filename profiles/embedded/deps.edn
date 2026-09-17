@@ -6,14 +6,14 @@
  ;; Server/viewer dependencies intentionally remain in the root coordinate.
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"
-         :git/sha "4d61f8e921d1310bc7ba39d7208cc38ac14a3215"}
+         :git/sha "0e701ceff526d159884fadae98dcca61272ef6e0"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "95d7b2b31c95e007d5065e3950deb1869e2d0f8a"}
+         :git/sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "14a2998a27f64a9bff329811461be9157a00c849"}
+         :git/sha "0f8bf3de8c225ed4ab4f700fe60bb7c85229136d"}
         metosin/malli {:mvn/version "0.20.1"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "3174868a7baa06e118fb8d1201edd98c5769b335"}}}
+         :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}}

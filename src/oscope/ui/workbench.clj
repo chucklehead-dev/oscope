@@ -56,11 +56,17 @@
       :window (get params "window")})))
 
 (defn- page [base title fragment live?]
-  (str "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+  (str "<!doctype html><html lang=\"en\" class=\"otel-page oscope-workbench-page\"><head><meta charset=\"utf-8\">"
        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
        "<title>oscope · " title "</title><style>" (viewer/styles)
        ".oscope-nav{width:min(1120px,calc(100% - 2rem));margin:1rem auto 0;display:flex;gap:1rem;flex-wrap:wrap}"
-       ".oscope-nav a{color:#8bd3ff;font-weight:750}</style>"
+       ".oscope-nav a{color:#8bd3ff;font-weight:750}"
+       ;; Only the full-page host opts in; viewer fragments retain shared styles.
+       ".oscope-workbench-page .otel-span-meta div{grid-template-columns:minmax(0,max-content) minmax(0,1fr)}"
+       ".oscope-workbench-page .otel-span-meta dt{max-width:32rem;word-break:normal;overflow-wrap:anywhere}"
+       "@media(max-width:800px){.oscope-workbench-page .otel-span-meta div{grid-template-columns:minmax(0,1fr);gap:.1rem}"
+       ".oscope-workbench-page .otel-span-meta dt{max-width:none}"
+       ".oscope-workbench-page .otel-span-meta dd{margin-bottom:.5rem}}</style>"
        (when live? (str "<script defer src=\"" (mounted base "/live.js") "\"></script>"))
        "<script defer src=\"" (mounted base "/viewer.js") "\"></script></head><body>"
        "<nav class=\"oscope-nav\" aria-label=\"oscope views\"><a href=\"" base
