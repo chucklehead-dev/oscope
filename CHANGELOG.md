@@ -15,6 +15,12 @@
   SDK PR #41 is merged; final consumer review and current-head hosted/S3
   qualification remain pending. These checks are not universal persistence proof.
 
+- Add pure cross-library Durable composition controls using the real exporter,
+  server and OTLP handlers over fake native/JDBC seams. Derive publication
+  cadence from startup owners and logical requests, distinguishing metric-table
+  inserts from batch completion and rejecting premature acknowledgement.
+  These controls do not replace native, woven-history or protocol checks.
+
 - Qualify Durable acknowledgement faults at the exporter's own publication
   barrier using its exact OTLP rejection and an identity-checked, unique fault
   witness. Preserve the frozen head and definite/ambiguous fresh recovery
