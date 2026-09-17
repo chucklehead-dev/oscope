@@ -18,6 +18,44 @@
 (defn- fail! [message]
   (throw (ex-info message {:oscope.durable-fault/error true})))
 
+(defn assert-response! [status response witness phase]
+  (expectation phase)
+  ;; This fixture targets the exporter's own post-batch publication barrier.
+  ;; Its false result is translated to the SDK's closed OTLP failure envelope;
+  ;; Oscope's later whole-request barrier must not be mistaken for this one.
+  (when-not (and (= "503" status)
+                 (map? response)
+                 (= #{"code" "message"} (set (keys response)))
+                 (integer? (get response "code"))
+                 (= 14 (get response "code"))
+                 (= "OTLP span export failed" (get response "message"))
+                 (map? witness)
+                 (integer? (get witness "version"))
+                 (integer? (get witness "hit"))
+                 (= {"version" 1 "kind" "wal" "hit" 1 "phase" phase
+                     "stage" "exporter-publication"} witness))
+    (fail! "fault rejection requires the exact OTLP failure and unique injected witness"))
+  true)
+
+(defn checked-response-json! [wire]
+  (when-not (and (string? wire) (pos? (count wire))
+                 (<= (alength (.getBytes wire "UTF-8")) 1024))
+    (fail! "bounded response or witness JSON required"))
+  (let [value (json/read-str wire)]
+    ;; Both fixture producers write canonical JSON through this pinned codec.
+    ;; Exact re-encoding rejects duplicate keys or trailing JSON that read-str
+    ;; alone could otherwise discard while retaining an apparently valid map.
+    (when-not (= wire (json/write-str value))
+      (fail! "canonical response or witness JSON required"))
+    value))
+
+(defn read-response-json! [path]
+  (let [file (java.io.File. path)]
+    (when-not (and (.isFile file) (pos? (.length file)) (<= (.length file) 1024)
+                   (not (java.nio.file.Files/isSymbolicLink (.toPath file))))
+      (fail! "bounded response or witness file required"))
+    (checked-response-json! (slurp file))))
+
 (defn- sha256 [wire]
   (apply str (map #(format "%02x" (bit-and % 255))
                   (.digest (java.security.MessageDigest/getInstance "SHA-256")
@@ -106,6 +144,12 @@
 
 (defn -main [& args]
   (cond
+    (and (= 5 (count args)) (= "--verify-response" (first args)))
+    (do (assert-response! (second args)
+                          (read-response-json! (nth args 2))
+                          (read-response-json! (nth args 3)) (nth args 4))
+        (println "PASS: exact OTLP rejection and unique injected WAL witness confirmed"))
+
     (and (= 3 (count args)) (= "--capture-startup" (first args)))
     (capture-startup! (second args) (nth args 2))
 

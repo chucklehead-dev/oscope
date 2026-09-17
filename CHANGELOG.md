@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify Durable acknowledgement faults at the exporter's own publication
+  barrier using its exact OTLP rejection and an identity-checked, unique fault
+  witness. Preserve the frozen head and definite/ambiguous fresh recovery
+  oracles rather than accepting an arbitrary HTTP 503 (Refs #113, #116).
+
 - Target acknowledgement faults at the first nonempty WAL commit, not a
   startup commit ordinal. Freeze the pre-request head and preserve exact
   before/after manifest and fresh-readback checks, retaining private evidence

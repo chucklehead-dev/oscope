@@ -85,6 +85,7 @@ run_case() {
   log="$tmp/$phase/server.log"
   response="$tmp/$phase/response"
   seal="$tmp/$phase/startup-head.json"
+  witness="$tmp/$phase/fault-witness.json"
   mkdir -p "$root" "$scratch"
 
   env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
@@ -96,6 +97,7 @@ run_case() {
       OSCOPE_DURABLE_LEASE_TTL_MS=300 \
       OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS=50 \
       OSCOPE_DURABLE_FAULT_PHASE="$phase" \
+      OSCOPE_DURABLE_FAULT_WITNESS="$witness" \
       "$server_binary" >"$log" 2>&1 &
   pid=$!
 
@@ -126,12 +128,13 @@ run_case() {
   status=$(curl -sS -o "$response" -w '%{http_code}' \
     -H 'Content-Type: application/json' \
     --data-binary "$body" "http://127.0.0.1:$port/v1/traces")
-  if [ "$status" != 503 ] || [ "$(cat "$response")" != "durability boundary failed" ]; then
-    cat "$response" >&2
-    cat "$log" >&2
-    echo "FAIL: $phase fault returned HTTP $status" >&2
+  if grep -Fq 'FAIL: request WAL fault witness persistence failed' "$log"; then
+    echo "FAIL: $phase fault witness persistence failed" >&2
     exit 1
   fi
+  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
+    timeout --kill-after=5s 30s "$verify_binary" \
+      --verify-response "$status" "$response" "$witness" "$phase"
 
   # The after fault has committed the head but retained its local WAL. A clean
   # close could flush that WAL again, so terminate before fresh-reader proof.
