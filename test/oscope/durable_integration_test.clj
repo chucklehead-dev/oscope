@@ -6,10 +6,12 @@
             [jdbc.chdb.durable.backend :as backend]
             [jdbc.chdb.durable.control :as control]
             [jdbc.chdb.durable.head :as head]
+            [jdbc.chdb.durable.time-domain :as time-domain]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
             [oscope.config :as config]
             [oscope.durable-config-runtime :as durable-config-runtime]
+            [oscope.durable-native-child-runner :as native-child]
             [oscope.raw-export.chdb :as raw-export-chdb]
             [oscope.server :as server]
             [teensyp.client :as client])
@@ -138,15 +140,20 @@
 
 (defn- await-lease-renewal!
   [store initial-expiry timeout-ms]
-  (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
-    (loop []
-      (let [expiry (get-in (control/read-head! store)
-                           [:head "lease" "expires_at"])]
-        (cond
-          (and (integer? expiry) (> expiry initial-expiry)) true
-          (< (System/currentTimeMillis) deadline)
-          (do (Thread/sleep 10) (recur))
-          :else false)))))
+  ;; V1 persists finite epoch seconds, including fractional seconds; the
+  ;; runtime heartbeat's millisecond representation is not the wire type.
+  (if-not (time-domain/supported-wire-epoch-seconds? initial-expiry)
+    false
+    (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
+      (loop []
+        (let [expiry (get-in (control/read-head! store)
+                             [:head "lease" "expires_at"])]
+          (cond
+            (not (time-domain/supported-wire-epoch-seconds? expiry)) false
+            (> expiry initial-expiry) true
+            (< (System/currentTimeMillis) deadline)
+            (do (Thread/sleep 10) (recur))
+            :else false))))))
 
 (defn- durable-server-options [store instance force?]
   {:port 0
@@ -215,9 +222,48 @@
       (finally
         (delete-tree! root)))))
 
+(defn assert-fresh-reader!
+  "Unchanged readback/export assertions, executed in a fresh native process."
+  [root]
+        (with-open [reader
+                    (jdbc/connection
+                     (jdbc.chdb.durable/snapshot-dbspec
+                      {:backend (local-posix/local-backend root)}))]
+          (is (= 4 (:n (jdbc/fetch-one
+                        reader
+                        "select count() as n from otel_schema_migrations"))))
+          (is (= 1 (:n (jdbc/fetch-one reader
+                                        "select count() as n from otel_traces"))))
+          (is (= 1 (:n (jdbc/fetch-one reader
+                                        "select count() as n from otel_logs"))))
+          (is (= 1 (:n (jdbc/fetch-one
+                        reader
+                        "select count() as n from otel_metrics_gauge"))))
+          (is (= 1 (:n (jdbc/fetch-one
+                        reader
+                        "select count() as n from otel_metrics_sum"))))
+          (is (= 1 (:n (jdbc/fetch-one
+                        reader
+                        "select count() as n from otel_metrics_histogram"))))
+          (doseq [[signal kind]
+                  [[:spans nil] [:logs nil] [:metrics :gauge]
+                   [:metrics :sum] [:metrics :histogram]]]
+            (let [selection {:signal signal :metric-kind kind
+                             :start-unix-nano 0 :end-unix-nano 1
+                             :max-rows 10 :max-bytes (* 4 1024 1024)}
+                  parquet (raw-export-chdb/execute!
+                           reader (assoc selection :format :parquet))
+                  arrow (raw-export-chdb/execute!
+                         reader (assoc selection :format :arrow))]
+              (is (= [80 65 82 49]
+                     (unsigned-prefix (:bytes parquet) 4)))
+              (is (= [65 82 82 79 87 49]
+                     (unsigned-prefix (:bytes arrow) 6)))))))
+
 (deftest standalone-server-flushes-through-durable-jdbc-adapter
   (let [root (Files/createTempDirectory
-              "oscope-durable-store-" (make-array FileAttribute 0))]
+              "oscope-durable-store-" (make-array FileAttribute 0))
+        reader-settled (atom false)]
     (try
       (let [store (local-posix/local-backend root)
             lifecycle
@@ -240,7 +286,7 @@
           (let [initial-expiry
                 (get-in (control/read-head! store)
                         [:head "lease" "expires_at"])]
-            (is (integer? initial-expiry))
+            (is (time-domain/supported-wire-epoch-seconds? initial-expiry))
             (is (await-lease-renewal! store initial-expiry 2000)
                 "the app's real Durable writer renews its lease while open"))
           (let [now (* (System/currentTimeMillis) 1000000)]
@@ -291,39 +337,6 @@
         ;; Reconstruct the provider from only its filesystem root before
         ;; opening a reader. This proves persistence through the advertised
         ;; backend boundary rather than through an in-process oracle atom.
-        (with-open [reader
-                    (jdbc/connection
-                     (jdbc.chdb.durable/snapshot-dbspec
-                      {:backend (local-posix/local-backend root)}))]
-          (is (= 4 (:n (jdbc/fetch-one
-                        reader
-                        "select count() as n from otel_schema_migrations"))))
-          (is (= 1 (:n (jdbc/fetch-one reader
-                                        "select count() as n from otel_traces"))))
-          (is (= 1 (:n (jdbc/fetch-one reader
-                                        "select count() as n from otel_logs"))))
-          (is (= 1 (:n (jdbc/fetch-one
-                        reader
-                        "select count() as n from otel_metrics_gauge"))))
-          (is (= 1 (:n (jdbc/fetch-one
-                        reader
-                        "select count() as n from otel_metrics_sum"))))
-          (is (= 1 (:n (jdbc/fetch-one
-                        reader
-                        "select count() as n from otel_metrics_histogram"))))
-          (doseq [[signal kind]
-                  [[:spans nil] [:logs nil] [:metrics :gauge]
-                   [:metrics :sum] [:metrics :histogram]]]
-            (let [selection {:signal signal :metric-kind kind
-                             :start-unix-nano 0 :end-unix-nano 1
-                             :max-rows 10 :max-bytes (* 4 1024 1024)}
-                  parquet (raw-export-chdb/execute!
-                           reader (assoc selection :format :parquet))
-                  arrow (raw-export-chdb/execute!
-                         reader (assoc selection :format :arrow))]
-              (is (= [80 65 82 49]
-                     (unsigned-prefix (:bytes parquet) 4)))
-              (is (= [65 82 82 79 87 49]
-                     (unsigned-prefix (:bytes arrow) 6)))))))
+        (native-child/run-reader! :standalone root reader-settled))
       (finally
-        (delete-tree! root)))))
+        (when @reader-settled (delete-tree! root))))))

@@ -7,6 +7,10 @@
   public ownership evidence without replaying shutdown (Refs #114). Modeling
   and native integration qualification remain pending.
 
+- Run native Durable integration fixtures and their recovery readers in fresh,
+  bounded processes. Require nonzero assertion receipts and confirmed child
+  settlement before another native generation or store cleanup (Refs #113).
+
 - Align all native integration qualifiers with chDB 26.7.3 and authenticate one
   immutable qualified runtime for positive Durable, recovery and SDK children.
   Keep the explicit woven compiler and strict timestamp/provenance guards;

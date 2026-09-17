@@ -6,6 +6,7 @@
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
             [oscope.embedded :as embedded]
+            [oscope.durable-native-child-runner :as native-child]
             [oscope.embedded.viewer :as viewer]
             [oscope.embedded.query :as embedded-query]
             [oscope.live :as live]
@@ -138,12 +139,25 @@
         (is (= {:status :closed :phase :closed}
                (embedded/stop! lifecycle)))))))
 
+(defn assert-fresh-reader!
+  "Unchanged signal visibility assertions in a fresh native reader process."
+  [root]
+      (with-open [reader (jdbc/connection
+                          (jdbc.chdb.durable/snapshot-dbspec
+                           {:backend (local-posix/local-backend root)}))]
+        (let [source (live/open! {:connection reader :ensure-schema? false})]
+          (try
+            (assert-signals-visible! source "reader")
+            (finally
+              (live/close! source))))))
+
 (deftest direct-sdk-exports-survive-a-fresh-durable-reader
   (let [directory
         (java.nio.file.Files/createTempDirectory
          "oscope-embedded-local-object-store-"
          (make-array java.nio.file.attribute.FileAttribute 0))
         root (java.io.File. (str directory))
+        reader-settled (atom false)
         store (local-posix/local-backend root)
         db-spec (jdbc.chdb.durable/writer-dbspec
                  {:backend store
@@ -198,18 +212,12 @@
                             (embedded-query/stop! query-lifecycle)))))))
       (is (= {:status :closed :phase :closed}
              (embedded/stop! lifecycle)))
-      (with-open [reader (jdbc/connection
-                          (jdbc.chdb.durable/snapshot-dbspec
-                           {:backend (local-posix/local-backend root)}))]
-        (let [source (live/open! {:connection reader :ensure-schema? false})]
-          (try
-            (assert-signals-visible! source "reader")
-            (finally
-              (live/close! source)))))
+      (native-child/run-reader! :embedded root reader-settled)
       (finally
         (embedded/stop! lifecycle)
-        (delete-tree! root)
-        (is (not (.exists root)))))))
+        (when @reader-settled
+          (delete-tree! root)
+          (is (not (.exists root))))))))
 
 (defn- wire-spans [payload]
   (for [resource-spans (:resourceSpans payload)
