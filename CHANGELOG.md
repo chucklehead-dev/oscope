@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add pure cross-library Durable composition controls using the real exporter,
+  server and OTLP handlers over fake native/JDBC seams. Derive publication
+  cadence from startup owners and logical requests, distinguishing metric-table
+  inserts from batch completion and rejecting premature acknowledgement.
+  These controls do not replace native, woven-history or protocol checks.
+
 - Recover the MinIO Durable fixture through an independently reconstructed,
   bounded fresh-process snapshot reader. Freeze the writer's complete head and
   check the two startup barriers plus three logical signal batches explicitly;
