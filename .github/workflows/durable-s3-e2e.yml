@@ -178,7 +178,9 @@ jobs:
       - name: Test direct in-process Durable SDK and oscope composition
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
-        run: jolt -M:test-durable
+        # Parent bound only; missing final nested receipts remain unconfirmed.
+        # A surviving owned reader guardian may retire its leaf up to35s later.
+        run: timeout --kill-after=5s 415s jolt -M:test-durable
       - name: Validate renewal-before-release through local woven history
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
