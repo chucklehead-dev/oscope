@@ -12,5 +12,10 @@
         ;; same canonical key used by Samizdat after its provider migration.
         jolt-lang/http-client
         {:git/url "https://github.com/casselc/http-client.git"
-         :git/sha "eab6b78d5957f88690faf6768360572a3f185341"}}
+         :git/sha "eab6b78d5957f88690faf6768360572a3f185341"}
+        ;; The application owns its final graph: do not let its database's
+        ;; transitive JSON revision override the embedded profile's selection.
+        org.clojure/data.json
+        {:git/url "https://github.com/casselc/data.json.git"
+         :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}
  :aliases {:test {:main-opts ["-m" "minimal-embedded-app"]}}}

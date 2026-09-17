@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin the minimal embedded application fixture's JSON dependency explicitly,
+  so its database dependency cannot select an older revision than the profile
+  (Refs #111).
+
 - Align standalone and minimal embedded dependency pins on the finite-input
   OTel SDK and the ordinary ClickHouse exporter/provider stack, using the same
   JSON implementation. Keep the later Durable checkpoint-retry candidate out
