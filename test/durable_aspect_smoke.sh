@@ -71,7 +71,10 @@ fi
           actual (set (for [[name v] (ns-publics n) :when (:test (meta v))] name))]
       (assert (= expected actual))
       (let [result (clojure.test/run-tests n)]
-        (assert (= {:test 3 :pass 28 :fail 0 :error 0} result))))'
+        ;; run-tests also returns :type :summary; counts are the contract.
+        (println :durable-woven-control-summary (select-keys result [:type]))
+        (assert (= {:test 3 :pass 28 :fail 0 :error 0}
+                   (select-keys result [:test :pass :fail :error])))))'
   "${jolt_command[@]}" build \
     -m oscope.durable-aspect-test-runner \
     -o target/oscope-durable-aspect-test
