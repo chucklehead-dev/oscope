@@ -8,6 +8,21 @@
   inserts from batch completion and rejecting premature acknowledgement.
   These controls do not replace native, woven-history or protocol checks.
 
+- Qualify Durable acknowledgement faults at the exporter's own publication
+  barrier using its exact OTLP rejection and an identity-checked, unique fault
+  witness. Preserve the frozen head and definite/ambiguous fresh recovery
+  oracles rather than accepting an arbitrary HTTP 503 (Refs #113, #116).
+
+- Target acknowledgement faults at the first nonempty WAL commit, not a
+  startup commit ordinal. Freeze the pre-request head and preserve exact
+  before/after manifest and fresh-readback checks, retaining private evidence
+  when qualification fails (Refs #113, #116).
+
+- Keep the S3 woven compiler separate from the authenticated ordinary runtime
+  used by its fresh recovery reader. Recheck the reader binary digest before
+  fixture startup; retain all history, readback, timeout and downstream gates
+  (Refs #113).
+
 - Recover the MinIO Durable fixture through an independently reconstructed,
   bounded fresh-process snapshot reader. Freeze the writer's complete head and
   check the two startup barriers plus three logical signal batches explicitly;

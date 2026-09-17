@@ -197,7 +197,8 @@ jobs:
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
           JOLT_ASPECT_JOLT: ${{ github.workspace }}/.qualification/jolt/bin/jolt
-          JOLT_BIN: ${{ github.workspace }}/.qualification/jolt/bin/jolt
+          # Inherit authenticated JOLT_BIN for independently executed readers;
+          # JOLT_ASPECT_JOLT alone selects the woven compiler in this gate.
           OSCOPE_DURABLE_ASPECT_BUILD_ALIAS: published
         run: test/durable_s3_aspect_smoke.sh
       - name: Recover oscope after process crashes through pinned MinIO

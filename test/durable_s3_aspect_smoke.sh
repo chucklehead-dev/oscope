@@ -25,6 +25,8 @@ container="oscope-aspect-minio-$$"
 
 : "${JOLT_ASPECT_JOLT:?JOLT_ASPECT_JOLT must name the aspect-capable jolt executable}"
 : "${JOLT_CHDB_LIB:?JOLT_CHDB_LIB must name the qualified libchdb shared library}"
+: "${JOLT_BIN:?JOLT_BIN must name the authenticated ordinary reader runtime}"
+: "${QUALIFIED_RUNTIME_BINARY_SHA256:?qualified reader binary digest required}"
 
 case "$JOLT_ASPECT_JOLT" in
   /*) ;;
@@ -37,8 +39,23 @@ esac
 test -x "$JOLT_ASPECT_JOLT"
 test -f "$JOLT_CHDB_LIB"
 
-if [ -n "${JOLT_BIN:-}" ]; then
-  jolt_command=("$JOLT_BIN")
+# Do not let the compiler override leak into the independent native reader.
+# Producer/manifest authentication is owned by the preceding workflow gate;
+# recheck the exact selected reader before compiling or starting the fixture.
+case "$JOLT_BIN" in
+  /*) ;;
+  *) echo "JOLT_BIN must be an absolute qualified reader path" >&2; exit 2 ;;
+esac
+test -f "$JOLT_BIN" && test -x "$JOLT_BIN" && test ! -L "$JOLT_BIN"
+test "$(realpath "$JOLT_BIN")" = "$JOLT_BIN"
+[[ "$QUALIFIED_RUNTIME_BINARY_SHA256" =~ ^[0-9a-f]{64}$ ]]
+test "$(sha256sum "$JOLT_BIN" | cut -d ' ' -f1)" = "$QUALIFIED_RUNTIME_BINARY_SHA256"
+export JOLT_BIN
+
+if [ "${GITHUB_ACTIONS:-}" = true ]; then
+  # Hosted compiler provisioning above already pins Chez; never use JOLT_BIN
+  # here, because it is reserved for the root-graph recovery reader.
+  jolt_command=("$JOLT_ASPECT_JOLT")
 else
   test -x "$toolchain"
   jolt_command=("$toolchain" "$JOLT_ASPECT_JOLT")

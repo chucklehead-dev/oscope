@@ -23,8 +23,10 @@ server_binary="$scenario/target/oscope-durable-fault-server"
 verify_binary="$scenario/target/oscope-durable-fault-verify"
 effects="$scenario/target/oscope-durable-fault-server.build/effects.edn"
 report="$scenario/target/aspects.edn"
+umask 077
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/oscope-durable-fault.XXXXXX")
 pid=
+qualified=false
 
 : "${JOLT_ASPECT_JOLT:?JOLT_ASPECT_JOLT must name the aspect-capable jolt executable}"
 : "${JOLT_CHDB_LIB:?JOLT_CHDB_LIB must name the qualified libchdb shared library}"
@@ -54,7 +56,11 @@ cleanup() {
     kill -9 "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
-  rm -rf -- "$tmp"
+  if [ "$qualified" = true ]; then
+    rm -rf -- "$tmp"
+  else
+    echo "Durable fault qualification failed; private fixture evidence retained" >&2
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -78,6 +84,8 @@ run_case() {
   scratch="$tmp/$phase/scratch"
   log="$tmp/$phase/server.log"
   response="$tmp/$phase/response"
+  seal="$tmp/$phase/startup-head.json"
+  witness="$tmp/$phase/fault-witness.json"
   mkdir -p "$root" "$scratch"
 
   env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
@@ -89,6 +97,7 @@ run_case() {
       OSCOPE_DURABLE_LEASE_TTL_MS=300 \
       OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS=50 \
       OSCOPE_DURABLE_FAULT_PHASE="$phase" \
+      OSCOPE_DURABLE_FAULT_WITNESS="$witness" \
       "$server_binary" >"$log" 2>&1 &
   pid=$!
 
@@ -110,16 +119,22 @@ run_case() {
     sleep 0.1
   done
 
+  # Metadata-only fresh process freezes the actual pre-request baseline.
+  # It cannot perform schema setup, native ingestion or a head mutation.
+  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
+    timeout --kill-after=5s 30s "$verify_binary" --capture-startup "$root" "$seal"
+
   body=$(printf '{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"oscope-durable-fault"}}]},"scopeSpans":[{"scope":{"name":"oscope.durable-fault"},"spans":[{"traceId":"11111111111111111111111111111111","spanId":"2222222222222222","name":"durable.fault.%s","startTimeUnixNano":"1770000000000000000","endTimeUnixNano":"1770000000001000000"}]}]}]}' "$phase")
   status=$(curl -sS -o "$response" -w '%{http_code}' \
     -H 'Content-Type: application/json' \
     --data-binary "$body" "http://127.0.0.1:$port/v1/traces")
-  if [ "$status" != 503 ] || [ "$(cat "$response")" != "durability boundary failed" ]; then
-    cat "$response" >&2
-    cat "$log" >&2
-    echo "FAIL: $phase fault returned HTTP $status" >&2
+  if grep -Fq 'FAIL: request WAL fault witness persistence failed' "$log"; then
+    echo "FAIL: $phase fault witness persistence failed" >&2
     exit 1
   fi
+  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
+    timeout --kill-after=5s 30s "$verify_binary" \
+      --verify-response "$status" "$response" "$witness" "$phase"
 
   # The after fault has committed the head but retained its local WAL. A clean
   # close could flush that WAL again, so terminate before fresh-reader proof.
@@ -127,7 +142,8 @@ run_case() {
   wait "$pid" 2>/dev/null || true
   pid=
 
-  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" "$verify_binary" "$root" "$phase"
+  env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
+    timeout --kill-after=5s 30s "$verify_binary" "$root" "$phase" "$seal"
 }
 
 run_case before
@@ -145,3 +161,4 @@ run_case after
 )
 
 echo "oscope Durable acknowledgement fault acceptance passed"
+qualified=true

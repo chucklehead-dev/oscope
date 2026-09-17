@@ -6,6 +6,7 @@
             [oscope.durable-native-child-runner :as native-child]
             [oscope.durable-native-child-runner-test]
             [oscope.durable-composition-assertions-test]
+            [oscope.durable-fault-target-test]
             [oscope.durable-config-runtime-test]
             [oscope.durable-integration-test]
             [oscope.durable-server-main-test]
@@ -26,7 +27,8 @@
                             'oscope.embedded-query-test
                             'oscope.otlp-test
                             'oscope.server-test
-                            'oscope.durable-native-child-runner-test]
+                            'oscope.durable-native-child-runner-test
+                            'oscope.durable-fault-target-test]
         _ (when-not qualified?
             (println "SKIP: real Durable oscope integration requires the qualified chDB ABI"))
         result (apply test/run-tests namespaces)]
