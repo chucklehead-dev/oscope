@@ -52,6 +52,12 @@
   inserts from batch completion and rejecting premature acknowledgement.
   These controls do not replace native, woven-history or protocol checks.
 
+- Join each closed categorical app observation to its logical Durable barrier
+  and publication, then require one fresh settled-reader fixture receipt after
+  all acknowledgements. A wrong-reader receipt is a causal rejected control;
+  this remains pure/fake-native correspondence evidence, not a native process,
+  S3, CAS, or Quint claim (Ref #116).
+
 - Qualify Durable acknowledgement faults at the exporter's own publication
   barrier using its exact OTLP rejection and an identity-checked, unique fault
   witness. Preserve the frozen head and definite/ambiguous fresh recovery

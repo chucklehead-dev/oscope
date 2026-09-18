@@ -173,6 +173,10 @@
         (try
           (doseq [[signal path payload] inputs]
             (reset! batch signal)
+            ;; This app-side observation is deliberately categorical. It binds
+            ;; the real OTLP handler invocation to the later Durable boundary
+            ;; without retaining payload, telemetry, or endpoint values.
+            (emit! {:event :application :batch signal :phase :observed})
             (emit! {:event :request :batch signal})
             (let [body (json/write-str payload)
                   response (@handler {:request-method :post :uri path
@@ -191,7 +195,7 @@
                 (when (or (.isAlive @worker) @worker-error)
                   (throw (ex-info "pure callback did not settle"
                                   {:obligation :fixture-settlement}))))))
-          {:events @events :premature? @premature?}
+          {:premature? @premature?}
           (finally
             (deliver release true)
             (when-let [thread @worker]
@@ -199,11 +203,32 @@
               (when (.isAlive thread)
                 (throw (ex-info "pure worker remains live"
                                 {:obligation :fixture-settlement}))))
-            (server/stop! lifecycle)))))))
+            (server/stop! lifecycle)))
+        ;; Pure composition has no native-reader authority. This receipt only
+        ;; proves the categorical handoff shape and is intentionally rejected
+        ;; if it is not the fresh settled reader expected by this fixture.
+        (emit! {:event :generation-receipt :batch :shutdown
+                :reader (if (= mutation :wrong-generation-receipt) :wrong :fresh)
+                :settlement :settled})
+        {:events @events :premature? @premature?}))))
 
 (defn- rejected-obligation [events]
   (try (correspondence/assert-correspondence! events contract)
        nil (catch Throwable error (:obligation (ex-data error)))))
+
+(defn- receipt-before-final-response [events]
+  ;; Keep the categorical receipt itself valid and move only its causal
+  ;; position. This is intentionally a witness mutant, not a second exporter,
+  ;; server, or native implementation.
+  (let [receipt (peek events)
+        prefix (pop events)
+        response-index (last (keep-indexed (fn [index observation]
+                                             (when (= :response (:event observation))
+                                               index))
+                                           prefix))]
+    (vec (concat (subvec prefix 0 response-index)
+                 [receipt]
+                 (subvec prefix response-index)))))
 
 (deftest decoded-input-coverage-precedes-composition
   (is (= 3 (count (checked-inputs! 3000000))))
@@ -254,3 +279,18 @@
   (let [{:keys [events premature?]} (run-composition :premature-ack)]
     (is (true? premature?) "actual200 returned while real completion was blocked")
     (is (= :ack-before-boundary (rejected-obligation events)))))
+
+(deftest settled-generation-receipt-must-name-the-fresh-reader
+  ;; This is the one causal joined-witness mutant. It preserves the actual
+  ;; exporter/server/OTLP transcript and changes only the final categorical
+  ;; receipt, so a passing correspondence check cannot hide a bad handoff.
+  (is (= :generation-receipt
+         (rejected-obligation
+          (:events (run-composition :wrong-generation-receipt))))))
+
+(deftest settled-generation-receipt-cannot-precede-the-final-response
+  ;; Fresh/settled fields alone are insufficient: the categorical receipt must
+  ;; follow publication and all successful application responses.
+  (is (= :generation-receipt
+         (rejected-obligation
+          (receipt-before-final-response (:events (run-composition nil)))))))
