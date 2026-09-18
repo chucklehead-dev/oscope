@@ -40,6 +40,100 @@
        ":durable-native-receipt " kind " " index " " tests " " passes " "
        failures " " errors " " settled "\n"))
 
+(defn- synthetic-evidence-root []
+  (let [root (str (java.nio.file.Files/createTempDirectory
+                   "oscope-synthetic-evidence-control-"
+                   (make-array java.nio.file.attribute.FileAttribute 0)))]
+    (spit (str root "/scope") "oscope-synthetic-s3-v1\n")
+    root))
+
+(deftest reader-evidence-preserves-exact-seal-and-exclusive-observation
+  ;; Pure private-filesystem controls; no native/backend/child process.
+  (let [root (synthetic-evidence-root)
+        source (java.io.File/createTempFile "oscope-evidence-seal-control-" ".json")
+        wire "{\"fixed-synthetic-seal\":\"λ\"}\n"
+        _ (spit source wire)
+        directory (runner/prepare-reader-evidence! root source)
+        observed {:terminal? true :valid? true :settled? true :ok? true
+                  :counts {:test 0 :pass 20 :fail 0 :error 0}}]
+    (is (= (seq (java.nio.file.Files/readAllBytes (.toPath source)))
+           (seq (java.nio.file.Files/readAllBytes
+                 (.toPath (java.io.File. (str directory "/seal.json")))))))
+    (is (try (runner/prepare-reader-evidence! root source) false
+             (catch Throwable _ true)))
+    (is (= wire (slurp (str directory "/seal.json"))))
+    (runner/publish-reader-evidence! directory observed)
+    (is (= "1 2 0 20 0 0 1 1 1 1\n" (slurp (str directory "/settlement.receipt"))))
+    (is (try (runner/publish-reader-evidence! directory (assoc observed :ok? false)) false
+             (catch Throwable _ true)))
+    (is (= "1 2 0 20 0 0 1 1 1 1\n" (slurp (str directory "/settlement.receipt"))))
+    (let [unknown-root (synthetic-evidence-root)
+          unknown-dir (runner/prepare-reader-evidence! unknown-root source)]
+      (doseq [bad [(assoc observed :settled? 1)
+                   (assoc-in observed [:counts :pass] 20.0)
+                   (assoc-in observed [:counts :fail] -1)]]
+        (is (try (runner/publish-reader-evidence! unknown-dir bad) false
+                 (catch Throwable _ true))))
+      (runner/publish-reader-evidence!
+       unknown-dir {:terminal? false :valid? false :settled? false :ok? false})
+      (is (= "1 2 0 0 0 0 0 0 0 0\n" (slurp (str unknown-dir "/settlement.receipt")))))
+    (doseq [scope ["" "not-the-synthetic-fixture\n" (apply str (repeat 65 "x"))]]
+      (let [bad-root (synthetic-evidence-root)]
+        (spit (str bad-root "/scope") scope)
+        (is (try (runner/prepare-reader-evidence! bad-root source) false
+                 (catch Throwable _ true)))
+        (is (not (.exists (java.io.File. (str bad-root "/reader")))))))
+    (doseq [wire ["" (apply str (repeat 1048577 "x"))]]
+      (let [bad-root (synthetic-evidence-root)]
+        (spit source wire)
+        (is (try (runner/prepare-reader-evidence! bad-root source) false
+                 (catch Throwable _ true)))))
+    (.delete source)))
+
+(deftest reader-evidence-crosses-handoff-without-waiving-failed-settlement
+  (doseq [scenario [:success :semantic-failure :unknown]]
+    (let [root (synthetic-evidence-root)
+          source (java.io.File/createTempFile "oscope-evidence-handoff-control-" ".json")
+          wire "{\"fixed-synthetic-seal\":1}\n"
+          settled (atom false)
+          qualified? (atom false)
+          calls (atom [])]
+      (spit source wire)
+      (with-redefs [runner/failure-evidence-root (fn [] root)
+                    runner/executable! (fn [] "/approved/root-jolt")
+                    test/counters (atom {:test 0 :pass 0 :fail 0 :error 0})
+                    child/run!
+                    (fn [command options _]
+                      (swap! calls conj command)
+                      (spit (:out options)
+                            (case scenario
+                              :success (receipt "reader" 2 0 20 0 0 1)
+                              :semantic-failure (receipt "reader" 2 0 19 1 0 1)
+                              ":durable-native-executed reader 2\n"))
+                      (spit (:err options) "fixed synthetic private diagnostic\n")
+                      (if (= scenario :unknown)
+                        {:exit 143} {:exit (if (= scenario :success) 0 1)}))]
+        (binding [test/*report-counters* nil]
+          (reset! qualified? (try (runner/run-reader! :s3 source settled) true
+                                 (catch Throwable _ false)))))
+      ;; Assert OUTSIDE the mocked reporting counters, so a failure cannot be
+      ;; stranded in the same synthetic counter used to test reader accounting.
+      (is (= (= scenario :success) @qualified?))
+      (is (= 1 (count @calls)))
+      (is (= (.getAbsolutePath source) (last (first @calls))))
+      (is (= wire (slurp (str root "/reader/seal.json"))))
+      (is (= (not= scenario :unknown) @settled))
+      (is (= (case scenario
+               :success "1 2 0 20 0 0 1 1 1 1\n"
+               :semantic-failure "1 2 0 19 1 0 1 1 1 0\n"
+               "1 2 0 0 0 0 1 0 0 0\n")
+             (slurp (str root "/reader/settlement.receipt"))))
+      (is (.isFile (java.io.File. (str root "/reader/reader-2.log"))))
+      (is (= "fixed synthetic private diagnostic\n" (slurp (str root "/reader/reader-2.err"))))
+      (.delete source)
+      (is (= wire (slurp (str root "/reader/seal.json")))
+          "private evidence is independent of the caller's original seal"))))
+
 (deftest s3-reader-dispatch-and-sealed-head-controls
   ;; PURE: no backend, native connection or child process is created.
   (is (= [0 1 2] (mapv runner/reader-index! [:standalone :embedded :s3])))

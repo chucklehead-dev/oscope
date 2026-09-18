@@ -61,8 +61,149 @@ else
   jolt_command=("$toolchain" "$JOLT_ASPECT_JOLT")
 fi
 
+# This root belongs ONLY to the fixed synthetic MinIO fixture. No real AWS,
+# Langfuse, arbitrary environment dump or broad workspace log enters a bundle.
+evidence_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/oscope-durable-evidence-XXXXXXXX")
+test "$(realpath "$evidence_root")" = "$evidence_root"
+mkdir "$evidence_root/backend" "$evidence_root/reports"
+[[ "$image" =~ ^[A-Za-z0-9./:-]+@sha256:[0-9a-f]{64}$ ]]
+printf 'oscope-synthetic-s3-v1\n' > "$evidence_root/scope"
+if [ "${GITHUB_ACTIONS:-}" = true ]; then
+  printf 'OSCOPE_DURABLE_FAILED_EVIDENCE=%s\n' "$evidence_root" >> "$GITHUB_ENV"
+fi
+started=0
+retired=0
+semantic_pass=0
+
+reader_settled() {
+  local receipt="$evidence_root/reader/settlement.receipt"
+  test -f "$receipt" && test ! -L "$receipt" &&
+    test "$(wc -c < "$receipt")" -le 128 &&
+    test "$(wc -l < "$receipt")" -eq 1 &&
+    grep -Fxq '1 2 0 20 0 0 1 1 1 1' "$receipt"
+}
+
+retire_minio() {
+  if [ "$started" -eq 0 ]; then retired=1; return 0; fi
+  # Owned service only: stopping it freezes the retained backend, but is NOT
+  # evidence that a missing reader final receipt was settled.
+  timeout --kill-after=5s 10s docker stop --time 5 "$container" >/dev/null 2>&1 || return 1
+  test "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" = false || return 1
+  retired=1
+}
+
+archive_failure() {
+  local bytes unexpected snapshot="$evidence_root/snapshot"
+  test "$retired" -eq 1 || return 1
+  # Stop/freeze confirmation precedes the snapshot; reject symlinks instead of
+  # following unexpected filesystem targets or silently altering replay bytes.
+  unexpected=$(find "$evidence_root" -type l -print -quit) || return 1
+  test -z "$unexpected" || return 1
+  # cp -a can break an external hardlink into an apparently regular private
+  # copy. Reject linked source bytes BEFORE copying, not just in the snapshot.
+  unexpected=$(find "$evidence_root" -type f -links +1 -print -quit) || return 1
+  test -z "$unexpected" || return 1
+  bytes=$(du -sb "$evidence_root" | cut -f1) || return 1
+  test "$bytes" -le 268435456 || return 1
+  printf 'schema=1\nscope=synthetic-s3\nqualification=failed\noriginal-exit=%s\nreader-settlement=%s\nbackend-snapshot=unqualified\nreader-log-snapshot=possibly-unfinished\n' \
+    "$1" "$(if reader_settled; then printf confirmed; else printf unknown; fi)" > "$evidence_root/outcome" || return 1
+  local source_head source_tree
+  source_head=$(git -C "$repo_root" rev-parse HEAD) || return 1
+  source_tree=$(git -C "$repo_root" rev-parse 'HEAD^{tree}') || return 1
+  [[ "$source_head" =~ ^[0-9a-f]{40}$ && "$source_tree" =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf 'runtime-sha256=%s\nminio-image=%s\nsource-head=%s\nsource-tree=%s\nsource-worktree=%s\n' \
+    "$QUALIFIED_RUNTIME_BINARY_SHA256" "$image" "$source_head" "$source_tree" \
+    "$(if git -C "$repo_root" diff-index --quiet HEAD --; then printf clean; else printf dirty; fi)" > "$evidence_root/provenance" || return 1
+  # Freeze a COPY of allowlisted evidence before checksums. An unknown reader
+  # may still append its original logs; this preserves an explicitly unfinished
+  # prefix, not a fabricated final receipt or universal quiescence claim.
+  mkdir "$snapshot" || return 1
+  cp -a -- "$evidence_root/backend" "$evidence_root/reports" "$snapshot/" || return 1
+  for file in scope outcome provenance cleanup.status fixture.stdout fixture.stderr reader; do
+    if [ -e "$evidence_root/$file" ]; then
+      cp -a -- "$evidence_root/$file" "$snapshot/" || return 1
+    fi
+  done
+  unexpected=$(find "$snapshot" ! -type d ! -type f -print -quit) || return 1
+  test -z "$unexpected" || return 1
+  unexpected=$(find "$snapshot" -type f -links +1 -print -quit) || return 1
+  test -z "$unexpected" || return 1
+  (
+    cd "$snapshot" || exit 1
+    find backend reports -type f -print0 || exit 1
+    for file in scope outcome provenance cleanup.status fixture.stdout fixture.stderr; do
+      if [ -f "$file" ]; then printf '%s\0' "$file"; fi
+    done
+    if [ -d reader ]; then find reader -type f -print0 || exit 1; fi
+  ) | (cd "$snapshot" || exit 1; sort -z | xargs -0 -r sha256sum > checksums.sha256) || return 1
+  timeout --kill-after=5s 30s tar -C "$snapshot" -czf "$evidence_root/replay.tar.gz" -- . || return 1
+  test "$(wc -c < "$evidence_root/replay.tar.gz")" -le 268435456 || return 1
+  (cd "$evidence_root" || exit 1; sha256sum replay.tar.gz > replay.sha256) || return 1
+}
+
+capture_cleanup_status() {
+  local root="$1" code="$2" phase="$3"
+  [[ "$code" =~ ^[0-9]{1,3}$ ]] && test "$code" -gt 0 && test "$code" -le 255 || return 1
+  case "$phase" in minio-remove|fixture-delete|path-guard) ;; *) return 1 ;; esac
+  printf 'schema=1\ncapture=incomplete\noriginal-exit=%s\n' "$code" > "$root/capture.status" || return 1
+  printf 'schema=1\nsource-qualification=semantic-and-reader-confirmed\ncleanup=failed\nphase=%s\nqualifying-exit=0\ncleanup-exit=%s\n' \
+    "$phase" "$code" > "$root/cleanup.status" || return 1
+  if [ "${GITHUB_ACTIONS:-}" = true ]; then
+    printf 'OSCOPE_DURABLE_FAILED_EVIDENCE=%s\n' "$root" >> "$GITHUB_ENV" || return 1
+  fi
+}
+
 cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
+  local original_exit=$?
+  trap - EXIT
+  if ! retire_minio; then
+    printf 'schema=1\ncapture=incomplete\noriginal-exit=%s\n' "$original_exit" > "$evidence_root/capture.status"
+    printf 'FAIL: owned MinIO retirement unconfirmed; evidence retained, snapshot unavailable\n' >&2
+    printf 'oscope-durable-evidence=%s\n' "$evidence_root"
+    exit 1
+  fi
+  if [ "$original_exit" -eq 0 ] && [ "$semantic_pass" -eq 1 ] && reader_settled; then
+    if docker rm "$container" >/dev/null 2>&1; then
+      # Deletion may partially succeed before reporting an error. Allocate an
+      # independent tiny status root first; NEVER promise replay after deletion.
+      local fallback
+      fallback=$(mktemp -d "$(dirname "$evidence_root")/oscope-durable-evidence-XXXXXXXX") || exit 1
+      test "$(realpath "$fallback")" = "$fallback" || exit 1
+      printf 'oscope-synthetic-s3-v1\n' > "$fallback/scope" || exit 1
+      printf 'oscope-durable-cleanup-status=%s\n' "$fallback"
+      if ! test "$(realpath "$evidence_root")" = "$evidence_root" ||
+         ! test "$(cat "$evidence_root/scope")" = oscope-synthetic-s3-v1; then
+        capture_cleanup_status "$fallback" 1 path-guard || exit 1
+        printf 'FAIL: owned fixture cleanup guard rejected; no replay claim\n' >&2
+        exit 1
+      fi
+      if timeout --kill-after=5s 10s rm -rf -- "$evidence_root"; then
+        if test ! -e "$evidence_root"; then exit 0; fi
+        local delete_exit=1
+      else
+        local delete_exit=$?
+      fi
+      capture_cleanup_status "$fallback" "$delete_exit" fixture-delete || exit 1
+      printf 'FAIL: owned fixture deletion incomplete; status only, no replay claim\n' >&2
+      exit 1
+    else
+      local cleanup_exit=$?
+      capture_cleanup_status "$evidence_root" "$cleanup_exit" minio-remove || exit 1
+      # No filesystem deletion attempted: the exact backend/seal/logs remain
+      # available for the normal failure archive, despite prior qualification.
+      original_exit=$cleanup_exit
+      printf 'FAIL: owned MinIO removal incomplete; capturing retained fixture\n' >&2
+    fi
+  fi
+  if ! archive_failure "$original_exit"; then
+    printf 'schema=1\ncapture=incomplete\noriginal-exit=%s\n' "$original_exit" > "$evidence_root/capture.status"
+    printf 'FAIL: synthetic replay artifact capture incomplete\n' >&2
+  else
+    printf 'schema=1\ncapture=complete\noriginal-exit=%s\n' "$original_exit" > "$evidence_root/capture.status"
+    printf 'PASS: synthetic failed replay bundle captured (not recovery qualification)\n'
+  fi
+  printf 'oscope-durable-evidence=%s\n' "$evidence_root"
+  exit 1
 }
 trap cleanup EXIT
 
@@ -73,8 +214,16 @@ trap cleanup EXIT
     -o target/oscope-durable-s3-aspect-test
 )
 
-docker run --rm -d \
+test -f "$report" && test ! -L "$report"
+test -f "$effects" && test ! -L "$effects"
+cp -- "$report" "$evidence_root/reports/aspects.edn"
+cp -- "$effects" "$evidence_root/reports/effects.edn"
+cp -- "$repo_root/deps.edn" "$evidence_root/reports/deps.edn"
+started=1
+docker run -d \
   --name "$container" \
+  --user "$(id -u):$(id -g)" \
+  --mount "type=bind,src=$evidence_root/backend,dst=/data" \
   -p 127.0.0.1::9000 \
   -e MINIO_ROOT_USER=MINIOACCESS \
   -e MINIO_ROOT_PASSWORD=MINIOSECRET \
@@ -90,9 +239,17 @@ for _ in $(seq 1 120); do
 done
 curl -fsS "$endpoint/minio/health/live" >/dev/null
 
-env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
+# Raw fixture output stays private in the synthetic-only archive. Public logs
+# contain only exact closed result markers, never arbitrary exception content.
+env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 \
+  JOLT_BIN="$JOLT_BIN" JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
+  JOLT_CACHE_DIR="${JOLT_CACHE_DIR:-$evidence_root/cache}" \
+  JOLT_GITLIBS_DIR="${JOLT_GITLIBS_DIR:-$HOME/.jolt/gitlibs}" \
+  OSCOPE_DURABLE_FAILURE_EVIDENCE_ROOT="$evidence_root" \
   OSCOPE_TEST_S3_ENDPOINT="$endpoint" \
-  "$binary"
+  "$binary" > "$evidence_root/fixture.stdout" 2> "$evidence_root/fixture.stderr"
+grep -E '^Ran [0-9]+ tests\. [0-9]+ assertions passed, 0 failures, 0 errors\.$|^oscope Durable S3 woven history and telemetry validated [0-9]+ commands [0-9]+ spans$|^:durable-native-child reader 2 :exit 0 :terminal true :settled true :valid true$' \
+  "$evidence_root/fixture.stdout" || true
 
 (
   cd "$repo_root"
@@ -103,4 +260,6 @@ env JOLT_CHDB_LIB="$JOLT_CHDB_LIB" \
     -m oscope.durable-aspect-report-test "$report"
 )
 
+reader_settled
+semantic_pass=1
 echo "oscope Durable S3 aspect smoke passed"

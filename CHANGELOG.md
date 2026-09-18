@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Preserve failed synthetic MinIO history fixtures as checksum-bound replay
+  bundles, including exact backend bytes, frozen-head seal and private child
+  logs. Require confirmed reader settlement and semantic success before
+  cleanup; unknown outcomes remain unqualified. Hosted artifact retention is
+  limited to this fixed synthetic fixture, never arbitrary telemetry or WAL
+  redaction (Ref #108).
+
 - Add pure cross-library Durable composition controls using the real exporter,
   server and OTLP handlers over fake native/JDBC seams. Derive publication
   cadence from startup owners and logical requests, distinguishing metric-table

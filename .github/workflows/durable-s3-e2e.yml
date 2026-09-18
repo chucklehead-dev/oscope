@@ -194,6 +194,7 @@ jobs:
           OSCOPE_DURABLE_S3_TEST_ALIAS: test-durable-s3
         run: test/durable_s3_minio.sh
       - name: Validate ordered privacy-safe Durable history through pinned MinIO
+        id: durable_history
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
           JOLT_ASPECT_JOLT: ${{ github.workspace }}/.qualification/jolt/bin/jolt
@@ -201,6 +202,78 @@ jobs:
           # JOLT_ASPECT_JOLT alone selects the woven compiler in this gate.
           OSCOPE_DURABLE_ASPECT_BUILD_ALIAS: published
         run: test/durable_s3_aspect_smoke.sh
+      - name: Validate owned synthetic failure evidence location
+        if: ${{ failure() && steps.durable_history.outcome == 'failure' }}
+        id: durable_evidence_location
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${OSCOPE_DURABLE_FAILED_EVIDENCE:?owned evidence location missing}"
+          test "$(dirname "$root")" = "$RUNNER_TEMP"
+          [[ "$(basename "$root")" =~ ^oscope-durable-evidence-[A-Za-z0-9]{8}$ ]]
+          test -d "$root" && test ! -L "$root"
+          test "$(realpath "$root")" = "$root"
+          test -f "$root/scope" && test ! -L "$root/scope"
+          test "$(wc -c < "$root/scope")" -eq 23
+          test "$(cat "$root/scope")" = oscope-synthetic-s3-v1
+          test -f "$root/capture.status" && test ! -L "$root/capture.status"
+          test "$(wc -c < "$root/capture.status")" -le 128
+          test "$(wc -l < "$root/capture.status")" -eq 3
+          test "$(grep -Fxc 'schema=1' "$root/capture.status")" = 1
+          test "$(grep -Ec '^capture=(complete|incomplete)$' "$root/capture.status")" = 1
+          test "$(grep -Ec '^original-exit=[0-9]{1,3}$' "$root/capture.status")" = 1
+          if [ -e "$root/cleanup.status" ]; then
+            test -f "$root/cleanup.status" && test ! -L "$root/cleanup.status"
+            test "$(wc -c < "$root/cleanup.status")" -le 256
+            test "$(wc -l < "$root/cleanup.status")" -eq 6
+            test "$(grep -Fxc 'schema=1' "$root/cleanup.status")" = 1
+            test "$(grep -Fxc 'source-qualification=semantic-and-reader-confirmed' "$root/cleanup.status")" = 1
+            test "$(grep -Fxc 'cleanup=failed' "$root/cleanup.status")" = 1
+            test "$(grep -Ec '^phase=(minio-remove|fixture-delete|path-guard)$' "$root/cleanup.status")" = 1
+            test "$(grep -Fxc 'qualifying-exit=0' "$root/cleanup.status")" = 1
+            test "$(grep -Ec '^cleanup-exit=[0-9]{1,3}$' "$root/cleanup.status")" = 1
+            cleanup_exit=$(sed -n 's/^cleanup-exit=//p' "$root/cleanup.status")
+            test "$cleanup_exit" -gt 0 && test "$cleanup_exit" -le 255
+            test "$(sed -n 's/^original-exit=//p' "$root/capture.status")" = "$cleanup_exit"
+            if ! grep -Fxq 'phase=minio-remove' "$root/cleanup.status"; then
+              grep -Fxq 'capture=incomplete' "$root/capture.status"
+            fi
+          fi
+          if grep -Fxq 'capture=complete' "$root/capture.status"; then
+            test -f "$root/replay.tar.gz" && test ! -L "$root/replay.tar.gz"
+            test -f "$root/replay.sha256" && test ! -L "$root/replay.sha256"
+            test "$(wc -c < "$root/replay.tar.gz")" -le 268435456
+            test "$(wc -l < "$root/replay.sha256")" -eq 1
+            grep -Eq '^[0-9a-f]{64}  replay.tar.gz$' "$root/replay.sha256"
+            (cd "$root"; sha256sum -c replay.sha256)
+            echo 'capture=complete' >> "$GITHUB_OUTPUT"
+          else
+            echo 'capture=incomplete' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Retain failed synthetic Durable history replay evidence
+        if: ${{ failure() && steps.durable_evidence_location.outputs.capture == 'complete' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: durable-history-failed-replay-${{ github.run_id }}-${{ github.run_attempt }}
+          # A partial capture uploads only its closed status, not arbitrary
+          # files. Missing replay bytes remain a failed gate, never proof.
+          path: |
+            ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/replay.tar.gz
+            ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/replay.sha256
+            ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/capture.status
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Retain incomplete synthetic capture status
+        if: ${{ failure() && steps.durable_evidence_location.outputs.capture == 'incomplete' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: durable-history-incomplete-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/capture.status
+            ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/cleanup.status
+          if-no-files-found: error
+          retention-days: 7
       - name: Recover oscope after process crashes through pinned MinIO
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
