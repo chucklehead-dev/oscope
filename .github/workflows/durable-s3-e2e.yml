@@ -2,6 +2,11 @@ name: durable-s3-e2e
 
 on:
   workflow_dispatch:
+    inputs:
+      retain_qualified_synthetic_fixture:
+        description: Deliberately reject the qualified synthetic history harness to validate failed artifact replay
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -201,6 +206,7 @@ jobs:
           # Inherit authenticated JOLT_BIN for independently executed readers;
           # JOLT_ASPECT_JOLT alone selects the woven compiler in this gate.
           OSCOPE_DURABLE_ASPECT_BUILD_ALIAS: published
+          OSCOPE_DURABLE_EVIDENCE_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.retain_qualified_synthetic_fixture && 'post-qualified-harness-rejection' || 'none' }}
         run: test/durable_s3_aspect_smoke.sh
       - name: Validate owned synthetic failure evidence location
         if: ${{ failure() && steps.durable_history.outcome == 'failure' }}
@@ -222,6 +228,16 @@ jobs:
           test "$(grep -Fxc 'schema=1' "$root/capture.status")" = 1
           test "$(grep -Ec '^capture=(complete|incomplete)$' "$root/capture.status")" = 1
           test "$(grep -Ec '^original-exit=[0-9]{1,3}$' "$root/capture.status")" = 1
+          if [ -e "$root/control.status" ]; then
+            test -f "$root/control.status" && test ! -L "$root/control.status"
+            test "$(wc -c < "$root/control.status")" -le 128
+            test "$(wc -l < "$root/control.status")" = 4
+            for field in schema=1 control=post-qualified-harness-rejection qualifying-exit=0 rejection-exit=77; do
+              test "$(grep -Fxc "$field" "$root/control.status")" = 1
+            done
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            grep -Fxq 'original-exit=77' "$root/capture.status"
+          fi
           if [ -e "$root/cleanup.status" ]; then
             test -f "$root/cleanup.status" && test ! -L "$root/cleanup.status"
             test "$(wc -c < "$root/cleanup.status")" -le 256
@@ -272,6 +288,7 @@ jobs:
           path: |
             ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/capture.status
             ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/cleanup.status
+            ${{ env.OSCOPE_DURABLE_FAILED_EVIDENCE }}/control.status
           if-no-files-found: error
           retention-days: 7
       - name: Recover oscope after process crashes through pinned MinIO

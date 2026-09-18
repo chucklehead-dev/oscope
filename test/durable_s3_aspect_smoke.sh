@@ -3,8 +3,17 @@ set -euo pipefail
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 workspace=$(CDPATH= cd -- "$repo_root/.." && pwd)
-toolchain="$workspace/tools/jolt-with-chez-10.4.1"
+toolchain=${OSCOPE_JOLT_TOOLCHAIN:-"$workspace/tools/jolt-with-chez-10.4.1"}
 build_alias=${OSCOPE_DURABLE_ASPECT_BUILD_ALIAS:-dev}
+# A fixed manual qualification control, never a normal push/PR behavior.
+evidence_control=${OSCOPE_DURABLE_EVIDENCE_CONTROL:-none}
+case "$evidence_control" in
+  none) ;;
+  post-qualified-harness-rejection)
+    test "${GITHUB_ACTIONS:-}" = true &&
+      test "${GITHUB_EVENT_NAME:-}" = workflow_dispatch || exit 2 ;;
+  *) echo 'unsupported synthetic evidence control' >&2; exit 2 ;;
+esac
 
 case "$build_alias" in
   dev)
@@ -46,7 +55,7 @@ case "$JOLT_BIN" in
   /*) ;;
   *) echo "JOLT_BIN must be an absolute qualified reader path" >&2; exit 2 ;;
 esac
-test -f "$JOLT_BIN" && test -x "$JOLT_BIN" && test ! -L "$JOLT_BIN"
+test -f "$JOLT_BIN" && test -x "$JOLT_BIN" && test ! -L "$JOLT_BIN" || exit 2
 test "$(realpath "$JOLT_BIN")" = "$JOLT_BIN"
 [[ "$QUALIFIED_RUNTIME_BINARY_SHA256" =~ ^[0-9a-f]{64}$ ]]
 test "$(sha256sum "$JOLT_BIN" | cut -d ' ' -f1)" = "$QUALIFIED_RUNTIME_BINARY_SHA256"
@@ -57,7 +66,14 @@ if [ "${GITHUB_ACTIONS:-}" = true ]; then
   # here, because it is reserved for the root-graph recovery reader.
   jolt_command=("$JOLT_ASPECT_JOLT")
 else
+  # Isolated worktrees may supply the same pinned workspace wrapper explicitly.
+  # Reject relative paths, aliases and a differently named interpreter wrapper.
+  case "$toolchain" in
+    /*/tools/jolt-with-chez-10.4.1) ;;
+    *) echo 'local Jolt toolchain must be an absolute pinned wrapper path' >&2; exit 2 ;;
+  esac
   test -x "$toolchain"
+  test ! -L "$toolchain" && test "$(realpath -e "$toolchain")" = "$toolchain" || exit 2
   jolt_command=("$toolchain" "$JOLT_ASPECT_JOLT")
 fi
 
@@ -105,6 +121,10 @@ archive_failure() {
   test -z "$unexpected" || return 1
   bytes=$(du -sb "$evidence_root" | cut -f1) || return 1
   test "$bytes" -le 268435456 || return 1
+  if [ -e "$evidence_root/control.status" ]; then
+    control_status_valid || return 1
+    test "$1" = 77 || return 1
+  fi
   printf 'schema=1\nscope=synthetic-s3\nqualification=failed\noriginal-exit=%s\nreader-settlement=%s\nbackend-snapshot=unqualified\nreader-log-snapshot=possibly-unfinished\n' \
     "$1" "$(if reader_settled; then printf confirmed; else printf unknown; fi)" > "$evidence_root/outcome" || return 1
   local source_head source_tree
@@ -119,7 +139,7 @@ archive_failure() {
   # prefix, not a fabricated final receipt or universal quiescence claim.
   mkdir "$snapshot" || return 1
   cp -a -- "$evidence_root/backend" "$evidence_root/reports" "$snapshot/" || return 1
-  for file in scope outcome provenance cleanup.status fixture.stdout fixture.stderr reader; do
+  for file in scope outcome provenance cleanup.status control.status fixture.stdout fixture.stderr reader; do
     if [ -e "$evidence_root/$file" ]; then
       cp -a -- "$evidence_root/$file" "$snapshot/" || return 1
     fi
@@ -131,7 +151,7 @@ archive_failure() {
   (
     cd "$snapshot" || exit 1
     find backend reports -type f -print0 || exit 1
-    for file in scope outcome provenance cleanup.status fixture.stdout fixture.stderr; do
+    for file in scope outcome provenance cleanup.status control.status fixture.stdout fixture.stderr; do
       if [ -f "$file" ]; then printf '%s\0' "$file"; fi
     done
     if [ -d reader ]; then find reader -type f -print0 || exit 1; fi
@@ -139,6 +159,31 @@ archive_failure() {
   timeout --kill-after=5s 30s tar -C "$snapshot" -czf "$evidence_root/replay.tar.gz" -- . || return 1
   test "$(wc -c < "$evidence_root/replay.tar.gz")" -le 268435456 || return 1
   (cd "$evidence_root" || exit 1; sha256sum replay.tar.gz > replay.sha256) || return 1
+}
+
+control_status_valid() {
+  local status="$evidence_root/control.status" field
+  test -f "$status" && test ! -L "$status" || return 1
+  test "$(wc -c < "$status")" -le 128 && test "$(wc -l < "$status")" = 4 || return 1
+  for field in schema=1 control=post-qualified-harness-rejection qualifying-exit=0 rejection-exit=77; do
+    test "$(grep -Fxc "$field" "$status")" = 1 || return 1
+  done
+}
+
+reject_qualified_control() {
+  if [ "$evidence_control" = none ]; then return 0; fi
+  test "$evidence_control" = post-qualified-harness-rejection &&
+    test "${GITHUB_ACTIONS:-}" = true &&
+    test "${GITHUB_EVENT_NAME:-}" = workflow_dispatch &&
+    test "$semantic_pass" = 1 && reader_settled || return 2
+  # Call only after ALL fixture, reader and report oracles pass. This is a
+  # deliberate harness rejection, NOT native corruption or unsettled ownership.
+  test ! -e "$evidence_root/control.status" && test ! -L "$evidence_root/control.status" || return 2
+  (set -o noclobber
+   printf 'schema=1\ncontrol=post-qualified-harness-rejection\nqualifying-exit=0\nrejection-exit=77\n' > "$evidence_root/control.status") || return 2
+  control_status_valid || return 2
+  echo 'synthetic post-qualified harness rejection: qualifying exit 0, gate exit 77'
+  return 77
 }
 
 capture_cleanup_status() {
@@ -203,6 +248,7 @@ cleanup() {
     printf 'PASS: synthetic failed replay bundle captured (not recovery qualification)\n'
   fi
   printf 'oscope-durable-evidence=%s\n' "$evidence_root"
+  if [ "$original_exit" = 77 ] && control_status_valid; then exit 77; fi
   exit 1
 }
 trap cleanup EXIT
@@ -214,8 +260,8 @@ trap cleanup EXIT
     -o target/oscope-durable-s3-aspect-test
 )
 
-test -f "$report" && test ! -L "$report"
-test -f "$effects" && test ! -L "$effects"
+test -f "$report" && test ! -L "$report" || exit 2
+test -f "$effects" && test ! -L "$effects" || exit 2
 cp -- "$report" "$evidence_root/reports/aspects.edn"
 cp -- "$effects" "$evidence_root/reports/effects.edn"
 cp -- "$repo_root/deps.edn" "$evidence_root/reports/deps.edn"
@@ -262,4 +308,5 @@ grep -E '^Ran [0-9]+ tests\. [0-9]+ assertions passed, 0 failures, 0 errors\.$|^
 
 reader_settled
 semantic_pass=1
+reject_qualified_control
 echo "oscope Durable S3 aspect smoke passed"
