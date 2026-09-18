@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Pin the qualified-runtime download helper to its reviewed caller-independent
+  capability check in the Durable MinIO workflow; keep exact per-workflow helper
+  expectations and reject helper swaps or duplicate declarations. AWS and Langfuse
+  helper selections remain unchanged. Keep runtime artifact authority, byte-98
+  assertion and all native/Durable gates unchanged; consumer integration remains
+  separately tested.
+
 - Pin merged database and optimized JSON dependency repairs consistently in the
   standalone root, embedded profile, and minimal native app fixture. Explicitly
   select the already-transitive database to avoid order-sensitive time-provider

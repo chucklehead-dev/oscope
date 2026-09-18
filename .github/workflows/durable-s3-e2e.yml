@@ -107,8 +107,8 @@ jobs:
       QUALIFIED_RUNTIME_WORKFLOW_SHA: '6bf745bf6101f2c3481d0ffe16401843c7675050'
       QUALIFIED_RUNTIME_ARTIFACT_SHA256: '353670dda1447d96d46aa1e133e4910481caf2f328d159a9bde76ed863e41524'
       QUALIFIED_RUNTIME_BINARY_SHA256: '31cff7ea89a652bd99848cf15686eb576d90d9ac3962ac07701fb6005e6eb458'
-      QUALIFIED_RUNTIME_HELPER_SOURCE: https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/c26c9bfcf071112531974729b15469b8c9fe713a/scripts/fetch-qualified-durable-runtime.sh
-      QUALIFIED_RUNTIME_HELPER_SHA256: e962976aea263f00440fdf9bfa53c36a158c501f2b87d15aa8a84867fe51caae
+      QUALIFIED_RUNTIME_HELPER_SOURCE: https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/3c683bee4f1a0d5ed91d691cb14330e30d2fcdeb/scripts/fetch-qualified-durable-runtime.sh
+      QUALIFIED_RUNTIME_HELPER_SHA256: 5861a525e3bf755b38966550476f172c87d6678e117c2e07b0d5777b1370fbc2
     steps:
       - uses: actions/checkout@v4
       - name: Checkout canonical chDB native qualification
