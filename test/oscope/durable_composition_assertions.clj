@@ -20,18 +20,26 @@
   {:exporter-start #{:event :batch}
    :schema #{:event :batch}
    :ingress #{:event :batch}
+   ;; A closed application-side observation starts each real OTLP request in
+   ;; the fixture. It deliberately contains no request body, endpoint, or
+   ;; signal value: it is only the categorical link into the Durable trace.
+   :application #{:event :batch :phase}
    :request #{:event :batch}
    :insert #{:event :batch :table}
    :barrier-start #{:event :batch :owner :kind}
    :barrier-end #{:event :batch :owner :kind}
    :publication #{:event :batch :owner :kind}
-   :response #{:event :batch :outcome}})
+   :response #{:event :batch :outcome}
+   ;; This is a pure-fixture receipt, not a native child-process claim. The
+   ;; separately qualified native harness owns that evidence.
+   :generation-receipt #{:event :batch :reader :settlement}})
 
 (defn- assert-envelope! [events]
-  (doseq [{:keys [event batch owner kind table outcome] :as observation} events]
+  (doseq [{:keys [event batch owner kind table outcome phase reader settlement]
+           :as observation} events]
     (when-not (and (map? observation)
                    (= (get event-fields event) (set (keys observation)))
-                   (contains? #{:startup :traces :logs :metrics} batch)
+                   (contains? #{:startup :traces :logs :metrics :shutdown} batch)
                    (or (not (contains? observation :owner))
                        (contains? #{:exporter :server} owner))
                    (or (not (contains? observation :table))
@@ -42,6 +50,12 @@
                      (:barrier-start :barrier-end) (contains? #{:checkpoint :flush} kind)
                      :publication (contains? #{:checkpoint :wal} kind)
                      (:exporter-start :schema :ingress) (= :startup batch)
+                     :application (and (contains? #{:traces :logs :metrics} batch)
+                                       (= :observed phase))
+                     :generation-receipt
+                     (and (= :shutdown batch)
+                          (contains? #{:fresh :wrong} reader)
+                          (= :settled settlement))
                      true))
       (reject! :event-envelope)))
   (let [unfinished
@@ -56,7 +70,8 @@
 
 (defn assert-correspondence!
   "Closed categorical observations qualify this finite nonempty fixture.
-  Native/protocol correctness and process ownership are separate gates."
+  A synthetic settled-reader receipt links the fixture's app-to-publication
+  history to its generation boundary; native/process evidence remains separate."
   [events {:keys [startup-owners logical-batches checkpoint-every] :as contract}]
   (assert-envelope! events)
   (let [indexed (mapv vector (range) events)
@@ -78,20 +93,34 @@
                        (filterv #(= :request (get-in % [1 :event])) indexed)))
       (reject! :logical-input-coverage))
     (doseq [[ordinal batch] (map-indexed vector logical-batches)]
-      (let [inserts (select :insert batch)
+      (let [applications (select :application batch)
+            requests (select :request batch)
+            inserts (select :insert batch)
+            exporter-start (filterv #(= :exporter (get-in % [1 :owner]))
+                                    (select :barrier-start batch))
             exporter (filterv #(= :exporter (get-in % [1 :owner]))
                               (select :barrier-end batch))
+            server-start (filterv #(= :server (get-in % [1 :owner]))
+                                  (select :barrier-start batch))
             server (filterv #(= :server (get-in % [1 :owner]))
                             (select :barrier-end batch))
+            publications (select :publication batch)
             responses (select :response batch)
             expected-tables (case batch :traces [:traces] :logs [:logs]
                                   :metrics [:gauge :sum :histogram])]
         (when-not (and (= (frequencies expected-tables)
                          (frequencies (map #(get-in % [1 :table]) inserts)))
-                       (< (ffirst (select :request batch)) (ffirst inserts))
-                       (= 1 (count exporter)) (= 1 (count server))
-                       (< (first (last inserts)) (ffirst exporter))
-                       (< (ffirst exporter) (ffirst server)))
+                       (= 1 (count applications)) (= 1 (count requests))
+                       (= 1 (count exporter-start)) (= 1 (count exporter))
+                       (= 1 (count publications))
+                       (= 1 (count server-start)) (= 1 (count server))
+                       (< (ffirst applications) (ffirst requests))
+                       (< (ffirst requests) (ffirst inserts))
+                       (< (first (last inserts)) (ffirst exporter-start))
+                       (< (ffirst exporter-start) (ffirst publications))
+                       (< (ffirst publications) (ffirst exporter))
+                       (< (ffirst exporter) (ffirst server-start))
+                       (< (ffirst server-start) (ffirst server)))
           (reject! :logical-batch-boundaries))
         (when-not (and (= 1 (count responses))
                        (= :success (get-in responses [0 1 :outcome]))
@@ -102,6 +131,15 @@
                      (get-in server [0 1 :kind]))
           (reject! :server-cadence))))
     (let [expected (publication-projection contract)
-          actual (mapv :kind (filterv #(= :publication (:event %)) events))]
+          publications (filterv #(= :publication (:event %)) indexed)
+          actual (mapv #(get-in % [1 :kind]) publications)
+          receipts (select :generation-receipt :shutdown)
+          responses (filterv #(= :response (get-in % [1 :event])) indexed)]
       (when-not (= expected actual) (reject! :publication-cadence))
+      (when-not (and (= 1 (count receipts))
+                     (= :fresh (get-in receipts [0 1 :reader]))
+                     (= :settled (get-in receipts [0 1 :settlement]))
+                     (< (first (last publications)) (ffirst receipts))
+                     (< (first (last responses)) (ffirst receipts)))
+        (reject! :generation-receipt))
       expected)))
