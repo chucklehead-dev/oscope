@@ -7,7 +7,7 @@
         ;; profile's transitive jolt-chDB dependency uses the same key.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
-         :git/sha "96324713500c96ae97c0deaf84691f31df158f25"}
+         :git/sha "8c55d9e273f7d625b5c0eb8000755c51a8faacfe"}
         ;; Preserve the application's interruptible HTTP contract under the
         ;; same canonical key used by Samizdat after its provider migration.
         jolt-lang/http-client
@@ -17,5 +17,5 @@
         ;; transitive JSON revision override the embedded profile's selection.
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "932444043c0c06f9e295ba4963419b2481e9dd07"}}
+         :git/sha "97298fd8a67a6d4ee3eb1346d5e184beb9565b90"}}
  :aliases {:test {:main-opts ["-m" "minimal-embedded-app"]}}}

@@ -14,7 +14,8 @@ same repository coordinate with `:deps/root "profiles/embedded"`:
 
 The profile exposes the canonical `oscope.embedded` and
 `oscope.embedded.query` implementations from `src`. It depends only on OTel,
-jolt-chDB, jolt-otel-clickhouse, Malli, and data.json. It does not add
+jolt-chDB, the already-transitive database library, jolt-otel-clickhouse, Malli,
+and data.json (six direct dependencies). It does not add
 jolt-http or jolt-otel-viewer, start a listener, or provide a second lifecycle
 implementation. A consumer's direct dependency selections still have normal
 precedence; this profile is not an override mechanism.
@@ -54,8 +55,14 @@ does not establish constructor acquisition or face-transfer correctness.
 
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
 profile and asserts the exact dependency revisions. Its application coordinate
-selects converged `casselc/db` `96324713` under the canonical `jolt-lang/db`
-key. In one fresh Jolt process it opens a real SQLite file for authoritative
+selects merged `casselc/db` `8c55d9e2` under the canonical `jolt-lang/db`
+key and optimized `casselc/data.json` `97298fd8`. Root and embedded-profile
+dependencies explicitly select the same pair, so the old transitive database
+cannot select a second time provider by resolution order. Historical DB `96324713`
+and pre-convergence causal fixtures remain separate and unchanged. Current-head
+natural-graph and native qualification remain pending; dependency declarations
+alone do not establish a single resolved provider. In one fresh Jolt process the
+fixture opens a real SQLite file for authoritative
 application state and a real local-POSIX Durable chDB writer for telemetry,
 installs an approved typed span manifest, starts one SDK owner, emits and
 exports one span through independent local and remote pipelines, and reads it

@@ -9,6 +9,12 @@
   assertion and all native/Durable gates unchanged; consumer integration remains
   separately tested.
 
+- Pin merged database and optimized JSON dependency repairs consistently in the
+  standalone root, embedded profile, and minimal native app fixture. Explicitly
+  select the already-transitive database to avoid order-sensitive time-provider
+  selection; preserve historical provider controls and the native acceptance
+  oracle. Current-head graph/native qualification remains pending (Ref #119).
+
 - Keep embedded startup cleanup fail-closed until both SDK and independent span
   pipeline owners settle, using exact invocation/error/exporter-face receipts
   from SDKfc6. Complete maintained partial/unreturned pipeline cleanup without
