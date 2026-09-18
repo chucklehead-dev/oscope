@@ -216,6 +216,20 @@
   (try (correspondence/assert-correspondence! events contract)
        nil (catch Throwable error (:obligation (ex-data error)))))
 
+(defn- receipt-before-final-response [events]
+  ;; Keep the categorical receipt itself valid and move only its causal
+  ;; position. This is intentionally a witness mutant, not a second exporter,
+  ;; server, or native implementation.
+  (let [receipt (peek events)
+        prefix (pop events)
+        response-index (last (keep-indexed (fn [index observation]
+                                             (when (= :response (:event observation))
+                                               index))
+                                           prefix))]
+    (vec (concat (subvec prefix 0 response-index)
+                 [receipt]
+                 (subvec prefix response-index)))))
+
 (deftest decoded-input-coverage-precedes-composition
   (is (= 3 (count (checked-inputs! 3000000))))
   (is (= :input-coverage
@@ -273,3 +287,10 @@
   (is (= :generation-receipt
          (rejected-obligation
           (:events (run-composition :wrong-generation-receipt))))))
+
+(deftest settled-generation-receipt-cannot-precede-the-final-response
+  ;; Fresh/settled fields alone are insufficient: the categorical receipt must
+  ;; follow publication and all successful application responses.
+  (is (= :generation-receipt
+         (rejected-obligation
+          (receipt-before-final-response (:events (run-composition nil)))))))
