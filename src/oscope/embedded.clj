@@ -10,6 +10,7 @@
             [otel.exporter.otlp :as otlp]
             [otel.sdk :as sdk]
             [otel.sdk.export :as export]
+            [otel.sdk.lifecycle :as sdk-lifecycle]
             [otel.sdk.logs :as logs]))
 
 (def ^:private batch-option-keys
@@ -152,7 +153,12 @@
     (shutdown! [_]
       (let [outcome (export/shutdown-pipelines! pipelines)]
         (reset! results outcome)
-        (true? (get-in outcome [:local :ok?]))))))
+        (true? (get-in outcome [:local :ok?]))))
+    sdk-lifecycle/SettlementWitness
+    (settlement-status [_]
+      ;; The adapter owns no resource operations beyond those delegated to
+      ;; the maintained pipelines. Delivery policy does not weaken ownership.
+      (sdk-lifecycle/component-settlement pipelines))))
 
 (defn- require-status! [operation allowed result]
   (when-not (contains? allowed (:status result))
@@ -175,10 +181,15 @@
 (defn- stop-result [state failure]
   (cond-> {:status (if (= :closed (:phase state)) :closed :closing)
            :phase (:phase state)}
-    (:span-pipeline-shutdown state)
+    (or (:span-pipeline-shutdown state)
+        (false? (get-in state [:sdk-shutdown :ok?])))
     (assoc :telemetry
-           {:sdk (:sdk-shutdown state)
-            :span-pipelines (:span-pipeline-shutdown state)})
+           (cond-> {:sdk (:sdk-shutdown state)}
+             (:span-pipeline-shutdown state)
+             (assoc :span-pipelines (:span-pipeline-shutdown state))))
+    (and (:sdk-settlement state)
+         (not= :confirmed (get-in state [:sdk-settlement :quiescence])))
+    (assoc :settlement (:sdk-settlement state))
     failure (assoc :errors [failure])))
 
 (defn- safe-counter? [value]
@@ -213,14 +224,24 @@
 (defn- sdk-operation! [operation sdk-handle pipeline-results]
   (try
     (let [ok? (boolean (operation sdk-handle))
-          results (or @pipeline-results {})]
+          results (or (some-> pipeline-results deref) {})]
       {:ok? ok?
        :failure (when-not ok? :returned-false)
        :results results})
     (catch Throwable _
       {:ok? false
        :failure :threw
-       :results (or @pipeline-results {})})))
+       :results (or (some-> pipeline-results deref) {})})))
+
+(defn- sdk-settlement [handle]
+  (let [status (try (sdk/shutdown-status handle) (catch Throwable _ nil))
+        confirmed? (and (= 1 (:otel.sdk.shutdown-status/version status))
+                        (every? #(= :confirmed (get status %))
+                                [:quiescence :sdk-quiescence :exporter-quiescence]))]
+    ;; Copy only the closed proof factors, never a custom witness payload.
+    {:sdk-quiescence (if (= :confirmed (:sdk-quiescence status)) :confirmed :unconfirmed)
+     :exporter-quiescence (if (= :confirmed (:exporter-quiescence status)) :confirmed :unconfirmed)
+     :quiescence (if confirmed? :confirmed :unconfirmed)}))
 
 (defn- stop-lifecycle!
   [{:keys [sdk-handle source connection checkpoint-on-close? state lock
@@ -231,27 +252,24 @@
       (try
         ;; The application owns its ingress. It must stop producing telemetry
         ;; before calling stop!, then this boundary drains every SDK pipeline.
-        (when-not (:sdk-stopped? @state)
-          (if pipeline-results
+        (when-not (:sdk-shutdown-observed? @state)
             (let [{:keys [ok? failure results]}
                   (sdk-operation! sdk/shutdown! sdk-handle pipeline-results)]
-              ;; SDK and processor shutdown are terminal exactly-once actions.
-              ;; Retrying a failed result cannot rerun them, so retain the safe
-              ;; outcome and continue releasing the query and Durable owners.
+              ;; Cache delivery once; subsequent stop calls refresh only the
+              ;; public ownership witness, never the terminal action.
               (swap! state assoc
                      :sdk-shutdown (cond-> {:ok? ok?}
                                      failure (assoc :failure failure))
-                     :span-pipeline-shutdown results
-                     :sdk-stopped? true
-                     :phase :retiring-oscope))
-            ;; Preserve the established local-only contract, whose SDK owner
-            ;; may still report a retryable nonterminal shutdown failure.
-            (do
-              (when-not (sdk/shutdown! sdk-handle)
-                (throw (ex-info "oscope embedded OTel SDK did not stop"
-                                {:oscope.embedded/error true
-                                 :type ::sdk-shutdown-failed})))
-              (swap! state assoc :sdk-stopped? true :phase :retiring-oscope))))
+                     :span-pipeline-shutdown (when pipeline-results results)
+                     :sdk-shutdown-observed? true)))
+        (when-not (:sdk-stopped? @state)
+          (let [settlement (sdk-settlement sdk-handle)]
+            (swap! state assoc :sdk-settlement settlement)
+            (when-not (= :confirmed (:quiescence settlement))
+              (throw (ex-info "oscope embedded SDK ownership is unconfirmed"
+                              {:oscope.embedded/error true
+                               :type ::sdk-settlement-unconfirmed})))
+            (swap! state assoc :sdk-stopped? true :phase :retiring-oscope)))
         (when-not (:oscope-retired? @state)
           (live/close! source)
           (swap! state assoc :oscope-retired? true :phase :persisting))

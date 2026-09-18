@@ -1,6 +1,6 @@
 (ns oscope.embedded-test
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is use-fixtures]]
             [jdbc.chdb.durable]
             [jdbc.core :as jdbc]
             [jolt.host :as host]
@@ -11,6 +11,7 @@
             [otel.exporter.otlp :as otlp]
             [otel.sdk :as sdk]
             [otel.sdk.export :as export]
+            [otel.sdk.lifecycle :as sdk-lifecycle]
             [otel.sdk.logs :as sdk-logs]
             [otel.trace :as trace]))
 
@@ -20,6 +21,243 @@
       (pred) true
       (< attempt 1000) (do (Thread/sleep 2) (recur (inc attempt)))
       :else false)))
+
+(use-fixtures :each
+  (fn [test]
+    (let [observe sdk/shutdown-status]
+      (with-redefs [sdk/shutdown-status
+                    (fn [handle]
+                      ;; Historical unit fixtures explicitly use inert keyword
+                      ;; SDK owners, with no worker or exporter resource users.
+                      ;; Real maintained handles ALWAYS use the real witness.
+                      (if (contains? #{::sdk-handle ::handle} handle)
+                        {:otel.sdk.shutdown-status/version 1
+                         :sdk-quiescence :confirmed
+                         :exporter-quiescence :confirmed
+                         :quiescence :confirmed}
+                        (observe handle)))]
+        (test)))))
+
+(defn- owned-stop-fixture [handle events]
+  {:sdk-handle handle :lock (Object.)
+   :state (atom {:phase :open}) :checkpoint-on-close? true
+   :source {:close! #(swap! events conj :source-close)}
+   :connection (reify java.io.Closeable
+                 (close [_] (swap! events conj :connection-close)))})
+
+(defn- cleanup-settlement-valid? [events]
+  ;; A consumer-only oracle: SDK proof is observed through the public API;
+  ;; exporter users are counted independently by this controlled fixture.
+  ;; Native owners below are inert. This is not native-persistence proof.
+  (try
+    (when (> (count events) 128)
+      (throw (ex-info "cleanup journal exceeded bound" {})))
+    (reduce
+     (fn [{:keys [proof cleanup] :as state} [index entry]]
+       (when-not (and (= index (:seq entry)) (= :embedded (:owner entry))
+                      (keyword? (:operation entry))
+                      (every? #(or (nil? %) (boolean? %) (keyword? %)
+                                   (and (integer? %) (<= 0 % 128)))
+                              (vals entry)))
+         (throw (ex-info "invalid cleanup envelope" {})))
+       (case (:event entry)
+         :proof (do
+                  (when-not (= 1 (:version entry))
+                    (throw (ex-info "unsupported settlement version" {})))
+                  (when (and (= :confirmed (:overall entry))
+                             (or (pos? (:users entry))
+                                 (not= :confirmed (:sdk entry))
+                                 (not= :confirmed (:exporter entry))))
+                    (throw (ex-info "premature aggregate proof" {})))
+                  (assoc state :proof entry))
+         (:source-close :checkpoint :connection-close)
+         (do (when-not (and (= :confirmed (:overall proof))
+                            (zero? (:users entry))
+                            (= (:event entry)
+                               (nth [:source-close :checkpoint :connection-close]
+                                    (count cleanup) nil)))
+               (throw (ex-info "cleanup without fresh settled permission" {})))
+             (update state :cleanup conj (:event entry)))
+         (throw (ex-info "unknown cleanup event" {}))))
+     {:proof nil :cleanup []} (map-indexed vector events))
+    true
+    (catch :default _ false)))
+
+(defn- partial-sdk-cleanup-trace [early-aggregate?]
+  (let [events (atom []) finish (promise) started (promise)
+        background (Thread. #(do (deliver started true) @finish))
+        retired (atom false) releases (atom 0)
+        users #(if (.isAlive background) 1 0)
+        record! (fn [operation event data]
+                  (locking events
+                    (swap! events conj
+                           (merge data {:seq (count @events) :owner :embedded
+                                        :operation operation :event event}))))
+        pending (reify export/SpanExporter
+                  (export-spans! [_ _] true) (flush-exporter! [_] true)
+                  (shutdown-exporter! [_]
+                    (swap! releases inc) (reset! retired true) false)
+                  sdk-lifecycle/SettlementWitness
+                  (settlement-status [_]
+                    {:quiescence (if (and @retired (zero? (users)))
+                                   :confirmed :unconfirmed)}))
+        settled (reify export/SpanExporter
+                  (export-spans! [_ _] true) (flush-exporter! [_] true)
+                  (shutdown-exporter! [_] true))
+        handle (sdk/init! {:exporter :none
+                           :span-processors [(export/simple-processor settled)
+                                             (export/simple-processor pending)]
+                           :metrics? false :logs? false :runtime-metrics? false})
+        owner {:sdk-handle handle :lock (Object.) :state (atom {:phase :open})
+               :checkpoint-on-close? true
+               :source {:close! #(record! :cleanup :source-close {:users (users)})}
+               :connection (reify java.io.Closeable
+                             (close [_] (record! :cleanup :connection-close
+                                               {:users (users)})))}
+        observe sdk/shutdown-status
+        combine sdk-lifecycle/combined-settlement]
+    (.start background)
+    (try
+      (is (= true (deref started 2000 :timeout)))
+      (with-redefs [sdk-lifecycle/combined-settlement
+                    (fn [components terminal]
+                      ;; Alter the real aggregate permission path: confirming
+                      ;; only the first component must not unlock cleanup.
+                      (combine (if early-aggregate? (take 1 components) components)
+                               terminal))
+                    sdk/shutdown-status
+                    (fn [h]
+                      (let [proof (observe h)]
+                        (record! :observe :proof
+                                 {:version (:otel.sdk.shutdown-status/version proof)
+                                  :sdk (:sdk-quiescence proof)
+                                  :exporter (:exporter-quiescence proof)
+                                  :overall (:quiescence proof) :users (users)})
+                        proof))
+                    jdbc.chdb.durable/checkpoint!
+                    (fn [_] (record! :cleanup :checkpoint {:users (users)})
+                      {:status :committed})]
+        (let [first-stop (#'embedded/stop-lifecycle! owner)]
+          (when-not early-aggregate?
+            (is (= :closing (:status first-stop)))
+            (is (= [:proof] (mapv :event @events)))
+            (is (= :unconfirmed (get-in first-stop [:settlement :exporter-quiescence])))
+            (is (= :confirmed (get-in first-stop [:settlement :sdk-quiescence]))))
+          (deliver finish true) (.join background 2000)
+          (is (not (.isAlive background)))
+          (let [closed (#'embedded/stop-lifecycle! owner)]
+            (is (= :closed (:status closed)))
+            (is (= {:ok? false :failure :returned-false}
+                   (get-in closed [:telemetry :sdk])))
+            (is (= 1 @releases))
+            (is (= closed (#'embedded/stop-lifecycle! owner))))))
+      @events
+      (finally (deliver finish true) (.join background 2000)))))
+
+(deftest actual-partial-sdk-proof-refresh-controls-consumer-cleanup
+  (let [events (partial-sdk-cleanup-trace false)]
+    (is (cleanup-settlement-valid? events))
+    (is (= [:proof :proof :source-close :checkpoint :connection-close]
+           (mapv :event events))))
+  (is (not (cleanup-settlement-valid? (partial-sdk-cleanup-trace true)))
+      "same consumer oracle rejects actual first-component-only permission"))
+
+(deftest sdk-exporter-settlement-controls-native-cleanup
+  ;; These are real maintained processor and SDK terminal owners. Only the
+  ;; native/query owners are inert fixtures; no all-true status stub is used.
+  (doseq [failure [:returned-false :threw]]
+    (let [events (atom []) calls (atom 0) settled (atom false)
+          exporter (reify
+                     export/SpanExporter
+                     (export-spans! [_ _] true)
+                     (flush-exporter! [_] true)
+                     (shutdown-exporter! [_]
+                       (swap! calls inc)
+                       (if (= failure :threw)
+                         (throw (ex-info "private-exporter-value" {})) false))
+                     sdk-lifecycle/SettlementWitness
+                     (settlement-status [_]
+                       {:quiescence (if @settled :confirmed :unconfirmed)}))
+          processor (export/simple-processor exporter)
+          handle (sdk/init! {:exporter exporter :span-processors [processor]
+                             :metrics? false :logs? false})
+          owner (owned-stop-fixture handle events)]
+      (with-redefs [jdbc.chdb.durable/checkpoint!
+                    (fn [_] (swap! events conj :checkpoint) {:status :committed})]
+        (let [first-stop (#'embedded/stop-lifecycle! owner)]
+          (is (= :closing (:status first-stop)))
+          (is (= :open (:phase first-stop)))
+          (is (= :unconfirmed (get-in first-stop [:settlement :exporter-quiescence])))
+          (is (empty? @events))
+          (is (= 1 @calls))
+          (is (= :closing (:status (#'embedded/stop-lifecycle! owner))))
+          (is (= 1 @calls))
+          ;; Explicit exporter-owned stable retired settlement becomes known
+          ;; later; the cached failed delivery never changes or replays.
+          (reset! settled true)
+          (let [closed (#'embedded/stop-lifecycle! owner)]
+            (is (= :closed (:status closed)))
+            (is (= {:ok? false :failure failure}
+                   (get-in closed [:telemetry :sdk])))
+            (is (= [:source-close :checkpoint :connection-close] @events))
+            (is (= 1 @calls))
+            (is (= closed (#'embedded/stop-lifecycle! owner)))
+            (is (not (str/includes? (pr-str closed) "private-exporter-value")))))))))
+
+(deftest unknown-and-malformed-settlement-never-release-native-owners
+  (doseq [status [nil {} {:otel.sdk.shutdown-status/version 1
+                         :quiescence :confirmed :sdk-quiescence :confirmed
+                         :exporter-quiescence :unconfirmed}
+                  {:otel.sdk.shutdown-status/version 2
+                   :quiescence :confirmed :sdk-quiescence :confirmed
+                   :exporter-quiescence :confirmed}]]
+    (let [events (atom []) calls (atom 0)
+          owner (owned-stop-fixture ::unknown events)]
+      (with-redefs [sdk/shutdown! (fn [_] (swap! calls inc) true)
+                    sdk/shutdown-status (constantly status)]
+        (is (= :closing (:status (#'embedded/stop-lifecycle! owner))))
+        (is (= :closing (:status (#'embedded/stop-lifecycle! owner))))
+        (is (= 1 @calls))
+        (is (empty? @events))))))
+
+(declare test-exporter)
+
+(deftest maintained-dual-pipeline-adapter-preserves-settlement-and-delivery
+  (let [events (atom []) releases (atom 0) settled (atom false)
+        local (reify export/SpanExporter
+                (export-spans! [_ _] true)
+                (flush-exporter! [_] true)
+                (shutdown-exporter! [_] (swap! releases inc) false)
+                sdk-lifecycle/SettlementWitness
+                (settlement-status [_]
+                  {:quiescence (if @settled :confirmed :unconfirmed)}))
+        remote (test-exporter (atom []) (atom 0))
+        pipelines (export/independent-batch-pipelines
+                   {:local {:exporter local :config {:schedule-delay-ms 60000}}
+                    :remote {:exporter remote :config {:schedule-delay-ms 60000}}})
+        results (atom nil)
+        processor (#'embedded/local-required-processor pipelines results)
+        handle (sdk/init! {:exporter local :span-processors [processor]
+                           :metrics? false :logs? false})
+        owner (assoc (owned-stop-fixture handle events) :pipeline-results results)]
+    (with-redefs [jdbc.chdb.durable/checkpoint!
+                  (fn [_] (swap! events conj :checkpoint) {:status :committed})]
+      (let [pending (#'embedded/stop-lifecycle! owner)]
+        (is (= :closing (:status pending)))
+        (is (= :open (:phase pending)))
+        (is (empty? @events))
+        (is (= {:ok? false :failure :returned-false}
+               (get-in pending [:telemetry :span-pipelines :local])))
+        (is (= {:ok? true} (get-in pending [:telemetry :span-pipelines :remote])))
+        (is (= 1 @releases))
+        (reset! settled true)
+        (let [closed (#'embedded/stop-lifecycle! owner)]
+          (is (= :closed (:status closed)))
+          (is (= {:ok? false :failure :returned-false}
+                 (get-in closed [:telemetry :sdk])))
+          (is (= [:source-close :checkpoint :connection-close] @events))
+          (is (= 1 @releases))
+          (is (= closed (#'embedded/stop-lifecycle! owner))))))))
 
 (defn- assert-public-result-safe! [result canary]
   (let [values (tree-seq coll? seq result)]

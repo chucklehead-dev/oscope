@@ -9,6 +9,19 @@
   limited to this fixed synthetic fixture, never arbitrary telemetry or WAL
   redaction (Ref #108).
 
+- Test partial two-component SDK settlement and fresh public-proof cleanup
+  ordering using a real exporter-owned background user. A causal aggregate
+  permission control checks the same consumer oracle; native owners are inert.
+
+- Gate embedded native cleanup on confirmed SDK and exporter settlement, not
+  successful delivery alone. Cache shutdown delivery results once and refresh
+  public ownership evidence without replaying shutdown (Refs #114). Bounded
+  model and implementation-connected trace checks exist. The prepared consumer
+  integration and SDK pin passed the bounded Local Durable suite (101 pure tests / 1,186
+  assertions; six native fixtures / 74 assertions, zero failures/errors).
+  SDK PR #41 is merged; final consumer review and current-head hosted/S3
+  qualification remain pending. These checks are not universal persistence proof.
+
 - Add pure cross-library Durable composition controls using the real exporter,
   server and OTLP handlers over fake native/JDBC seams. Derive publication
   cadence from startup owners and logical requests, distinguishing metric-table
