@@ -7,6 +7,7 @@
             [oscope.embedded :as embedded]
             [oscope.live :as live]
             [oscope.typed-schema :as typed-schema]
+            [otel.instrument.runtime :as runtime]
             [otel.exporter.chdb :as chdb-export]
             [otel.exporter.otlp :as otlp]
             [otel.sdk :as sdk]
@@ -161,6 +162,385 @@
            (mapv :event events))))
   (is (not (cleanup-settlement-valid? (partial-sdk-cleanup-trace true)))
       "same consumer oracle rejects actual first-component-only permission"))
+
+(defn- startup-cleanup-settlement-valid? [events]
+  ;; The partial-startup owner is a real maintained pipeline, not a SDK handle.
+  ;; Native connection below is inert; this checks cleanup permission only.
+  (and (<= (count events) 128)
+       (contains? #{[:pipeline-proof] [:pipeline-proof :connection-close]}
+                  (mapv :event events))
+       (every? true?
+               (map-indexed
+                (fn [index event]
+                  (and (= index (:seq event)) (= :startup (:owner event))
+                       (= :cleanup (:operation event))
+                       (= #{:seq :owner :operation :event :users :quiescence}
+                          (set (keys event)))
+                       (contains? #{:confirmed :unconfirmed} (:quiescence event))
+                       (integer? (:users event)) (<= 0 (:users event) 1)))
+                events))
+       (every? #(or (= :pipeline-proof (:event %))
+                    (and (zero? (:users %)) (= :confirmed (:quiescence %))))
+               events)))
+
+(defn- partial-startup-cleanup-trace
+  ([user-settled?] (partial-startup-cleanup-trace user-settled? :pre-sdk))
+  ([user-settled? mode]
+  (let [events (atom []) started (promise) finish (promise)
+        background (Thread. #(do (deliver started true) @finish))
+        retired (atom false) releases (atom 0) pipelines (atom nil)
+        sdk-starts (atom 0) source-opens (atom 0)
+        startup-error (ex-info "controlled partial startup failure" {})
+        users #(if (.isAlive background) 1 0)
+        proof-owner (atom nil)
+        proof #(sdk-lifecycle/component-settlement @proof-owner)
+        record! (fn [event]
+                  (locking events
+                    (swap! events conj {:seq (count @events) :owner :startup
+                                        :operation :cleanup :event event
+                                        :users (users)
+                                        :quiescence (:quiescence (proof))})))
+        local (reify export/SpanExporter
+                (export-spans! [_ _] true) (flush-exporter! [_] true)
+                (shutdown-exporter! [_]
+                  (swap! releases inc) (reset! retired true)
+                  (when (= :local-only mode) (record! :pipeline-proof))
+                  false)
+                sdk-lifecycle/SettlementWitness
+                (settlement-status [_]
+                  ;; Truthful permanent retirement, not momentary idleness.
+                  {:quiescence (if (and @retired (zero? (users)))
+                                 :confirmed :unconfirmed)}))
+        remote (reify export/SpanExporter
+                 (export-spans! [_ _] true) (flush-exporter! [_] true)
+                 (shutdown-exporter! [_] true))
+        connection (reify java.io.Closeable
+                     (close [_] (record! :connection-close)))
+        make-sdk sdk/init!
+        original-env host/getenv
+        shutdown-pipelines export/shutdown-pipelines!]
+    (.start background)
+    (try
+      (is (= true (deref started 2000 :timeout)))
+      (when user-settled?
+        (deliver finish true) (.join background 2000)
+        (is (not (.isAlive background))))
+      (when (= :local-only mode) (reset! proof-owner local))
+      (with-redefs [sdk/tracer-provider (constantly nil)
+                    sdk/meter-provider (constantly nil)
+                    sdk/logger-provider (constantly nil)
+                    jdbc/connection (constantly connection)
+                    chdb-export/exporter (constantly local)
+                    otlp/exporter (constantly remote)
+                    live/open! (fn [_] (swap! source-opens inc)
+                                 (if (contains? #{:disabled :init-throws} mode)
+                                   ::source (throw startup-error)))
+                    live/close! (constantly nil)
+                    host/getenv (fn [name]
+                                  (if (= "OTEL_SDK_DISABLED" name)
+                                    (if (= :disabled mode) "true" "false")
+                                    (original-env name)))
+                    sdk/init! (if (= :disabled mode) make-sdk
+                                (fn [_] (swap! sdk-starts inc)
+                                  (throw startup-error)))
+                    export/shutdown-pipelines!
+                    (fn [owner]
+                      (reset! pipelines owner)
+                      (reset! proof-owner owner)
+                      ;; Observe the original maintained terminal pathway and
+                      ;; preserve its value/Throwable. Never manufacture proof.
+                      (try (shutdown-pipelines owner)
+                           (finally (record! :pipeline-proof))))]
+        (let [error (try
+                      (embedded/start!
+                       (cond-> {:db-spec ::durable
+                                :sdk-options {:metrics? false :logs? false}}
+                        (not= :local-only mode)
+                        (assoc :span-pipelines
+                               {:local {:schedule-delay-ms 60000}
+                                :remote {:endpoint "http://127.0.0.1:4318"
+                                         :insecure? true :schedule-delay-ms 60000}})))
+                      nil
+                      (catch Throwable error error))]
+          (if (and user-settled? (not= :init-throws mode))
+            (if (= :disabled mode)
+              (is (= :oscope.embedded/sdk-disabled (:type (ex-data error))))
+              (is (identical? startup-error error)))
+            (let [data (ex-data error) retry-stop! (:retry-stop! data)]
+              (is (= :oscope.readiness/startup-cleanup-incomplete (:type data)))
+              (is (= #{:oscope.readiness/error :type :operation :retry-stop!}
+                     (set (keys data))))
+              (is (nil? (.getCause error)))
+              (is (fn? retry-stop!))
+              (is (= [:pipeline-proof] (mapv :event @events)))
+              (is (= :closing (:status (retry-stop!))))
+              (is (= 1 @releases))
+              (deliver finish true) (.join background 2000)
+              (is (not (.isAlive background)))
+              (if (= :init-throws mode)
+                (do (is (= :closing (:status (retry-stop!))))
+                    (is (= [:pipeline-proof] (mapv :event @events))))
+                (do (is (= :closed (:status (retry-stop!))))
+                    (is (= :closed (:status (retry-stop!))))
+                    (is (= [:pipeline-proof :connection-close]
+                           (mapv :event @events)))))))
+          (is (= 1 @source-opens))
+          ;; Only the intentionally foreign failing stub increments this seam.
+          (is (= (if (= :init-throws mode) 1 0) @sdk-starts))
+          (is (= 1 @releases))
+          (is (= :confirmed (:quiescence (proof))))
+          (is (= :pipeline-proof (:event (first @events))))
+          @events))
+      (finally
+        (deliver finish true) (.join background 2000)
+        (is (not (.isAlive background)))
+        ;; No queued exports exist in this fixture. Join actual maintained SDK
+        ;; workers after observations; cleanup does not alter recorded proof.
+        (doseq [[_ processor] (:pipelines @pipelines)]
+          (let [worker (:worker processor)]
+            (when (.isAlive worker) (.interrupt worker))
+            (.join worker 2000)
+            (is (not (.isAlive worker))))))))))
+
+(deftest partial-startup-requires-settlement-before-native-close
+  (is (startup-cleanup-settlement-valid? (partial-startup-cleanup-trace true))
+      "same oracle permits an actually settled partial owner")
+  (is (startup-cleanup-settlement-valid? (partial-startup-cleanup-trace false))
+      "failed startup defers native cleanup until actual settlement"))
+
+(deftest partial-startup-disabled-and-local-face-settlement
+  (doseq [mode [:disabled :local-only] settled? [true false]]
+    (is (startup-cleanup-settlement-valid?
+         (partial-startup-cleanup-trace settled? mode))
+        "disabled SDK must not mask pipelines; orphan faces need their own proof")))
+
+(deftest partial-startup-unobservable-sdk-constructor-fails-closed
+  (is (startup-cleanup-settlement-valid?
+       (partial-startup-cleanup-trace false :init-throws))
+      "known pipelines retiring cannot prove unobservable SDK workers retired"))
+
+(defn- concurrent-startup-retries! [retry-stop!]
+  (let [go (promise) results [(promise) (promise)]
+        workers (mapv (fn [result]
+                        (Thread. #(do @go (deliver result (retry-stop!))))) results)]
+    (try
+      (doseq [worker workers] (.start worker))
+      (deliver go true)
+      (doseq [result results] (is (= :closed (:status (deref result 2000 {})))))
+      (finally
+        (deliver go true)
+        (doseq [worker workers] (.join worker 2000) (is (not (.isAlive worker))))))))
+
+(defn- actual-startup-face-trace [mode]
+  (let [events (atom []) cleanup-events (atom nil)
+        releases (atom {:spans 0 :metrics 0 :logs 0 :remote 0})
+        owners (atom []) sentinel (ex-info "actual startup seam" {})
+        sdk-evidence (atom nil)
+        settled (atom false) entered (promise) finish (promise) users (atom 0)
+        resource-ref (atom nil)
+        background (Thread. (fn [] (swap! users inc)
+                              (try (deliver entered true) @finish
+                                   (export/export-metrics! @resource-ref {} [])
+                                   (finally (swap! users dec)))))
+        held? (contains? #{:held-false :held-throw :foreign-pipeline
+                          :foreign-returned-pipeline :foreign-sdk-disabled
+                          :foreign-sdk-failure} mode)
+        record! #(swap! events conj %)
+        release! (fn [signal]
+                   (swap! releases update signal inc)
+                   (record! [:release signal])
+                   (case mode :held-false false :held-throw (throw sentinel) true))
+        local (reify export/SpanExporter
+                (export-spans! [_ _] true) (flush-exporter! [_] true)
+                (shutdown-exporter! [_] (release! :spans))
+                export/MetricExporter
+                (export-metrics! [_ _ _] true)
+                (shutdown-metric-exporter! [_] (release! :metrics))
+                sdk-logs/LogRecordExporter
+                (export-logs! [_ _] true)
+                (shutdown-log-exporter! [_] (release! :logs))
+                sdk-lifecycle/SettlementWitness
+                (settlement-status [_]
+                  {:quiescence (if (and @settled (zero? @users))
+                                 :confirmed :unconfirmed)}))
+        remote (reify export/SpanExporter
+                 (export-spans! [_ _] true) (flush-exporter! [_] true)
+                 (shutdown-exporter! [_] (release! :remote)))
+        connection (reify java.io.Closeable (close [_] (record! :connection-close)))
+        original-start sdk-lifecycle/start-owned-worker!
+        original-pipelines export/independent-batch-pipelines
+        original-factory export/batch-processor
+        make-sdk sdk/init!
+        original-env host/getenv
+        original-tracer sdk/tracer-provider
+        original-meter sdk/meter-provider
+        original-logger sdk/logger-provider
+        dual? (contains? #{:dual :alias :partial :pipeline-post-success :foreign-pipeline
+                          :foreign-returned-pipeline} mode)
+        expected {:spans (if (= :alias mode) 2 1) :metrics 1 :logs 1
+                  :remote (if (and dual? (not= :alias mode)) 1 0)}
+        count-oracle #(= expected @releases)]
+    (try
+      (reset! resource-ref local)
+      (when (and held? (not (contains? #{:foreign-pipeline :foreign-returned-pipeline
+                                       :foreign-sdk-disabled :foreign-sdk-failure} mode)))
+        (.start background)
+        (is (= true (deref entered 2000 ::timeout))))
+      (with-redefs [sdk/tracer-provider (constantly nil)
+                    sdk/meter-provider (constantly nil) sdk/logger-provider (constantly nil)
+                    jdbc/connection (constantly connection)
+                    chdb-export/exporter (constantly local)
+                    otlp/exporter (constantly (if (= :alias mode) local remote))
+                    live/open! (fn [_] (record! :source-open) ::source)
+                    live/close! (fn [_] (record! :source-close))
+                    host/getenv (fn [name]
+                                  (if (= "OTEL_SDK_DISABLED" name)
+                                    (if (= :foreign-sdk-disabled mode) "true" "false")
+                                    (original-env name)))
+                    runtime/register! (fn [_] (throw sentinel))
+                    sdk-lifecycle/start-owned-worker!
+                    (fn [receipt owner worker]
+                      (swap! owners conj owner)
+                      (let [result (original-start receipt owner worker)]
+                        (when (and (= :partial mode) (= 1 (count @owners)))
+                          (throw sentinel))
+                        result))
+                    export/batch-processor
+                    (if (= :foreign-pipeline mode)
+                      (fn [& _] (.start background)
+                        (when-not (= true (deref entered 2000 ::timeout))
+                          (throw (ex-info "foreign user missing" {})))
+                        (throw sentinel))
+                      original-factory)
+                    export/independent-batch-pipelines
+                    (if (contains? #{:pipeline-post-success :foreign-returned-pipeline} mode)
+                      (fn [& args]
+                        (let [owner (apply original-pipelines args)]
+                          (when (= :foreign-returned-pipeline mode)
+                            (.start background)
+                            (when-not (= true (deref entered 2000 ::timeout))
+                              (throw (ex-info "foreign returned user missing" {}))))
+                          (when (= :pipeline-post-success mode) (throw sentinel))
+                          owner))
+                      original-pipelines)
+                    sdk/init! (if (contains? #{:foreign-sdk-disabled :foreign-sdk-failure} mode)
+                                (fn [options]
+                                  (.start background)
+                                  (when-not (= true (deref entered 2000 ::timeout))
+                                    (throw (ex-info "foreign SDK user missing" {})))
+                                  (try
+                                    (let [handle (make-sdk options)]
+                                      (reset! sdk-evidence {:handle handle})
+                                      handle)
+                                    (catch Throwable error
+                                      (reset! sdk-evidence
+                                              {:receipt (:construction-receipt options)
+                                               :error error})
+                                      (throw error))))
+                                make-sdk)]
+        (let [error (try (embedded/start!
+                         (cond-> {:db-spec ::durable
+                                  :sdk-options (cond-> {:logs? true :runtime-metrics? true
+                                                       :bridge-logging? false}
+                                                 (= :validation mode)
+                                                 (assoc :max-queue-size 0))}
+                           dual? (assoc :span-pipelines
+                                        {:local {:schedule-delay-ms 60000}
+                                         :remote {:endpoint "http://127.0.0.1:4318"
+                                                  :insecure? true
+                                                  :schedule-delay-ms 60000}})))
+                        nil (catch Throwable error error))
+              retry-stop! (:retry-stop! (ex-data error))]
+          (if (contains? #{:held-false :held-throw :foreign-pipeline :pipeline-post-success
+                          :foreign-returned-pipeline :foreign-sdk-disabled
+                          :foreign-sdk-failure} mode)
+            (do
+              (is (= :oscope.readiness/startup-cleanup-incomplete (:type (ex-data error))))
+              (is (nil? (.getCause error)))
+              (is (= #{:oscope.readiness/error :type :operation :retry-stop!}
+                     (set (keys (ex-data error)))))
+              (is (fn? retry-stop!))
+              (is (not (some #{:source-close :connection-close} @events)))
+              (is (= :closing (:status (retry-stop!))))
+              (when (= :foreign-sdk-disabled mode)
+                (is (true? (:disabled? (:handle @sdk-evidence))))
+                (is (= :confirmed
+                       (:quiescence (sdk/shutdown-status (:handle @sdk-evidence)))))
+                (is (= {:spans 0 :metrics 0 :logs 0 :remote 0} @releases)))
+              (when (= :foreign-sdk-failure mode)
+                (is (identical? sentinel (:error @sdk-evidence)))
+                (is (= :confirmed
+                       (:quiescence
+                        (sdk-lifecycle/construction-failure-status
+                         (:receipt @sdk-evidence) sentinel))))
+                (is (count-oracle)))
+              (when held?
+                (is (= true (deref entered 2000 ::timeout)))
+                (is (= 1 @users))
+                (is (.isAlive background)))
+              (let [before @releases]
+                (deliver finish true) (.join background 2000)
+                (is (not (.isAlive background)))
+                (reset! settled true)
+                (if (contains? #{:foreign-pipeline :pipeline-post-success
+                                :foreign-returned-pipeline :foreign-sdk-disabled
+                                :foreign-sdk-failure} mode)
+                  (do (is (= :closing (:status (retry-stop!))))
+                      (is (not (some #{:source-close :connection-close} @events))))
+                  (do (concurrent-startup-retries! retry-stop!)
+                      (is (count-oracle))))
+                (is (= before @releases))))
+            (do
+              (is (some? error))
+              (when (not= :validation mode) (is (identical? sentinel error)))
+              (is (count-oracle))
+              (is (= :connection-close (last @events)))
+              (when (not= :partial mode)
+                (is (= [:source-close :connection-close] (vec (take-last 2 @events)))))
+              ;; Freeze actual cleanup observations before the deliberately
+              ;; invalid extra consumer release appends its own event.
+              (reset! cleanup-events @events)
+              ;; Hypothetical extra consumer release: EXACT SAME count oracle.
+              (export/shutdown-exporter! local)
+              (is (not (count-oracle)))))
+          (when (= :foreign-pipeline mode)
+            (is (= {:spans 0 :metrics 0 :logs 0 :remote 0} @releases)))
+          ;; Inspect actual globals, not the preflight nil stubs above.
+          (is (nil? (original-tracer)))
+          (is (nil? (original-meter)))
+          (is (nil? (original-logger)))
+          {:events @events :cleanup-events @cleanup-events
+           :releases @releases :workers (count @owners)}))
+      (finally
+        (deliver finish true)
+        (when held? (.join background 2000))
+        (is (not (.isAlive background)))
+        (doseq [owner @owners]
+          (try (export/shutdown! owner) (catch Throwable _ nil))
+          (.join (:worker owner) 2000)
+          (is (not (.isAlive (:worker owner)))))))))
+
+(deftest actual-maintained-startup-faces-clean-up-without-replay
+  (doseq [mode [:runtime :validation :dual :alias :partial]]
+    (let [trace (actual-startup-face-trace mode)]
+      (is (= :connection-close (last (:cleanup-events trace)))))))
+
+(deftest actual-startup-failed-release-refreshes-proof-not-callbacks
+  (doseq [mode [:held-false :held-throw]]
+    (let [trace (actual-startup-face-trace mode)]
+      (is (= [:source-close :connection-close] (vec (take-last 2 (:events trace))))))))
+
+(deftest actual-unreturned-pipeline-evidence-remains-unknown
+  (doseq [mode [:foreign-pipeline :pipeline-post-success :foreign-returned-pipeline]]
+    (let [trace (actual-startup-face-trace mode)]
+      (is (not (some #{:source-close :connection-close} (:events trace)))))))
+
+(deftest actual-foreign-sdk-constructor-provenance-remains-unknown
+  ;; An empty returned SDK or a genuinely matching, settled maintained failure
+  ;; receipt cannot account for the wrapper's independently held metric user.
+  (doseq [mode [:foreign-sdk-disabled :foreign-sdk-failure]]
+    (let [trace (actual-startup-face-trace mode)]
+      (is (not (some #{:source-close :connection-close} (:events trace)))))))
 
 (deftest sdk-exporter-settlement-controls-native-cleanup
   ;; These are real maintained processor and SDK terminal owners. Only the

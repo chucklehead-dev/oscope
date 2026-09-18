@@ -14,13 +14,14 @@ same repository coordinate with `:deps/root "profiles/embedded"`:
 
 The profile exposes the canonical `oscope.embedded` and
 `oscope.embedded.query` implementations from `src`. It depends only on OTel,
-jolt-chDB, jolt-otel-clickhouse, Malli, and data.json. It does not add
+jolt-chDB, the already-transitive database library, jolt-otel-clickhouse, Malli,
+and data.json (six direct dependencies). It does not add
 jolt-http or jolt-otel-viewer, start a listener, or provide a second lifecycle
 implementation. A consumer's direct dependency selections still have normal
 precedence; this profile is not an override mechanism.
 
-The profile currently pins SDK checkpoint `88a63fd9` from
-[casselc/otel PR #41](https://github.com/casselc/otel/pull/41), now merged into
+The profile currently pins SDK merge `fc6cd6b3` from
+[casselc/otel PR #46](https://github.com/casselc/otel/pull/46), now merged into
 the SDK's main branch. Its public shutdown status separates
 delivery results from ownership settlement. Native cleanup requires confirmed
 SDK **and** exporter settlement; a failed delivery result is retained even if
@@ -28,16 +29,40 @@ cleanup can safely complete. Unknown or still-active owners leave `stop!`
 in `:closing` / `:open`. Repeating `stop!` refreshes ownership evidence without
 replaying the cached SDK shutdown action. Custom settlement witnesses are
 trusted bounded, nonwaiting contracts, not sandboxed implementations.
-The prepared Oscope integration and this SDK pin passed the bounded Local Durable suite:
+The earlier prepared Oscope integration with SDK88 passed the bounded Local Durable suite:
 101 pure tests / 1,186 assertions and six isolated native fixtures / 74
 assertions, with joined fresh readers and zero failures or errors. This is
 local integration evidence, not a universal native-persistence guarantee.
 Final consumer review and current-head hosted/S3 qualification remain pending.
 
+Startup rollback independently requires SDK and span-pipeline retirement before
+the live source or native connection can close. It installs fresh private
+construction receipts before each call, so maintained constructors that start
+workers and then throw can still clean up acquired owners and positively
+untouched exporter faces. Acquired faces are never independently shut down again;
+absent claims or other-signal queries cannot authorize cleanup. Foreign or
+unobservable constructors intentionally remain unknown and keep native owners open.
+
+Completed rollback rethrows the original startup error. Incomplete rollback
+throws `:oscope.readiness/startup-cleanup-incomplete` with an opaque `:retry-stop!`.
+Retain that function and retry after owners retire. Calls are serialized, refresh
+settlement and do not replay terminal callbacks or completed source/native cleanup.
+Diagnostics contain no original error, configuration, handles or witness values.
+Truthful permanent bounded/nonblocking witnesses are trusted, not sandboxed;
+failed delivery can still allow cleanup when ownership is confirmed. Current
+combined startup/native/hosted/S3 qualification remains pending. Shutdown Quint
+does not establish constructor acquisition or face-transfer correctness.
+
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
 profile and asserts the exact dependency revisions. Its application coordinate
-selects converged `casselc/db` `96324713` under the canonical `jolt-lang/db`
-key. In one fresh Jolt process it opens a real SQLite file for authoritative
+selects merged `casselc/db` `8c55d9e2` under the canonical `jolt-lang/db`
+key and optimized `casselc/data.json` `97298fd8`. Root and embedded-profile
+dependencies explicitly select the same pair, so the old transitive database
+cannot select a second time provider by resolution order. Historical DB `96324713`
+and pre-convergence causal fixtures remain separate and unchanged. Current-head
+natural-graph and native qualification remain pending; dependency declarations
+alone do not establish a single resolved provider. In one fresh Jolt process the
+fixture opens a real SQLite file for authoritative
 application state and a real local-POSIX Durable chDB writer for telemetry,
 installs an approved typed span manifest, starts one SDK owner, emits and
 exports one span through independent local and remote pipelines, and reads it

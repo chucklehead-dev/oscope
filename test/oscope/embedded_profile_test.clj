@@ -168,14 +168,15 @@
 (def ^:private expected-profile-deps
   '#{io.github.casselc/otel
      io.github.chucklehead-dev/jolt-chdb
+     jolt-lang/db
      io.github.chucklehead-dev/jolt-otel-clickhouse
      metosin/malli
      org.clojure/data.json})
 
 (def ^:private coordinates
   {:otel [["casselc_otel.git" "io.github.casselc/otel"]
-          ["https___github.com_casselc_otel.git/88a63fd90e0969635dda75fbb9fe5ba2264c09d8/"
-           "io.github.casselc/otel/88a63fd90e0969635dda75fbb9fe5ba2264c09d8/"]]
+          ["https___github.com_casselc_otel.git/fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"
+           "io.github.casselc/otel/fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
           ["https___github.com_chucklehead-dev_jolt-chdb.git/19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774/"
@@ -189,8 +190,11 @@
                 ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/0f8bf3de8c225ed4ab4f700fe60bb7c85229136d/"
                  "io.github.chucklehead-dev/jolt-otel-clickhouse/0f8bf3de8c225ed4ab4f700fe60bb7c85229136d/"]]
    :data-json [["casselc_data.json.git" "org.clojure/data.json"]
-               ["https___github.com_casselc_data.json.git/932444043c0c06f9e295ba4963419b2481e9dd07/"
-                "org.clojure/data.json/932444043c0c06f9e295ba4963419b2481e9dd07/"]]
+               ["https___github.com_casselc_data.json.git/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"
+                "org.clojure/data.json/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"]]
+   :current-db [["casselc_db.git" "jolt-lang/db"]
+                ["https___github.com_casselc_db.git/8c55d9e273f7d625b5c0eb8000755c51a8faacfe/"
+                 "jolt-lang/db/8c55d9e273f7d625b5c0eb8000755c51a8faacfe/"]]
    :reviewed-db [["casselc_db.git" "jolt-lang/db"]
                  ["https___github.com_casselc_db.git/6db791634e5a4c65c24646833b2e82d3a5d7a121/"
                   "jolt-lang/db/6db791634e5a4c65c24646833b2e82d3a5d7a121/"]]
@@ -364,7 +368,7 @@
       (let [classpath (:out classpath-result)]
         (doseq [coordinate (map coordinates [:otel :chdb :clickhouse :data-json])]
           (is (exact-coordinate? classpath coordinate)))
-        (is (exact-coordinate? classpath (:converged-db coordinates)))
+        (is (exact-coordinate? classpath (:current-db coordinates)))
         (is (= 1 (count (database-provider-roots classpath))))
         (is (exact-coordinate? classpath (:casselc-http coordinates)))
         (is (= 1 (count (namespace-providers classpath "db/sqlite.clj"))))

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Pin the qualified-runtime download helper to its reviewed caller-independent
+  capability check in the Durable MinIO workflow; keep exact per-workflow helper
+  expectations and reject helper swaps or duplicate declarations. AWS and Langfuse
+  helper selections remain unchanged. Keep runtime artifact authority, byte-98
+  assertion and all native/Durable gates unchanged; consumer integration remains
+  separately tested.
+
+- Pin merged database and optimized JSON dependency repairs consistently in the
+  standalone root, embedded profile, and minimal native app fixture. Explicitly
+  select the already-transitive database to avoid order-sensitive time-provider
+  selection; preserve historical provider controls and the native acceptance
+  oracle. Current-head graph/native qualification remains pending (Ref #119).
+
+- Keep embedded startup cleanup fail-closed until both SDK and independent span
+  pipeline owners settle, using exact invocation/error/exporter-face receipts
+  from SDKfc6. Complete maintained partial/unreturned pipeline cleanup without
+  replaying acquired callbacks; explicitly untouched faces transfer only after
+  confirmed root settlement. Preserve original startup errors after cleanup and
+  serialized opaque retries otherwise; unknown/foreign constructors keep native
+  owners open (Refs #43, #118). Combined qualification remains pending.
+
 - Preserve failed synthetic MinIO history fixtures as checksum-bound replay
   bundles, including exact backend bytes, frozen-head seal and private child
   logs. Require confirmed reader settlement and semantic success before
