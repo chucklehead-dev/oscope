@@ -158,6 +158,7 @@
       (doseq [file (.listFiles (java.io.File. directory))] (.delete file))
       (.delete (java.io.File. directory)))))
 (def ^:private minimal-fixture-dir "test/fixtures/minimal-embedded-app")
+(def ^:private root-profile-dir ".")
 (def ^:private minimal-fixture-source
   (str minimal-fixture-dir "/src/minimal_embedded_app.clj"))
 (def ^:private samizdat-converged-fixture-dir
@@ -376,6 +377,20 @@
                                              "jolt/http_client.clj"))))
         (is (empty? (classpath-roots classpath "casselc_jolt-http")))
         (is (empty? (classpath-roots classpath "jolt-otel-viewer")))))))
+
+(deftest natural-profiles-resolve-one-physical-time-provider
+  ;; Deliberately use only -Spath: :test-durable overrides both historical
+  ;; coordinate identities and therefore cannot qualify the ordinary graphs.
+  (doseq [[profile dir] [[:root root-profile-dir]
+                         [:embedded embedded-profile-dir]
+                         [:minimal minimal-fixture-dir]]]
+    (testing (name profile)
+      (let [result (run-jolt dir "-Spath")]
+        (is (map? result))
+        (when (map? result)
+          (is (zero? (:exit result)))
+          (is (= 1 (count (namespace-providers (:out result) "jolt/time.clj")))
+              "natural dependency resolution has exactly one physical time provider"))))))
 
 (deftest minimal-fixture-runs-the-real-native-stalled-remote-stack
   (let [root (.toFile
