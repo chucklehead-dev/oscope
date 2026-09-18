@@ -103,6 +103,63 @@
   (when test/*report-counters*
     (dosync (commute test/*report-counters* #(merge-with + % counts)))))
 
+(defn failure-evidence-root
+  "Explicit opt-in for the owned synthetic S3 fixture, not general diagnostics."
+  []
+  (System/getenv "OSCOPE_DURABLE_FAILURE_EVIDENCE_ROOT"))
+
+(defn- evidence-file! [path directory?]
+  (let [file (java.io.File. (str path))]
+    (when-not (and (.isAbsolute file)
+                   (= (.getAbsolutePath file) (.getCanonicalPath file))
+                   (if directory? (.isDirectory file) (.isFile file)))
+      (throw (ex-info "invalid owned failure evidence path" {})))
+    file))
+
+(defn prepare-reader-evidence!
+  "Copy exact private seal bytes before launch into a fresh owned reader dir.
+  No seal, backend or log is rewritten for diagnostic display."
+  [root seal]
+  (let [directory (evidence-file! root true)
+        scope (evidence-file! (str directory "/scope") false)
+        source (evidence-file! seal false)
+        reader (java.io.File. (str directory "/reader"))]
+    (when-not (and (<= (.length scope) 64)
+                   (= "oscope-synthetic-s3-v1\n" (slurp scope))
+                   (pos? (.length source)) (<= (.length source) 1048576)
+                   (.mkdir reader))
+      (throw (ex-info "invalid synthetic reader evidence scope" {})))
+    (let [wire (java.nio.file.Files/readAllBytes (.toPath source))]
+      (when-not (<= 1 (alength wire) 1048576)
+        (throw (ex-info "bounded reader seal required" {})))
+      (java.nio.file.Files/write
+       (.toPath (java.io.File. (str reader "/seal.json"))) wire
+       (into-array java.nio.file.OpenOption
+                   [java.nio.file.StandardOpenOption/CREATE_NEW
+                    java.nio.file.StandardOpenOption/WRITE])))
+    (str reader)))
+
+(defn publish-reader-evidence!
+  "Closed numeric observation of the checked receipt; absent means unknown.
+  CREATE_NEW rejects duplicate observations instead of replacing evidence."
+  [directory receipt]
+  (let [counts (:counts receipt)
+        values (mapv #(get counts % 0) [:test :pass :fail :error])]
+    (when-not (and (every? #(and (integer? %) (<= 0 % 999999999)) values)
+                   (every? #(contains? #{true false} (get receipt %))
+                           [:terminal? :valid? :settled? :ok?]))
+      (throw (ex-info "invalid reader evidence receipt" {})))
+    (java.nio.file.Files/write
+     (.toPath (java.io.File. (str directory "/settlement.receipt")))
+     (.getBytes (str (str/join " "
+                               (concat [1 2] values
+                                       (map #(if (get receipt %) 1 0)
+                                            [:terminal? :valid? :settled? :ok?])))
+                    "\n") "UTF-8")
+     (into-array java.nio.file.OpenOption
+                 [java.nio.file.StandardOpenOption/CREATE_NEW
+                  java.nio.file.StandardOpenOption/WRITE]))))
+
 (defn run-reader!
   "Reader assertions execute after writer retirement in a different process.
   Caller deletes its store ONLY when settlement is confirmed; logs are retained."
@@ -110,10 +167,16 @@
   (reset! settled false)
   (reset! nested-settled? false)
   (let [index (reader-index! reader)
-        directory (str (java.nio.file.Files/createTempDirectory
-                        "oscope-durable-reader-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        evidence (when (= reader :s3) (failure-evidence-root))
+        directory (if evidence
+                    (prepare-reader-evidence! evidence root)
+                    (str (java.nio.file.Files/createTempDirectory
+                          "oscope-durable-reader-" (make-array java.nio.file.attribute.FileAttribute 0))))
         receipt (launch! (executable!) directory "reader" index
                          ["--reader" (name reader) (str root)] 35000)]
+    ;; Persist the observation before permitting the fixture's cleanup guard.
+    ;; IO failure remains a qualification failure with the seal/logs retained.
+    (when evidence (publish-reader-evidence! directory receipt))
     (reset! settled (:settled? receipt))
     (reset! nested-settled? (:settled? receipt))
     (when (:valid? receipt) (merge-counts! (:counts receipt)))

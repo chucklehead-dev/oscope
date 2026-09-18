@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Preserve failed synthetic MinIO history fixtures as checksum-bound replay
+  bundles, including exact backend bytes, frozen-head seal and private child
+  logs. Require confirmed reader settlement and semantic success before
+  cleanup; unknown outcomes remain unqualified. Hosted artifact retention is
+  limited to this fixed synthetic fixture, never arbitrary telemetry or WAL
+  redaction (Ref #108).
+  Add a manual-only fixed post-qualified harness rejection for testing failed
+  hosted replay retention; preserve all native/reader/report oracles and the
+  original failed gate, without claiming native corruption or replay proof.
+
 - Test partial two-component SDK settlement and fresh public-proof cleanup
   ordering using a real exporter-owned background user. A causal aggregate
   permission control checks the same consumer oracle; native owners are inert.

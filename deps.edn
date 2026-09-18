@@ -87,6 +87,15 @@
 
   :test-durable
   {:extra-paths ["test"]
+   ;; Qualification must have one physical time provider under both library
+   ;; identities. This alias does not alter ordinary production dependencies.
+   :override-deps
+   {jolt-lang/time
+    {:git/url "https://github.com/chucklehead-dev/time.git"
+     :git/sha "2494b21b25cd959573c3e6050cd475e4bf302fdb"}
+    io.github.jolt-lang/time
+    {:git/url "https://github.com/chucklehead-dev/time.git"
+     :git/sha "2494b21b25cd959573c3e6050cd475e4bf302fdb"}}
    :extra-deps
    {io.github.chucklehead-dev/jolt-aspect-packs
     {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
