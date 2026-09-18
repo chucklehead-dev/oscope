@@ -53,6 +53,17 @@
    :helper-source "https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/c26c9bfcf071112531974729b15469b8c9fe713a/scripts/fetch-qualified-durable-runtime.sh"
    :helper-sha "e962976aea263f00440fdf9bfa53c36a158c501f2b87d15aa8a84867fe51caae"})
 
+(def ^:private caller-independent-runtime-release
+  (assoc authenticated-runtime-release
+         :helper-source "https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/3c683bee4f1a0d5ed91d691cb14330e30d2fcdeb/scripts/fetch-qualified-durable-runtime.sh"
+         :helper-sha "5861a525e3bf755b38966550476f172c87d6678e117c2e07b0d5777b1370fbc2"))
+
+(def ^:private native-workflow-releases
+  ;; Helper rollout is workflow-specific; the authenticated artifact is unchanged.
+  [[".github/workflows/durable-s3-e2e.yml" true caller-independent-runtime-release]
+   [".github/workflows/durable-aws.yml" false authenticated-runtime-release]
+   [".github/workflows/langfuse-interop.yml" false authenticated-runtime-release]])
+
 (defn- declarations-match-release? [workflow expected]
   (let [workflow (executable-declarations workflow)]
     (and (= (:pins expected) (mapv #(workflow-pin workflow %) runtime-pin-names))
@@ -187,14 +198,35 @@
                                                (str/split-lines fixture))) true))))))
 
 (deftest native-integration-providers-declare-one-qualified-positive-graph
-  (let [workflows (mapv slurp [".github/workflows/durable-s3-e2e.yml"
-                               ".github/workflows/durable-aws.yml"
-                               ".github/workflows/langfuse-interop.yml"])]
-    (doseq [[workflow woven?] (map vector workflows [true false false])]
-      (is (declarations-match-release? workflow authenticated-runtime-release)
-          "exact authenticated tuple and published helper")
-      (doseq [[boundary confirmed?] (native-provider-contract workflow woven?)]
-        (is (true? confirmed?) (name boundary))))))
+  (doseq [[path woven? expected] native-workflow-releases]
+    (testing path
+      (let [workflow (slurp path)]
+        (is (declarations-match-release? workflow expected)
+            "exact authenticated tuple and workflow-specific published helper")
+        (doseq [[boundary confirmed?] (native-provider-contract workflow woven?)]
+          (is (true? confirmed?) (name boundary)))))))
+
+(deftest native-workflow-helper-mutations-remain-fail-closed
+  (doseq [[path _ expected] native-workflow-releases]
+    (testing path
+      (let [workflow (slurp path)
+            other (if (= expected caller-independent-runtime-release)
+                    authenticated-runtime-release
+                    caller-independent-runtime-release)]
+        ;; Both helpers are valid immutable releases, but not interchangeable.
+        (doseq [key [:helper-source :helper-sha]]
+          (is (not (declarations-match-release?
+                    (str/replace workflow (get expected key) (get other key))
+                    expected))
+              (name key)))
+        (is (not (declarations-match-release? workflow other))
+            "another workflow's complete helper tuple is rejected")
+        (doseq [[field key] [["QUALIFIED_RUNTIME_HELPER_SOURCE" :helper-source]
+                             ["QUALIFIED_RUNTIME_HELPER_SHA256" :helper-sha]]]
+          (is (not (declarations-match-release?
+                    (str workflow "\n" field ": " (get expected key) "\n")
+                    expected))
+              "duplicate identical helper declarations are rejected"))))))
 
 (defn- release-workflow-at-floor? [workflow]
   (and (str/includes?

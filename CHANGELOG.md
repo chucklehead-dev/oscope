@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Pin the qualified-runtime download helper to its reviewed caller-independent
+  capability check in the Durable MinIO workflow; keep exact per-workflow helper
+  expectations and reject helper swaps or duplicate declarations. AWS and Langfuse
+  helper selections remain unchanged. Keep runtime artifact authority, byte-98
+  assertion and all native/Durable gates unchanged; consumer integration remains
+  separately tested.
+
 - Keep embedded startup cleanup fail-closed until both SDK and independent span
   pipeline owners settle, using exact invocation/error/exporter-face receipts
   from SDKfc6. Complete maintained partial/unreturned pipeline cleanup without
