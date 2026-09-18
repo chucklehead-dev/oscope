@@ -174,8 +174,8 @@
 
 (def ^:private coordinates
   {:otel [["casselc_otel.git" "io.github.casselc/otel"]
-          ["https___github.com_casselc_otel.git/88a63fd90e0969635dda75fbb9fe5ba2264c09d8/"
-           "io.github.casselc/otel/88a63fd90e0969635dda75fbb9fe5ba2264c09d8/"]]
+          ["https___github.com_casselc_otel.git/fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"
+           "io.github.casselc/otel/fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
           ["https___github.com_chucklehead-dev_jolt-chdb.git/19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774/"

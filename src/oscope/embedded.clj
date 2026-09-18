@@ -5,6 +5,7 @@
             [jolt.host :as host]
             [oscope.error :as error]
             [oscope.live :as live]
+            [oscope.readiness :as readiness]
             [oscope.typed-schema :as typed-schema]
             [otel.exporter.chdb :as chdb-export]
             [otel.exporter.otlp :as otlp]
@@ -292,6 +293,105 @@
                                                checkpoint-on-close?)
                           error))))))))
 
+(def ^:private maintained-pipeline-constructor export/independent-batch-pipelines)
+(def ^:private maintained-sdk-constructor sdk/init!)
+
+(defn- rollback-startup!
+  [original {:keys [connection exporter source sdk-handle pipelines signals
+                    remote-exporter sdk-init-entered? pipelines-init-entered?
+                    sdk-receipt pipeline-receipt sdk-error pipeline-error
+                    pipelines-maintained? sdk-maintained?]}]
+  (let [terminal (atom #{}) face-results (atom {})
+        once! (fn [key action]
+                (when-not (contains? @terminal key)
+                  ;; Retire exactly once even if the terminal callback throws.
+                  (swap! terminal conj key)
+                  (try (action) (catch Throwable _ nil))))
+        confirmed! (fn [confirmed?]
+                     (when-not confirmed?
+                       (invalid! "oscope embedded startup ownership is unconfirmed"
+                                 ::startup-settlement-unconfirmed)))
+        constructor-confirmed? (fn [receipt error]
+                                 (= :confirmed
+                                    (:quiescence
+                                     (sdk-lifecycle/construction-failure-status
+                                      receipt error))))
+        pipeline-face (fn [resource]
+                        (cond
+                          (and pipelines-init-entered? (not pipelines-maintained?))
+                          {:ownership :unknown}
+                          pipelines {:ownership :sdk-owned}
+                          pipelines-init-entered?
+                          (export/construction-face-status pipeline-receipt
+                                                           pipeline-error resource :spans)
+                          :else {:ownership :unacquired}))
+        sdk-face (fn [signal]
+                   (cond
+                     (and sdk-init-entered? (not sdk-maintained?))
+                     {:ownership :unknown}
+                     (and sdk-handle (not (:disabled? sdk-handle)))
+                     {:ownership :sdk-owned}
+                     sdk-handle {:ownership :unacquired}
+                     sdk-init-entered?
+                     (sdk/construction-face-status sdk-receipt sdk-error exporter signal)
+                     :else {:ownership :unacquired}))
+        faces (cond-> (mapv (fn [signal] {:key [:local signal]
+                                        :resource exporter :signal signal})
+                            (if exporter signals []))
+                remote-exporter (conj {:key [:remote :spans]
+                                       :resource remote-exporter :signal :spans}))]
+    ;; Reuse the existing serialized, opaque retry capability. Its diagnostic
+    ;; result never contains original errors, resources or custom witness data.
+    (readiness/fail-startup!
+     nil original
+     [[:settle-startup-owners
+       (fn []
+         (when sdk-handle (once! :sdk #(sdk/shutdown! sdk-handle)))
+         (when (and pipelines
+                    (= :not-started
+                       (:terminal (sdk-lifecycle/component-settlement pipelines))))
+           (once! :pipelines #(export/shutdown-pipelines! pipelines)))
+         (when (and sdk-init-entered? (nil? sdk-handle))
+           (once! :sdk-construction #(sdk-lifecycle/retire-construction! sdk-receipt))
+           (confirmed! (constructor-confirmed? sdk-receipt sdk-error)))
+         (when (and pipelines-init-entered? (nil? pipelines))
+           (once! :pipeline-construction
+                  #(sdk-lifecycle/retire-construction! pipeline-receipt))
+           (confirmed! (constructor-confirmed? pipeline-receipt pipeline-error)))
+         ;; A disabled SDK's empty aggregate does NOT cover acquired pipelines.
+         (when sdk-handle
+           (confirmed! (= :confirmed (:quiescence (sdk-settlement sdk-handle)))))
+         (when pipelines
+           (confirmed! (= :confirmed
+                          (:quiescence (sdk-lifecycle/component-settlement pipelines))))))]
+      [:settle-exporter-faces
+       (fn []
+         ;; A returned handle or matching failure receipt covers observable
+         ;; owners, not extra input users acquired by a foreign root wrapper.
+         (when sdk-init-entered? (confirmed! sdk-maintained?))
+         ;; Only a positively accounted maintained span handoff can justify
+         ;; pre-SDK span-only use. Missing other-signal claims grant NOTHING.
+         (when pipelines-init-entered?
+           (confirmed! (contains? #{:sdk-owned :unacquired}
+                                  (:ownership (pipeline-face exporter)))))
+         (doseq [{:keys [key resource signal]} faces]
+           (let [ownership (:ownership
+                            (if (or (= :remote (first key))
+                                    (and (= :spans signal) pipelines-init-entered?))
+                              (pipeline-face resource) (sdk-face signal)))]
+             (confirmed! (contains? #{:sdk-owned :unacquired} ownership))
+             (when (= :unacquired ownership)
+               (when-not (contains? @face-results key)
+                 (swap! face-results assoc key
+                        (try (true? (close-exporter-face! resource signal))
+                             (catch Throwable _ false))))
+               (confirmed! (or (true? (get @face-results key))
+                               (= :confirmed
+                                  (:quiescence
+                                   (sdk-lifecycle/component-settlement resource)))))))))]
+      [:retire-source #(when source (live/close! source))]
+      [:close-connection #(.close connection)]])))
+
 (defn start!
   "Start an in-process OTel SDK, Durable chDB writer, and oscope query source.
 
@@ -321,6 +421,8 @@
   (when (contains? sdk-options :span-processors)
     (invalid! "oscope embedded owns the SDK span processors"
               ::span-processors-owned))
+  (when (contains? sdk-options :construction-receipt)
+    (invalid! "oscope embedded owns construction receipts" ::receipt-owned))
   (when-not (boolean? checkpoint-on-close?)
     (invalid! "oscope embedded :checkpoint-on-close? must be boolean"
               ::invalid-checkpoint-on-close))
@@ -337,6 +439,14 @@
         exporter* (atom nil)
         source* (atom nil)
         sdk-handle* (atom nil)
+        sdk-init-entered? (atom false)
+        pipelines-init-entered? (atom false)
+        pipelines-maintained? (atom false)
+        sdk-maintained? (atom false)
+        sdk-receipt (sdk-lifecycle/construction-receipt)
+        pipeline-receipt (sdk-lifecycle/construction-receipt)
+        sdk-error (atom nil)
+        pipeline-error (atom nil)
         pipelines* (atom nil)]
     (try
       (when (and typed-schema
@@ -354,13 +464,20 @@
             exporter (chdb-export/exporter exporter-options)
             _ (reset! exporter* exporter)
             pipelines (when span-pipelines
-                        (export/independent-batch-pipelines
-                         {:local {:exporter exporter
-                                  :config (batch-options! :local
-                                                          (:local span-pipelines))}
-                          :remote {:exporter remote-exporter
-                                   :config (batch-options! :remote
-                                                          (:remote span-pipelines))}}))
+                        (let [destinations
+                              {:local {:exporter exporter
+                                       :config (batch-options! :local
+                                                               (:local span-pipelines))}
+                               :remote {:exporter remote-exporter
+                                        :config (batch-options! :remote
+                                                                (:remote span-pipelines))}}
+                              constructor export/independent-batch-pipelines]
+                          (reset! pipelines-maintained?
+                                  (identical? constructor maintained-pipeline-constructor))
+                          (reset! pipelines-init-entered? true)
+                          (try (constructor destinations pipeline-receipt)
+                               (catch Throwable error
+                                 (reset! pipeline-error error) (throw error)))))
             _ (reset! pipelines* pipelines)
             pipeline-results (when pipelines (atom nil))
             sdk-processor (when pipelines
@@ -370,9 +487,17 @@
                      {:connection connection :ensure-schema? false}
                      schema-context))
             _ (reset! source* source)
-            sdk-handle (sdk/init!
-                        (cond-> (assoc sdk-options :exporter exporter)
-                          sdk-processor (assoc :span-processors [sdk-processor])))
+            sdk-handle (let [constructor sdk/init!]
+                         (reset! sdk-maintained?
+                                 (identical? constructor maintained-sdk-constructor))
+                         (reset! sdk-init-entered? true)
+                         (try
+                           (constructor
+                            (cond-> (assoc sdk-options :exporter exporter
+                                                      :construction-receipt sdk-receipt)
+                              sdk-processor (assoc :span-processors [sdk-processor])))
+                           (catch Throwable error
+                             (reset! sdk-error error) (throw error))))
             _ (reset! sdk-handle* sdk-handle)]
         (when (:disabled? sdk-handle)
           (invalid! "oscope embedded cannot start while OTEL_SDK_DISABLED is true"
@@ -423,19 +548,16 @@
             pipelines (assoc :force-flush! flush-fn
                              :span-pipeline-stats stats-fn))))
       (catch Throwable error
-        (when-let [sdk-handle @sdk-handle*]
-          (try (sdk/shutdown! sdk-handle) (catch Throwable _ nil)))
-        (when-let [pipelines @pipelines*]
-          (try (export/shutdown-pipelines! pipelines) (catch Throwable _ nil)))
-        (when-let [source @source*]
-          (try (live/close! source) (catch Throwable _ nil)))
-        (when (and @exporter* (nil? @sdk-handle*))
-          (doseq [signal signals]
-            (when (or (nil? @pipelines*) (not= signal :spans))
-              (try (close-exporter-face! @exporter* signal)
-                   (catch Throwable _ nil)))))
-        (try (.close connection) (catch Throwable _ nil))
-        (throw error)))))
+        (rollback-startup!
+         error {:connection connection :exporter @exporter* :source @source*
+                :sdk-handle @sdk-handle* :pipelines @pipelines* :signals signals
+                :remote-exporter remote-exporter
+                :sdk-receipt sdk-receipt :pipeline-receipt pipeline-receipt
+                :sdk-error @sdk-error :pipeline-error @pipeline-error
+                :pipelines-maintained? @pipelines-maintained?
+                :sdk-maintained? @sdk-maintained?
+                :sdk-init-entered? @sdk-init-entered?
+                :pipelines-init-entered? @pipelines-init-entered?})))))
 
 (defn force-flush!
   "Drain the in-process SDK. Local-only lifecycles return the existing Boolean.

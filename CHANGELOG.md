@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Keep embedded startup cleanup fail-closed until both SDK and independent span
+  pipeline owners settle, using exact invocation/error/exporter-face receipts
+  from SDKfc6. Complete maintained partial/unreturned pipeline cleanup without
+  replaying acquired callbacks; explicitly untouched faces transfer only after
+  confirmed root settlement. Preserve original startup errors after cleanup and
+  serialized opaque retries otherwise; unknown/foreign constructors keep native
+  owners open (Refs #43, #118). Combined qualification remains pending.
+
 - Preserve failed synthetic MinIO history fixtures as checksum-bound replay
   bundles, including exact backend bytes, frozen-head seal and private child
   logs. Require confirmed reader settlement and semantic success before

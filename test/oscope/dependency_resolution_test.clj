@@ -10,7 +10,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "88a63fd90e0969635dda75fbb9fe5ba2264c09d8/"))
+       "fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"))
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"
