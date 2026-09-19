@@ -6,8 +6,12 @@ on:
     paths:
       - .github/workflows/embedded-native-profile.yml
       - deps.edn
-      - profiles/embedded/deps.edn
+      - profiles/embedded/**
       - src/oscope/embedded.clj
+      # The fixture directly loads oscope.embedded.query; retain the complete
+      # namespace prefix so future direct embedded helpers cannot evade this
+      # exact-PR-head gate through a stale path filter.
+      - src/oscope/embedded/**
       - test/fixtures/minimal-embedded-app/**
       - test/oscope/embedded_profile_test.clj
       - test/oscope/embedded_profile_test_runner.clj
@@ -57,6 +61,11 @@ jobs:
           echo "JOLT_CHDB_CACHE_DIR=$RUNNER_TEMP/oscope-embedded-v2-chdb-cache" >> "$GITHUB_ENV"
       - name: Install source-pinned Jolt aspect compiler
         id: pinned-jolt
+        # The root checkout and failure artifact action below are pinned to
+        # immutable SHAs. This checked-in chDB installer currently transits
+        # actions/cache@v4, however, so this workflow does not claim complete
+        # transitive action-graph immutability. Keep its reviewed chDB ref and
+        # installer unchanged; stronger nested-action pinning is separate work.
         uses: ./.qualification/jolt-chdb/.github/actions/install-jolt-aspects
       - name: Verify source-pinned compiler selection
         shell: bash
