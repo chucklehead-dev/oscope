@@ -20,20 +20,48 @@ jolt-http or jolt-otel-viewer, start a listener, or provide a second lifecycle
 implementation. A consumer's direct dependency selections still have normal
 precedence; this profile is not an override mechanism.
 
-The profile currently pins SDK merge `fc6cd6b3` from
-[casselc/otel PR #46](https://github.com/casselc/otel/pull/46), now merged into
-the SDK's main branch. Its public shutdown status separates
+## Qualification boundary
+
+The checked-in profile is the dependency authority. At this revision it pins
+`casselc/otel` `fc6cd6b3`, `jolt-chdb` `19e0ecf9`,
+`jolt-otel-clickhouse` `0f8bf3de`, `casselc/db` `8c55d9e2`, and
+`casselc/data.json` `97298fd8`; the fixture asserts that resolved graph. Do
+not copy older pin values from issue history or from an application's distinct
+resolved graph.
+
+There is focused **Linux x86-64 local-POSIX** evidence for this exact profile:
+the maintained fixture uses authoritative SQLite application state and a real
+Durable chDB telemetry writer; starts one SDK owner; installs an approved typed
+span manifest; emits, reads back, drains, checkpoints, and closes in its
+defined order; and proves a locally stalled remote OTLP request stays bounded.
+The fixture and its hosted qualification are useful regression evidence, not a
+portable or service-level guarantee. The current acceptance record is
+[Oscope #77](https://github.com/chucklehead-dev/oscope/issues/77).
+
+In particular, this document makes no claim that the profile has qualified:
+
+- macOS or Windows native behavior;
+- S3/object-store Durable recovery or a general native-persistence guarantee;
+- a live Langfuse service or delivery to it (the fixture uses a hermetic stalled
+  OTLP peer);
+- a real Samizdat migration or full application composition; or
+- current Durable-view freshness or a last confirmed persistence boundary.
+
+The last item intentionally remains `:unavailable` until the closed, redacted
+observation capability proposed in
+[jolt-chDB #144](https://github.com/chucklehead-dev/jolt-chdb/issues/144)
+exists and is qualified. A successful checkpoint, an open connection, or a
+live worker is not a substitute for that evidence. Physical-provider ownership
+has a separate remaining producer/reader qualification boundary in
+[Oscope #119](https://github.com/chucklehead-dev/oscope/issues/119).
+
+The profile's public shutdown status separates
 delivery results from ownership settlement. Native cleanup requires confirmed
 SDK **and** exporter settlement; a failed delivery result is retained even if
 cleanup can safely complete. Unknown or still-active owners leave `stop!`
 in `:closing` / `:open`. Repeating `stop!` refreshes ownership evidence without
 replaying the cached SDK shutdown action. Custom settlement witnesses are
 trusted bounded, nonwaiting contracts, not sandboxed implementations.
-The earlier prepared Oscope integration with SDK88 passed the bounded Local Durable suite:
-101 pure tests / 1,186 assertions and six isolated native fixtures / 74
-assertions, with joined fresh readers and zero failures or errors. This is
-local integration evidence, not a universal native-persistence guarantee.
-Final consumer review and current-head hosted/S3 qualification remain pending.
 
 Startup rollback independently requires SDK and span-pipeline retirement before
 the live source or native connection can close. It installs fresh private
@@ -50,7 +78,8 @@ settlement and do not replay terminal callbacks or completed source/native clean
 Diagnostics contain no original error, configuration, handles or witness values.
 Truthful permanent bounded/nonblocking witnesses are trusted, not sandboxed;
 failed delivery can still allow cleanup when ownership is confirmed. Current
-combined startup/native/hosted/S3 qualification remains pending. Shutdown Quint
+shutdown reasoning does not extend fixture evidence to S3, Langfuse, Samizdat,
+macOS, or freshness. Shutdown Quint
 does not establish constructor acquisition or face-transfer correctness.
 
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
@@ -59,15 +88,19 @@ selects merged `casselc/db` `8c55d9e2` under the canonical `jolt-lang/db`
 key and optimized `casselc/data.json` `97298fd8`. Root and embedded-profile
 dependencies explicitly select the same pair, so the old transitive database
 cannot select a second time provider by resolution order. Historical DB `96324713`
-and pre-convergence causal fixtures remain separate and unchanged. Current-head
-natural-graph and native qualification remain pending; dependency declarations
-alone do not establish a single resolved provider. In one fresh Jolt process the
+and pre-convergence causal fixtures remain separate and unchanged. The fixture
+checks its own resolved graph; it does not prove an arbitrary production
+consumer or independent producer/reader graph has one physical provider (see
+[Oscope #119](https://github.com/chucklehead-dev/oscope/issues/119)). In one
+fresh Jolt process the
 fixture opens a real SQLite file for authoritative
 application state and a real local-POSIX Durable chDB writer for telemetry,
-installs an approved typed span manifest, starts one SDK owner, emits and
-exports one span through independent local and remote pipelines, and reads it
-back locally through a bounded typed query while a hermetic remote OTLP peer
-withholds its response. A second stalled peer proves that the application's
+installs an approved typed span manifest, starts one SDK owner, and emits one
+span through independent local and remote pipelines. It reads that span back
+locally through a bounded typed query. The hermetic remote OTLP peer
+deliberately withholds its response, so the remote delivery attempt is a
+bounded stalled failure, not successful remote export. A second stalled peer
+proves that the application's
 canonical HTTP provider still returns a blocked request promptly when its
 thread is interrupted. The status snapshot remains bounded and redacted while
 both pipelines are live. Shutdown retires the query first, cancels and records
@@ -115,9 +148,9 @@ it is not the as-pinned `22be90d` graph. The runnable minimal application uses
 the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
-`4d61f8e921d1310bc7ba39d7208cc38ac14a3215`, jolt-chDB
-`95d7b2b31c95e007d5065e3950deb1869e2d0f8a`, and jolt-otel-clickhouse
-`14a2998a27f64a9bff329811461be9157a00c849`. OTel's provider-convergence merge
+`fc6cd6b3ea466c196091284390dc90cbf3ad2f0d`, jolt-chDB
+`19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774`, and jolt-otel-clickhouse
+`0f8bf3de8c225ed4ab4f700fe60bb7c85229136d`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration
