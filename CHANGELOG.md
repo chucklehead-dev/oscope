@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Refresh the embedded profile and its direct composition pins to merged
+  chDB/DB persistence-observation, exporter, and OTel revisions. Add
+  `oscope.embedded/status-v2`, which preserves the exact version-1 status API
+  and projects only closed Durable persistence evidence from an owned open
+  connection. Malformed values, observer failures, and terminal lifecycle
+  phases fail closed to `{:availability :unavailable}`; no backend, head,
+  dbspec, payload, endpoint, exception, queue-derived freshness, or delivery
+  claim crosses the surface (Ref #77).
+
 - Pin the qualified-runtime download helper to its reviewed caller-independent
   capability check in the Durable MinIO workflow; keep exact per-workflow helper
   expectations and reject helper swaps or duplicate declarations. AWS and Langfuse

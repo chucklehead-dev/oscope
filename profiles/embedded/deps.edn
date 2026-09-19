@@ -6,17 +6,17 @@
  ;; Server/viewer dependencies intentionally remain in the root coordinate.
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"
-         :git/sha "fc6cd6b3ea466c196091284390dc90cbf3ad2f0d"}
+         :git/sha "e876d2ebba211b4831993e1fb7fb480ea547cc71"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"}
+         :git/sha "53e64572634a18853c780ed395f02b1c6a0ee0a5"}
         ;; A direct pin prevents the old transitive DB time provider winning.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
-         :git/sha "8c55d9e273f7d625b5c0eb8000755c51a8faacfe"}
+         :git/sha "9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "0f8bf3de8c225ed4ab4f700fe60bb7c85229136d"}
+         :git/sha "04b1618fda22372f5698e0baf7c8277dcf8451ff"}
         metosin/malli {:mvn/version "0.20.1"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"

@@ -113,6 +113,60 @@
            :last-successful-persistence :unavailable}
           (:durable snapshot))))
 
+(defn- safe-durable-v2? [observation]
+  ;; This is deliberately a closed copy of the public embedded v2 contract,
+  ;; not a claim that a locally observed writer is remotely delivered or that
+  ;; an object-store reader is current.  It checks the legal pairing retained
+  ;; by Durable while a later write is pending/unconfirmed.
+  (and (= #{:availability :role :state :view-current? :confirmed-boundary
+            :confirmed-sequence :last-successful-persistence}
+          (set (keys observation)))
+       (= :available (:availability observation))
+       (= :writer (:role observation))
+       (contains? #{:recovered :pending :unconfirmed :confirmed}
+                  (:state observation))
+       (boolean? (:view-current? observation))
+       (contains? #{:recovered :wal :checkpoint}
+                  (:confirmed-boundary observation))
+       (and (integer? (:confirmed-sequence observation))
+            (<= 0 (:confirmed-sequence observation) 9007199254740991))
+       (contains? #{:unavailable :wal :checkpoint}
+                  (:last-successful-persistence observation))
+       (= (:view-current? observation)
+          (contains? #{:recovered :confirmed} (:state observation)))
+       (or (not= :confirmed (:state observation))
+           (contains? #{:wal :checkpoint} (:confirmed-boundary observation)))
+       (case (:confirmed-boundary observation)
+         :recovered (= :unavailable (:last-successful-persistence observation))
+         (:wal :checkpoint)
+         (= (:confirmed-boundary observation)
+            (:last-successful-persistence observation))
+         false)
+       (if (= :recovered (:state observation))
+         (and (= :recovered (:confirmed-boundary observation))
+              (= :unavailable (:last-successful-persistence observation)))
+         true)))
+
+(defn- safe-status-v2? [snapshot]
+  (and (= #{:oscope.embedded.status/version :phase :span-pipelines :durable}
+          (set (keys snapshot)))
+       (= 2 (:oscope.embedded.status/version snapshot))
+       (= :open (:phase snapshot))
+       (= :independent (get-in snapshot [:span-pipelines :mode]))
+       (every?
+        (fn [destination]
+          (let [pipeline (get-in snapshot [:span-pipelines destination])]
+            (and (= :available (:availability pipeline))
+                 (= status-counter-keys
+                    (set (remove #{:availability} (keys pipeline))))
+                 (every? (fn [key]
+                           (let [value (get pipeline key)]
+                             (and (integer? value)
+                                  (<= 0 value 9223372036854775807))))
+                         status-counter-keys))))
+        [:local :remote])
+       (safe-durable-v2? (:durable snapshot))))
+
 (defn- approved-manifest []
   (manifest/compile-manifest
    {:dataset-id "oscope-minimal-embedded"
@@ -192,6 +246,8 @@
                 :database "default"
                 :scratch-parent (str directory)
                 :lease-ttl-ms 30000})
+              _ (require! (nil? (sdk/tracer-provider))
+                          "fixture began with a foreign SDK owner")
               runtime
               (embedded/start!
                {:db-spec db-spec
@@ -278,11 +334,16 @@
                                       request-wait-ms ::not-received))
                           "application HTTP request did not enter its stall")
                 (let [status (embedded/status runtime)
-                      rendered (pr-str status)]
+                      status-v2 (embedded/status-v2 runtime)
+                      rendered (pr-str [status status-v2])]
                   (require! (= :open (:phase status))
                             "safe lifecycle status did not report the open owner")
                   (require! (safe-status? status)
                             "safe lifecycle status exceeded its closed scalar schema")
+                  (require! (safe-status-v2? status-v2)
+                            "status-v2 did not retain a legal preterminal Durable witness pair")
+                  (require! (identical? provider (sdk/tracer-provider))
+                            "embedded lifecycle did not retain its single SDK owner identity")
                   (require! (= 1 (get-in status
                                         [:span-pipelines :local
                                          :exported-span-count]))
@@ -345,6 +406,13 @@
                                            [:span-pipelines :local
                                             :exported-span-count])))
                           "closed status did not retain bounded local/remote evidence"))
+              ;; The v1 snapshot remains exactly compatible while the v2
+              ;; connection observation is unavailable after ownership ends.
+              ;; Calling v2 twice also catches an accidental post-close probe.
+              (doseq [_ (range 2)]
+                (require! (= {:availability :unavailable}
+                             (:durable (embedded/status-v2 runtime)))
+                          "terminal status-v2 observed Durable after connection close"))
               (require! (= stopped (embedded/stop! runtime))
                         "embedded lifecycle stop was not idempotent")
               (require! (identical? terminal-outcome @terminal)
@@ -365,6 +433,10 @@
                 "minimal fixture loaded the server namespace")
       (require! (nil? (find-ns 'oscope.embedded.viewer))
                 "minimal fixture loaded the viewer namespace")
+      ;; The manual native gate captures process output privately and publishes
+      ;; a separately allowlisted categorical receipt.  This marker is only a
+      ;; local success signal; it contains no endpoint, payload, path, or
+      ;; credential material.
       (println "minimal embedded native fixture: PASS")
       (finally
         (when-let [query @query*]

@@ -35,6 +35,19 @@
 
 (def ^:private max-status-counter 9223372036854775807)
 
+;; Durable's public observation uses the same cross-runtime safe-integer limit
+;; as its manifest sequence.  Keep this adapter closed over that documented
+;; scalar boundary: accepting an arbitrary integer would turn a forged value
+;; into a health claim the Durable capability itself cannot make.
+(def ^:private max-durable-sequence 9007199254740991)
+
+(def ^:private unavailable-durable-observation
+  {:availability :unavailable})
+
+(def ^:private durable-observation-keys
+  #{:availability :role :state :view-current? :confirmed-boundary
+    :confirmed-sequence :last-successful-persistence})
+
 (defn- invalid! [message type & [data]]
   (throw (ex-info message
                   (merge {:oscope.embedded/error true :type type} data))))
@@ -196,6 +209,74 @@
 (defn- safe-counter? [value]
   (and (integer? value) (<= 0 value max-status-counter)))
 
+(defn- safe-durable-sequence? [value]
+  (and (integer? value) (<= 0 value max-durable-sequence)))
+
+(defn- valid-durable-observation? [observation]
+  ;; This mirrors the closed public contract of
+  ;; jdbc.chdb.durable/persistence-observation.  Do not pass through unknown
+  ;; keys: an embedded health surface must not acquire backend, head, dbspec,
+  ;; payload, exception, or future unreviewed capability fields by accident.
+  (and (map? observation)
+       (= durable-observation-keys (set (keys observation)))
+       (= :available (:availability observation))
+       (contains? #{:writer :reader} (:role observation))
+       (contains? #{:recovered :pending :unconfirmed :confirmed :snapshot}
+                  (:state observation))
+       (boolean? (:view-current? observation))
+       (contains? #{:recovered :wal :checkpoint}
+                  (:confirmed-boundary observation))
+       (safe-durable-sequence? (:confirmed-sequence observation))
+       (contains? #{:unavailable :wal :checkpoint}
+                  (:last-successful-persistence observation))
+       (case (:role observation)
+         :reader
+         (and (= :snapshot (:state observation))
+              (false? (:view-current? observation))
+              (= :recovered (:confirmed-boundary observation))
+              (= :unavailable (:last-successful-persistence observation)))
+         :writer
+         (and (not= :snapshot (:state observation))
+              (= (:view-current? observation)
+                 (contains? #{:recovered :confirmed} (:state observation)))
+              ;; Durable retains the last confirmed boundary while a later
+              ;; mutation is pending or unconfirmed.  That relation remains
+              ;; meaningful in every available writer state: accepting a
+              ;; mismatched pair would let forged stale evidence look like a
+              ;; valid health observation merely because it was not current.
+              (case (:confirmed-boundary observation)
+                :recovered (= :unavailable
+                              (:last-successful-persistence observation))
+                (:wal :checkpoint)
+                (= (:confirmed-boundary observation)
+                   (:last-successful-persistence observation))
+                false)
+              (or (not= :confirmed (:state observation))
+                  (contains? #{:wal :checkpoint}
+                             (:confirmed-boundary observation)))
+              (if (= :recovered (:state observation))
+                (and (= :recovered (:confirmed-boundary observation))
+                     (= :unavailable (:last-successful-persistence observation)))
+                true)))))
+
+(defn- project-durable-observation
+  "Project only the closed Durable persistence-observation vocabulary.
+
+  This is deliberately pure.  It neither owns nor touches a JDBC connection,
+  and it returns the sole unavailable value for malformed or forged input."
+  [observation]
+  (if (valid-durable-observation? observation)
+    (select-keys observation durable-observation-keys)
+    unavailable-durable-observation))
+
+(defn- observe-durable-observation [connection]
+  ;; The public chDB capability is a zero-I/O projection, but its extension
+  ;; boundary can still reject a closed/non-Durable connection.  Exceptions
+  ;; must not escape a health endpoint or retain their contents.
+  (try
+    (project-durable-observation (durable/persistence-observation connection))
+    (catch Throwable _ unavailable-durable-observation)))
+
 (defn- safe-pipeline-status [stats]
   (if (and (map? stats)
            (every? #(safe-counter? (get stats %)) pipeline-counter-keys))
@@ -221,6 +302,28 @@
      ;; stronger than the persistence evidence available at this boundary.
      :durable {:view-current? :unavailable
                :last-successful-persistence :unavailable}}))
+
+(defn- lifecycle-status-v2 [state lock pipelines connection]
+  ;; Stop! holds the same lock around phase transitions and connection close.
+  ;; Thus an observer either samples an owned open connection or returns the
+  ;; terminal unavailable value; it never calls into Durable after close.
+  (locking lock
+    (let [pipeline-stats
+          (when pipelines
+            (try
+              (export/pipeline-stats pipelines)
+              (catch Throwable _ nil)))
+          phase (let [phase (:phase @state)]
+                  (if (contains? lifecycle-phases phase) phase :unknown))]
+      {:oscope.embedded.status/version 2
+       :phase phase
+       :span-pipelines
+       {:mode (if pipelines :independent :direct-local)
+        :local (safe-pipeline-status (get pipeline-stats :local))
+        :remote (safe-pipeline-status (get pipeline-stats :remote))}
+       :durable (if (= :open phase)
+                  (observe-durable-observation connection)
+                  unavailable-durable-observation)})))
 
 (defn- sdk-operation! [operation sdk-handle pipeline-results]
   (try
@@ -543,8 +646,11 @@
                                  :span-pipelines results})
                               false)))
               stats-fn (when pipelines #(export/pipeline-stats pipelines))
-              status-fn #(lifecycle-status (:state internal) pipelines)]
-          (cond-> (assoc public-base :stop! stop-fn :status-fn status-fn)
+              status-fn #(lifecycle-status (:state internal) pipelines)
+              status-v2-fn #(lifecycle-status-v2 (:state internal) (:lock internal)
+                                                pipelines connection)]
+          (cond-> (assoc public-base :stop! stop-fn :status-fn status-fn
+                                      :status-v2-fn status-v2-fn)
             pipelines (assoc :force-flush! flush-fn
                              :span-pipeline-stats stats-fn))))
       (catch Throwable error
@@ -590,6 +696,18 @@
   exceptions, and telemetry values are never returned."
   [lifecycle]
   (if-let [status-fn (:status-fn lifecycle)]
+    (status-fn)
+    (invalid! "invalid oscope embedded lifecycle" ::invalid-lifecycle)))
+
+(defn status-v2
+  "Return the version-2 closed embedded status snapshot.
+
+  `status` remains the exact version-1 compatibility API.  Version 2 adds a
+  strict projection of Durable's public persistence observation only while its
+  owned JDBC connection is open.  It never derives delivery, remote freshness,
+  or a combined queue/persistence-current claim."
+  [lifecycle]
+  (if-let [status-fn (:status-v2-fn lifecycle)]
     (status-fn)
     (invalid! "invalid oscope embedded lifecycle" ::invalid-lifecycle)))
 

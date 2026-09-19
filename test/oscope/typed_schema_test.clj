@@ -77,10 +77,11 @@
         (is (identical? emit! (:emit! runtime)))
         (is (= [:ddl ::connection "ALTER TABLE owned"] (nth @events 2)))
         (is (= #{[:observe ::connection "DESCRIBE TABLE otel_logs"]
-                 [:observe ::connection "DESCRIBE TABLE otel_traces"]}
+                 [:observe ::connection "DESCRIBE TABLE otel_traces"]
+                 [:observe ::connection "DESCRIBE TABLE otel_metrics_gauge"]}
                (set (filter #(= :observe (first %)) @events))))
-        (is (= 2 (count (filter #(= :observe (first %)) @events)))
-            "four supported logical locations observe their two physical tables")
+        (is (= 3 (count (filter #(= :observe (first %)) @events)))
+            "current supported logical locations observe three physical tables")
         (is (identical? descriptor-set (:descriptor-set result)))
         (is (= #{:descriptor-set :installation} (set (keys result))))
         (is (= false

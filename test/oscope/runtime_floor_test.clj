@@ -4,6 +4,8 @@
             [clojure.test :refer [deftest is testing]]))
 
 (def ^:private runtime-floor "0.8.6")
+(def ^:private root-driver-sha
+  "53e64572634a18853c780ed395f02b1c6a0ee0a5")
 (def ^:private ordinary-driver-sha
   "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
 (def ^:private woven-qualification-driver-sha
@@ -262,7 +264,7 @@
 (deftest ordinary-and-woven-driver-revisions-remain-explicit
   (let [deps (edn/read-string (slurp "deps.edn"))
         s3-workflow (slurp ".github/workflows/durable-s3-e2e.yml")]
-    (is (= ordinary-driver-sha
+    (is (= root-driver-sha
            (get-in deps [:deps 'io.github.chucklehead-dev/jolt-chdb
                          :git/sha])))
     (is (str/includes? s3-workflow woven-qualification-driver-sha))
