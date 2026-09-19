@@ -359,6 +359,7 @@
                       "trace/with-span"
                       "http/get"
                       "embedded/status"
+                      "embedded/status-v2"
                       "embedded-query/start!"]]
       (is (str/includes? source required)
           (str "minimal native fixture lost required behavior: " required))))

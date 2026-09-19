@@ -1,0 +1,73 @@
+name: embedded-native-profile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-profile:
+    name: Manual native embedded profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PINNED_JOLT_SOURCE_SHA: bf8a5dde7bebb5658d218e9757ab1df0aa9c3b95
+      PINNED_JOLT_VERSION: jolt v0.8.6-599-gbf8a5dde
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout qualified chDB native gate
+        uses: actions/checkout@v4
+        with:
+          repository: chucklehead-dev/jolt-chdb
+          ref: 53e64572634a18853c780ed395f02b1c6a0ee0a5
+          path: .qualification/jolt-chdb
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+      - name: Isolate native-profile resolution caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This gate deliberately owns its caches. It must not turn the
+          # routine headless CI cache into evidence for this qualification.
+          echo "JOLT_CACHE_DIR=$RUNNER_TEMP/oscope-embedded-v2-jolt-cache" >> "$GITHUB_ENV"
+          echo "JOLT_GITLIBS_DIR=$RUNNER_TEMP/oscope-embedded-v2-jolt-gitlibs" >> "$GITHUB_ENV"
+          echo "JOLT_CHDB_CACHE_DIR=$RUNNER_TEMP/oscope-embedded-v2-chdb-cache" >> "$GITHUB_ENV"
+      - name: Install source-pinned Jolt aspect compiler
+        id: pinned-jolt
+        uses: ./.qualification/jolt-chdb/.github/actions/install-jolt-aspects
+      - name: Verify source-pinned compiler selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.pinned-jolt.outputs.source-sha }}" = "$PINNED_JOLT_SOURCE_SHA"
+          test "${{ steps.pinned-jolt.outputs.version }}" = "$PINNED_JOLT_VERSION"
+          test "$(jolt --version)" = "$PINNED_JOLT_VERSION"
+          # This verifies source selection and the action's trusted compiler
+          # cache contract only. Binary artifact provenance remains #146 work.
+      - name: Qualify exact Durable native ABI and library
+        working-directory: .qualification/jolt-chdb
+        run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/oscope-embedded-v2-native"
+      - name: Run real embedded SQLite and Durable stalled-remote fixture
+        id: fixture
+        shell: bash
+        env:
+          JOLT_BIN: jolt
+          JOLT_CHDB_LIB: ${{ runner.temp }}/oscope-embedded-v2-native/native/libchdb.so
+          OSCOPE_EMBEDDED_NATIVE_RECEIPT: ${{ runner.temp }}/oscope-embedded-native-receipt.edn
+        run: test/run_embedded_native_profile.sh
+      - name: Verify redacted categorical fixture receipt
+        if: ${{ always() }}
+        shell: bash
+        run: >-
+          test/verify_embedded_native_receipt.sh
+          "$RUNNER_TEMP/oscope-embedded-native-receipt.edn"
+      - name: Upload redacted failure receipt
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-native-profile-receipt
+          path: ${{ runner.temp }}/oscope-embedded-native-receipt.edn
+          if-no-files-found: warn
+          retention-days: 7
