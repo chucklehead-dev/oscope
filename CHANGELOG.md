@@ -60,6 +60,13 @@
   this remains pure/fake-native correspondence evidence, not a native process,
   S3, CAS, or Quint claim (Ref #116).
 
+- Bind the woven standalone Durable publication history to its checked,
+  fresh-process reader receipt before accepting the fixture. The sealed marker
+  retains only categorical fixture/reader identity, counters, and settlement
+  bits; missing, duplicate, stale, failed, or prematurely ordered receipts are
+  rejected. This is native qualification evidence for the test fixture, not a
+  production lifecycle or general Durable correctness claim (Ref #116).
+
 - Qualify Durable acknowledgement faults at the exporter's own publication
   barrier using its exact OTLP rejection and an identity-checked, unique fault
   witness. Preserve the frozen head and definite/ambiguous fresh recovery

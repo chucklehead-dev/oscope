@@ -7,6 +7,7 @@
   ;; SYNTHETIC fixture contract, not actual native or woven history evidence.
   (str ":durable-native-executed fixture " index "\n"
        (when (= 2 index) ":durable-woven-history fixture 2 12 8\n")
+       (when (= 2 index) ":durable-woven-reader fixture 2 standalone 0 0 16 0 0 1 1 1 1\n")
        ":durable-native-receipt fixture " index " 1 " passes " 0 0 1\n"))
 
 (deftest woven-native-inventory-retains-all-three-true-vars
@@ -22,9 +23,19 @@
                  (receipt 1 36)
                  (receipt 2 0)
                  (.replace good ":durable-woven-history fixture 2 12 8\n" "")
+                 (.replace good ":durable-woven-reader fixture 2 standalone 0 0 16 0 0 1 1 1 1\n" "")
                  (.replace good "fixture 2 12 8" "fixture 2 0 8")
                  (.replace good "fixture 2 12 8" "fixture 2 12 0")
+                 (.replace good "standalone 0 0 16 0 0 1 1 1 1" "embedded 1 0 16 0 0 1 1 1 1")
+                 (.replace good "standalone 0 0 16 0 0 1 1 1 1" "standalone 0 1 15 0 0 1 1 1 1")
+                 (.replace good "standalone 0 0 16 0 0 1 1 1 1" "standalone 0 0 16 0 0 1 1 0 1")
+                 (.replace good
+                           (str ":durable-woven-history fixture 2 12 8\n"
+                                ":durable-woven-reader fixture 2 standalone 0 0 16 0 0 1 1 1 1\n")
+                           (str ":durable-woven-reader fixture 2 standalone 0 0 16 0 0 1 1 1 1\n"
+                                ":durable-woven-history fixture 2 12 8\n"))
                  (str good ":durable-woven-history fixture 2 12 8\n")
+                 (str good ":durable-woven-reader fixture 2 standalone 0 0 16 0 0 1 1 1 1\n")
                  (str good ":durable-native-nested-unsettled\n")]]
       (is (not (:ok? (check bad)))))
     (is (not (:settled? (check ""))))
