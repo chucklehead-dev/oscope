@@ -779,6 +779,7 @@
   (let [canary "forged-durable-observation-secret"
         valid (durable-writer-observation :confirmed :checkpoint :checkpoint 7 true)
         pending (durable-writer-observation :pending :wal :wal 7 false)
+        unconfirmed (durable-writer-observation :unconfirmed :checkpoint :checkpoint 7 false)
         reader {:availability :available
                 :role :reader
                 :state :snapshot
@@ -789,12 +790,20 @@
         project #'embedded/project-durable-observation]
     (is (= valid (project valid)))
     (is (= pending (project pending)))
+    (is (= unconfirmed (project unconfirmed)))
     (is (= reader (project reader)))
     (doseq [forged [(assoc valid :state :snapshot)
                     (assoc valid :view-current? false)
                     (assoc valid :confirmed-sequence -1)
                     (assoc valid :confirmed-sequence 9007199254740992)
                     (assoc valid :last-successful-persistence :wal)
+                    ;; Pending/unconfirmed writers retain a previous Durable
+                    ;; witness, but that witness cannot be replaced by a
+                    ;; mismatched boundary while currentness is false.
+                    (assoc pending :last-successful-persistence :checkpoint)
+                    (assoc unconfirmed :last-successful-persistence :wal)
+                    (assoc (durable-writer-observation)
+                           :last-successful-persistence :checkpoint)
                     (assoc valid :backend canary)
                     (dissoc valid :role)
                     (assoc valid :role canary)

@@ -239,12 +239,21 @@
          (and (not= :snapshot (:state observation))
               (= (:view-current? observation)
                  (contains? #{:recovered :confirmed} (:state observation)))
-              (if (= :confirmed (:state observation))
-                (and (contains? #{:wal :checkpoint}
-                                (:confirmed-boundary observation))
-                     (= (:confirmed-boundary observation)
-                        (:last-successful-persistence observation)))
-                true)
+              ;; Durable retains the last confirmed boundary while a later
+              ;; mutation is pending or unconfirmed.  That relation remains
+              ;; meaningful in every available writer state: accepting a
+              ;; mismatched pair would let forged stale evidence look like a
+              ;; valid health observation merely because it was not current.
+              (case (:confirmed-boundary observation)
+                :recovered (= :unavailable
+                              (:last-successful-persistence observation))
+                (:wal :checkpoint)
+                (= (:confirmed-boundary observation)
+                   (:last-successful-persistence observation))
+                false)
+              (or (not= :confirmed (:state observation))
+                  (contains? #{:wal :checkpoint}
+                             (:confirmed-boundary observation)))
               (if (= :recovered (:state observation))
                 (and (= :recovered (:confirmed-boundary observation))
                      (= :unavailable (:last-successful-persistence observation)))
