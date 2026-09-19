@@ -7,7 +7,7 @@
         ;; profile's transitive jolt-chDB dependency uses the same key.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
-         :git/sha "8c55d9e273f7d625b5c0eb8000755c51a8faacfe"}
+         :git/sha "9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165"}
         ;; Preserve the application's interruptible HTTP contract under the
         ;; same canonical key used by Samizdat after its provider migration.
         jolt-lang/http-client

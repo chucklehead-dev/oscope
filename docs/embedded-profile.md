@@ -23,19 +23,21 @@ precedence; this profile is not an override mechanism.
 ## Qualification boundary
 
 The checked-in profile is the dependency authority. At this revision it pins
-`casselc/otel` `fc6cd6b3`, `jolt-chdb` `19e0ecf9`,
-`jolt-otel-clickhouse` `0f8bf3de`, `casselc/db` `8c55d9e2`, and
+`casselc/otel` `e876d2eb`, `jolt-chdb` `53e64572`,
+`jolt-otel-clickhouse` `04b1618f`, `casselc/db` `9e8c82a5`, and
 `casselc/data.json` `97298fd8`; the fixture asserts that resolved graph. Do
 not copy older pin values from issue history or from an application's distinct
 resolved graph.
 
-There is focused **Linux x86-64 local-POSIX** evidence for this exact profile:
-the maintained fixture uses authoritative SQLite application state and a real
-Durable chDB telemetry writer; starts one SDK owner; installs an approved typed
-span manifest; emits, reads back, drains, checkpoints, and closes in its
-defined order; and proves a locally stalled remote OTLP request stays bounded.
-The fixture and its hosted qualification are useful regression evidence, not a
-portable or service-level guarantee. The current acceptance record is
+The resolved profile tree has been checked for these exact source selections:
+one direct chDB/DB/OTel/exporter root wins each older transitive declaration.
+The existing **Linux x86-64 local-POSIX** fixture exercises authoritative SQLite
+application state, a real Durable chDB telemetry writer, one SDK owner, typed
+span emission/readback, ordered shutdown, and a bounded stalled remote OTLP
+attempt. It must be rerun on these refreshed pins before that native result is
+claimed for this exact profile revision. The fixture and its hosted
+qualification are regression evidence, not a portable or service-level
+guarantee. The current acceptance record is
 [Oscope #77](https://github.com/chucklehead-dev/oscope/issues/77).
 
 In particular, this document makes no claim that the profile has qualified:
@@ -47,12 +49,13 @@ In particular, this document makes no claim that the profile has qualified:
 - a real Samizdat migration or full application composition; or
 - current Durable-view freshness or a last confirmed persistence boundary.
 
-The last item intentionally remains `:unavailable` until the closed, redacted
-observation capability proposed in
-[jolt-chDB #144](https://github.com/chucklehead-dev/jolt-chdb/issues/144)
-exists and is qualified. A successful checkpoint, an open connection, or a
-live worker is not a substitute for that evidence. Physical-provider ownership
-has a separate remaining producer/reader qualification boundary in
+The last item is available only through `oscope.embedded/status-v2`, which
+strictly projects the closed, redacted
+`jdbc.chdb.durable/persistence-observation` capability while its owned
+connection is open. Version 1 remains unchanged and intentionally reports
+those values as `:unavailable`. Neither version infers evidence from a
+successful checkpoint, an open connection, or a live worker. Physical-provider
+ownership has a separate remaining producer/reader qualification boundary in
 [Oscope #119](https://github.com/chucklehead-dev/oscope/issues/119).
 
 The profile's public shutdown status separates
@@ -84,7 +87,7 @@ does not establish constructor acquisition or face-transfer correctness.
 
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
 profile and asserts the exact dependency revisions. Its application coordinate
-selects merged `casselc/db` `8c55d9e2` under the canonical `jolt-lang/db`
+selects merged `casselc/db` `9e8c82a5` under the canonical `jolt-lang/db`
 key and optimized `casselc/data.json` `97298fd8`. Root and embedded-profile
 dependencies explicitly select the same pair, so the old transitive database
 cannot select a second time provider by resolution order. Historical DB `96324713`
@@ -148,9 +151,9 @@ it is not the as-pinned `22be90d` graph. The runnable minimal application uses
 the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
-`fc6cd6b3ea466c196091284390dc90cbf3ad2f0d`, jolt-chDB
-`19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774`, and jolt-otel-clickhouse
-`0f8bf3de8c225ed4ab4f700fe60bb7c85229136d`. OTel's provider-convergence merge
+`e876d2ebba211b4831993e1fb7fb480ea547cc71`, jolt-chDB
+`53e64572634a18853c780ed395f02b1c6a0ee0a5`, and jolt-otel-clickhouse
+`04b1618fda22372f5698e0baf7c8277dcf8451ff`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration
@@ -180,9 +183,12 @@ residual work is not mistaken for part of the database result.
 ## Durable status boundary
 
 `oscope.embedded/status` remains version 1 and reports Durable freshness and
-the last successful persistence boundary as `:unavailable`. This slice does
-not adopt or expose a Durable freshness/status capability, and it does not
-pin an unpublished status branch or infer freshness from an open connection.
+the last successful persistence boundary as `:unavailable`. The separately
+versioned `oscope.embedded/status-v2` projects only the public Durable
+persistence observation from an owned open connection, and fails closed to
+`{:availability :unavailable}` after terminal lifecycle phases, observer
+errors, or malformed values. It makes no delivery, timing, object-store, or
+remote-reader freshness claim.
 
 ## Listener readiness
 

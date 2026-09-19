@@ -6,11 +6,11 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "0f8bf3de8c225ed4ab4f700fe60bb7c85229136d")
+  "04b1618fda22372f5698e0baf7c8277dcf8451ff")
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"))
+       "e876d2ebba211b4831993e1fb7fb480ea547cc71/"))
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"
