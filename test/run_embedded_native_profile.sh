@@ -45,8 +45,16 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if timeout --signal=TERM --kill-after=5s 180s \
-  "$jolt_bin" -Srepro -M:test "$work_root/fixture-root" > "$child_output" 2>&1
+if timeout --signal=TERM --kill-after=5s 180s bash -c '
+  # :test is intentionally supplied by the minimal fixture deps.edn, not the
+  # repository root. Keep alias resolution and process ownership in this
+  # subshell so the manual gate cannot silently run a root suite.
+  fixture_dir=$1
+  jolt_bin=$2
+  fixture_root=$3
+  cd -- "$fixture_dir"
+  exec "$jolt_bin" -Srepro -M:test "$fixture_root"
+' bash "$fixture_dir" "$jolt_bin" "$work_root/fixture-root" > "$child_output" 2>&1
 then
   write-receipt passed
   completed=true

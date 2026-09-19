@@ -161,6 +161,8 @@
 (def ^:private root-profile-dir ".")
 (def ^:private minimal-fixture-source
   (str minimal-fixture-dir "/src/minimal_embedded_app.clj"))
+(def ^:private minimal-fixture-native-runner
+  "test/run_embedded_native_profile.sh")
 (def ^:private samizdat-converged-fixture-dir
   "test/fixtures/samizdat-converged-db-graph")
 (def ^:private samizdat-pre-convergence-fixture-dir
@@ -378,6 +380,15 @@
                                              "jolt/http_client.clj"))))
         (is (empty? (classpath-roots classpath "casselc_jolt-http")))
         (is (empty? (classpath-roots classpath "jolt-otel-viewer")))))))
+
+(deftest manual-native-runner-resolves-the-fixture-test-alias
+  (let [source (slurp minimal-fixture-native-runner)]
+    ;; The manual native gate must execute `-M:test` against the fixture's
+    ;; deps.edn. Running it from the repository root could qualify a different
+    ;; root alias while producing an otherwise plausible process receipt.
+    (is (str/includes? source "cd -- \"$fixture_dir\""))
+    (is (str/includes? source "exec \"$jolt_bin\" -Srepro -M:test"))
+    (is (str/includes? source "bash \"$fixture_dir\" \"$jolt_bin\""))))
 
 (deftest natural-profiles-resolve-one-physical-time-provider
   ;; Deliberately use only -Spath: :test-durable overrides both historical
