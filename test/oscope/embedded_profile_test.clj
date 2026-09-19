@@ -161,6 +161,8 @@
 (def ^:private root-profile-dir ".")
 (def ^:private minimal-fixture-source
   (str minimal-fixture-dir "/src/minimal_embedded_app.clj"))
+(def ^:private minimal-fixture-native-runner
+  "test/run_embedded_native_profile.sh")
 (def ^:private samizdat-converged-fixture-dir
   "test/fixtures/samizdat-converged-db-graph")
 (def ^:private samizdat-pre-convergence-fixture-dir
@@ -176,26 +178,26 @@
 
 (def ^:private coordinates
   {:otel [["casselc_otel.git" "io.github.casselc/otel"]
-          ["https___github.com_casselc_otel.git/fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"
-           "io.github.casselc/otel/fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"]]
+          ["https___github.com_casselc_otel.git/e876d2ebba211b4831993e1fb7fb480ea547cc71/"
+           "io.github.casselc/otel/e876d2ebba211b4831993e1fb7fb480ea547cc71/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774/"
-           "io.github.chucklehead-dev/jolt-chdb/19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/53e64572634a18853c780ed395f02b1c6a0ee0a5/"
+           "io.github.chucklehead-dev/jolt-chdb/53e64572634a18853c780ed395f02b1c6a0ee0a5/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
                       "io.github.chucklehead-dev/jolt-chdb/dbc2db22130c7e783739c79bc24691dcbba21906/"]]
    :clickhouse [["jolt-otel-clickhouse"
                  "io.github.chucklehead-dev/jolt-otel-clickhouse"]
-                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/0f8bf3de8c225ed4ab4f700fe60bb7c85229136d/"
-                 "io.github.chucklehead-dev/jolt-otel-clickhouse/0f8bf3de8c225ed4ab4f700fe60bb7c85229136d/"]]
+                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/04b1618fda22372f5698e0baf7c8277dcf8451ff/"
+                 "io.github.chucklehead-dev/jolt-otel-clickhouse/04b1618fda22372f5698e0baf7c8277dcf8451ff/"]]
    :data-json [["casselc_data.json.git" "org.clojure/data.json"]
                ["https___github.com_casselc_data.json.git/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"
                 "org.clojure/data.json/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"]]
    :current-db [["casselc_db.git" "jolt-lang/db"]
-                ["https___github.com_casselc_db.git/8c55d9e273f7d625b5c0eb8000755c51a8faacfe/"
-                 "jolt-lang/db/8c55d9e273f7d625b5c0eb8000755c51a8faacfe/"]]
+                ["https___github.com_casselc_db.git/9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165/"
+                 "jolt-lang/db/9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165/"]]
    :reviewed-db [["casselc_db.git" "jolt-lang/db"]
                  ["https___github.com_casselc_db.git/6db791634e5a4c65c24646833b2e82d3a5d7a121/"
                   "jolt-lang/db/6db791634e5a4c65c24646833b2e82d3a5d7a121/"]]
@@ -359,6 +361,7 @@
                       "trace/with-span"
                       "http/get"
                       "embedded/status"
+                      "embedded/status-v2"
                       "embedded-query/start!"]]
       (is (str/includes? source required)
           (str "minimal native fixture lost required behavior: " required))))
@@ -377,6 +380,15 @@
                                              "jolt/http_client.clj"))))
         (is (empty? (classpath-roots classpath "casselc_jolt-http")))
         (is (empty? (classpath-roots classpath "jolt-otel-viewer")))))))
+
+(deftest manual-native-runner-resolves-the-fixture-test-alias
+  (let [source (slurp minimal-fixture-native-runner)]
+    ;; The manual native gate must execute `-M:test` against the fixture's
+    ;; deps.edn. Running it from the repository root could qualify a different
+    ;; root alias while producing an otherwise plausible process receipt.
+    (is (str/includes? source "cd -- \"$fixture_dir\""))
+    (is (str/includes? source "exec \"$jolt_bin\" -Srepro -M:test"))
+    (is (str/includes? source "bash \"$fixture_dir\" \"$jolt_bin\""))))
 
 (deftest natural-profiles-resolve-one-physical-time-provider
   ;; Deliberately use only -Spath: :test-durable overrides both historical

@@ -6,11 +6,19 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "0f8bf3de8c225ed4ab4f700fe60bb7c85229136d")
+  "04b1618fda22372f5698e0baf7c8277dcf8451ff")
+
+(def ^:private chdb-root
+  (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
+       "53e64572634a18853c780ed395f02b1c6a0ee0a5/"))
+
+(def ^:private prior-chdb-root
+  (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
+       "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774/"))
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "fc6cd6b3ea466c196091284390dc90cbf3ad2f0d/"))
+       "e876d2ebba211b4831993e1fb7fb480ea547cc71/"))
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -39,6 +47,11 @@
   (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
        ":git/sha \"96e68eddbe897e566ec3a7564609c49b0794e59d\"}}}"))
+
+(def ^:private prior-chdb-coordinate
+  (str "{:deps {io.github.chucklehead-dev/jolt-chdb "
+       "{:git/url \"https://github.com/chucklehead-dev/jolt-chdb.git\" "
+       ":git/sha \"19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774\"}}}"))
 
 (defn- dependency-roots [classpath dependency]
   (->> (str/split (str classpath) #":")
@@ -101,6 +114,22 @@
       (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root))
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
+
+(deftest current-chdb-source-root-is-exact-and-prior-pin-is-rejected
+  (let [current (dependency-report [])
+        prior (dependency-report ["-Sdeps" prior-chdb-coordinate])]
+    (is (successful-report? current))
+    (when (map? current)
+      (is (exact-coordinate? (:out current)
+                             "chucklehead-dev_jolt-chdb.git" chdb-root)))
+    (is (successful-report? prior))
+    (when (map? prior)
+      (testing "the real dependency override resolves the prior source root"
+        (is (exact-coordinate? (:out prior)
+                               "chucklehead-dev_jolt-chdb.git" prior-chdb-root)))
+      (testing "the current chDB source-root receipt rejects the mutation"
+        (is (false? (exact-coordinate? (:out prior)
+                                       "chucklehead-dev_jolt-chdb.git" chdb-root)))))))
 
 (deftest prior-exporter-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-exporter-coordinate])]

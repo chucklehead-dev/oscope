@@ -761,6 +761,102 @@
                 :sdk-stop :source-close :checkpoint :connection-close]
                @events))))))
 
+(defn- durable-writer-observation
+  ([] (durable-writer-observation :recovered :recovered :unavailable 0 true))
+  ([state boundary last-success sequence current?]
+   {:availability :available
+    :role :writer
+    :state state
+    :view-current? current?
+    :confirmed-boundary boundary
+    :confirmed-sequence sequence
+    :last-successful-persistence last-success}))
+
+(def ^:private unavailable-durable-observation
+  {:availability :unavailable})
+
+(deftest embedded-status-v2-projects-only-closed-durable-evidence
+  (let [canary "forged-durable-observation-secret"
+        valid (durable-writer-observation :confirmed :checkpoint :checkpoint 7 true)
+        pending (durable-writer-observation :pending :wal :wal 7 false)
+        unconfirmed (durable-writer-observation :unconfirmed :checkpoint :checkpoint 7 false)
+        reader {:availability :available
+                :role :reader
+                :state :snapshot
+                :view-current? false
+                :confirmed-boundary :recovered
+                :confirmed-sequence 3
+                :last-successful-persistence :unavailable}
+        project #'embedded/project-durable-observation]
+    (is (= valid (project valid)))
+    (is (= pending (project pending)))
+    (is (= unconfirmed (project unconfirmed)))
+    (is (= reader (project reader)))
+    (doseq [forged [(assoc valid :state :snapshot)
+                    (assoc valid :view-current? false)
+                    (assoc valid :confirmed-sequence -1)
+                    (assoc valid :confirmed-sequence 9007199254740992)
+                    (assoc valid :last-successful-persistence :wal)
+                    ;; Pending/unconfirmed writers retain a previous Durable
+                    ;; witness, but that witness cannot be replaced by a
+                    ;; mismatched boundary while currentness is false.
+                    (assoc pending :last-successful-persistence :checkpoint)
+                    (assoc unconfirmed :last-successful-persistence :wal)
+                    (assoc (durable-writer-observation)
+                           :last-successful-persistence :checkpoint)
+                    (assoc valid :backend canary)
+                    (dissoc valid :role)
+                    (assoc valid :role canary)
+                    (assoc reader :view-current? true)
+                    {:availability :unavailable :private canary}
+                    canary nil]]
+      (let [actual (project forged)]
+        (is (= unavailable-durable-observation actual))
+        (is (not (str/includes? (pr-str actual) canary)))))))
+
+(deftest embedded-status-v2-fails-closed-and-never-observes-terminal-connection
+  (let [calls (atom 0)
+        closed? (atom false)
+        connection (reify java.io.Closeable
+                     (close [_] (reset! closed? true)))
+        good (durable-writer-observation :confirmed :checkpoint :checkpoint 9 true)
+        status-result (atom good)]
+    (with-redefs [sdk/tracer-provider (constantly nil)
+                  sdk/meter-provider (constantly nil)
+                  sdk/logger-provider (constantly nil)
+                  jdbc/connection (constantly connection)
+                  chdb-export/exporter (constantly ::exporter)
+                  live/open! (constantly {:close! (fn [])})
+                  sdk/init! (constantly ::sdk-handle)
+                  sdk/shutdown! (constantly true)
+                  jdbc.chdb.durable/checkpoint! (constantly {:status :committed})
+                  jdbc.chdb.durable/persistence-observation
+                  (fn [actual]
+                    (is (identical? connection actual))
+                    (swap! calls inc)
+                    (when @closed?
+                      (throw (ex-info "post-close-observer-secret" {})))
+                    (let [result @status-result]
+                      (if (instance? Throwable result)
+                        (throw result)
+                        result)))]
+      (let [lifecycle (embedded/start! {:db-spec ::durable})]
+        (is (= good (:durable (embedded/status-v2 lifecycle))))
+        (reset! status-result (ex-info "observer-secret" {:token "observer-secret"}))
+        (let [exception-result (:durable (embedded/status-v2 lifecycle))]
+          (is (= unavailable-durable-observation exception-result))
+          (is (not (str/includes? (pr-str exception-result) "observer-secret"))))
+        (reset! status-result (assoc good :backend "forged-backend-secret"))
+        (is (= unavailable-durable-observation
+               (:durable (embedded/status-v2 lifecycle))))
+        (reset! status-result good)
+        (is (= {:status :closed :phase :closed} (embedded/stop! lifecycle)))
+        (let [before @calls
+              terminal (embedded/status-v2 lifecycle)]
+          (is (= unavailable-durable-observation (:durable terminal)))
+          (is (= before @calls)
+              "status-v2 must not invoke Durable after its owned connection closes"))))))
+
 (deftest embedded-status-excludes-arbitrary-lifecycle-values
   (let [canary "embedded-status-secret"
         connection (reify java.io.Closeable (close [_]))]
