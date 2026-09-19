@@ -9,7 +9,7 @@ test -f "$receipt" && test ! -L "$receipt"
 test "$(wc -l < "$receipt")" = 1
 
 case "$(cat "$receipt")" in
-  '{:oscope.embedded.native.receipt/version 1 :result :passed :checks #{:one-sdk-owner :terminal-unavailable :v1-unchanged :v2-preterminal}}'|\
+  '{:oscope.embedded.native.receipt/version 1 :result :passed :checks #{:generation-match :one-sdk-owner :terminal-unavailable :v1-unchanged :v2-preterminal}}'|\
   '{:oscope.embedded.native.receipt/version 1 :result :failed :checks #{}}')
     ;;
   *)

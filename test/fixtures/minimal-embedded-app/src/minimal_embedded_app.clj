@@ -1,6 +1,7 @@
 (ns minimal-embedded-app
   (:require [db.jdbc]
             [jdbc.chdb.durable :as durable]
+            [jdbc.chdb.durable.control :as durable-control]
             [jdbc.chdb.durable.local-posix :as local-posix]
             [jdbc.core :as jdbc]
             [jdbc.proto :as jdbc-proto]
@@ -207,9 +208,87 @@
      :limit 10})
    [:table :rows]))
 
-(defn -main [& [root-path]]
+(defn- require-private-seal-path! [seal-path]
+  (require! (and (string? seal-path) (not= "" seal-path))
+            "fixture requires a parent-owned private seal path")
+  seal-path)
+
+(defn- write-private-seal! [seal-path digest]
+  ;; The parent creates the containing directory with umask 077 and checks
+  ;; this resulting file mode. This child never prints the digest, path, or
+  ;; decoded head; the next process consumes it only as a snapshot pin.
+  (require! (boolean (re-matches #"[0-9a-f]{64}" digest))
+            "Durable head digest was not a normalized SHA-256")
+  (spit seal-path (str digest "\n")))
+
+(defn- read-private-seal! [seal-path]
+  (let [digest (.trim (slurp seal-path))]
+    (require! (boolean (re-matches #"[0-9a-f]{64}" digest))
+              "private Durable seal did not contain a normalized SHA-256")
+    digest))
+
+(defn- snapshot-dbspec [root-path expected]
+  (durable/snapshot-dbspec
+   {:backend (local-posix/local-backend
+              (str (java.io.File. root-path "telemetry-store")))
+    :scratch-parent root-path
+    :expected-normalized-head-sha256 expected}))
+
+(defn- run-reader! [root-path seal-path marker-path]
+  (let [expected (read-private-seal! seal-path)
+        connection (jdbc/connection (snapshot-dbspec root-path expected))]
+    (try
+      ;; This is a new process and a new native reader lifetime. Recovery plus
+      ;; this bounded query establishes the only categorical success marker.
+      (require! (= [{:count 1}]
+                   (jdbc/fetch connection "select count() as count from otel_traces"))
+                "fresh snapshot reader did not recover the emitted span")
+      (spit marker-path "generation-match\n")
+      (finally
+        (.close connection)))))
+
+(defn- snapshot-mismatch? [thunk]
+  (try
+    (thunk)
+    false
+    (catch Throwable error
+      (= :jdbc.chdb.durable/snapshot-head-mismatch (:type (ex-data error))))))
+
+(defn- run-later-generation-mutant! [root-path seal-path]
+  (let [store (local-posix/local-backend
+               (str (java.io.File. root-path "telemetry-store")))
+        expected (read-private-seal! seal-path)
+        before (:head (durable-control/read-head-read-only! store))
+        acquired (durable-control/acquire!
+                  store {:owner "oscope-generation-mutant"
+                         :instance "oscope-generation-mutant-instance"
+                         :engine-version (get-in before ["engine" "version"])
+                         :now 1
+                         :expires-at 2})]
+    (try
+      (durable-control/release! store (:token acquired))
+      (let [after (:head (durable-control/read-head-read-only! store))]
+        ;; The manifest deliberately remains unchanged. A pin limited to the
+        ;; sequence would admit this later generation; the full normalized
+        ;; head must reject it before any native reader recovery begins.
+        (require! (= (get-in before ["manifest" "seq"])
+                     (get-in after ["manifest" "seq"]))
+                  "later-generation mutant changed the manifest sequence")
+        (require! (not= before after)
+                  "later-generation mutant did not advance the Durable head")
+        (require! (snapshot-mismatch?
+                   #(jdbc/connection (snapshot-dbspec root-path expected)))
+                  "later-generation Durable head incorrectly matched snapshot seal"))
+      (finally
+        ;; A failed release here is already a fixture failure; do not reveal
+        ;; storage identity or any control-plane data in process output.
+        (try (durable-control/release! store (:token acquired))
+             (catch Throwable _ nil))))))
+
+(defn- run-writer! [root-path seal-path]
   (require! (and (string? root-path) (not= "" root-path))
             "fixture requires a parent-owned temporary root")
+  (require-private-seal-path! seal-path)
   (let [directory (.toPath (java.io.File. root-path))
         application-db (str "sqlite:" (.resolve directory "application.sqlite"))
         application* (atom nil)
@@ -421,7 +500,15 @@
                         "remote shutdown retried or duplicated the stalled POST")
               (require! (throws? #(jdbc/fetch (:connection runtime)
                                              "select 1 as live"))
-                        "Durable connection remained usable after close"))))
+                        "Durable connection remained usable after close")
+              ;; Capture the fully normalized read-only head only after the
+              ;; writer lifecycle has ended. The private seal is consumed by
+              ;; the next process's snapshot dbspec, never a public status or
+              ;; a process log.
+              (write-private-seal!
+               seal-path
+               (durable/normalized-head-sha256
+                (:head (durable-control/read-head-read-only! telemetry-store)))))))
 
         (.close application)
         (require! (and (closed? application)
@@ -450,3 +537,17 @@
           (.join application-worker 2000))
         (stop-stalled-peer! application-peer)
         (stop-stalled-peer! remote-peer)))))
+
+(defn -main [& args]
+  (let [[mode root-path seal-path marker-path] args]
+    (case mode
+      "writer" (run-writer! root-path seal-path)
+      "reader" (do
+                 (require-private-seal-path! seal-path)
+                 (require! (and (string? marker-path) (not= "" marker-path))
+                           "fresh reader requires a parent-owned marker path")
+                 (run-reader! root-path seal-path marker-path))
+      "mutant" (do
+                 (require-private-seal-path! seal-path)
+                 (run-later-generation-mutant! root-path seal-path))
+      (throw (ex-info "fixture mode must be writer, reader, or mutant" {})))))

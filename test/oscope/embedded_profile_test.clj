@@ -182,8 +182,8 @@
            "io.github.casselc/otel/e876d2ebba211b4831993e1fb7fb480ea547cc71/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/53e64572634a18853c780ed395f02b1c6a0ee0a5/"
-           "io.github.chucklehead-dev/jolt-chdb/53e64572634a18853c780ed395f02b1c6a0ee0a5/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/adaa779e1af3e58f1d7a552d79d074630bfbf815/"
+           "io.github.chucklehead-dev/jolt-chdb/adaa779e1af3e58f1d7a552d79d074630bfbf815/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
@@ -356,6 +356,10 @@
     (doseq [required ["sqlite:"
                       "local-posix/local-backend"
                       "durable/writer-dbspec"
+                      "durable/snapshot-dbspec"
+                      "durable/normalized-head-sha256"
+                      "durable-control/acquire!"
+                      "generation-match"
                       "manifest/compile-manifest"
                       "embedded/start!"
                       "trace/with-span"
@@ -388,7 +392,14 @@
     ;; root alias while producing an otherwise plausible process receipt.
     (is (str/includes? source "cd -- \"$fixture_dir\""))
     (is (str/includes? source "exec \"$jolt_bin\" -Srepro -M:test"))
-    (is (str/includes? source "bash \"$fixture_dir\" \"$jolt_bin\""))))
+    (is (str/includes? source "bash \"$fixture_dir\" \"$jolt_bin\""))
+    (is (str/includes? source "run_fixture writer"))
+    (is (str/includes? source "run_fixture reader"))
+    (is (str/includes? source "run_fixture mutant"))
+    (is (str/includes? source "test ! -e \"$marker\""))
+    (is (str/includes? source "test \"$(wc -l < \"$marker\")\" = 1"))
+    (is (str/includes? source "generation-match"))
+    (is (str/includes? source "stat -c %a \"$seal\""))))
 
 (deftest natural-profiles-resolve-one-physical-time-provider
   ;; Deliberately use only -Spath: :test-durable overrides both historical
@@ -408,10 +419,12 @@
   (let [root (.toFile
               (java.nio.file.Files/createTempDirectory
                "oscope-minimal-embedded-parent-"
-               (make-array java.nio.file.attribute.FileAttribute 0)))]
+               (make-array java.nio.file.attribute.FileAttribute 0)))
+        seal (str root "/generation.seal")]
     (let [run-result
           (child/run!
-           [(or (System/getenv "JOLT_BIN") "jolt") "-Srepro" "-M:test" (str root)]
+           [(or (System/getenv "JOLT_BIN") "jolt") "-Srepro" "-M:test"
+            "writer" (str root) seal]
            {:dir minimal-fixture-dir :out :string :err :string}
            {:after-terminal! #(delete-tree! root)})]
       (is (map? run-result))
@@ -419,7 +432,10 @@
         (is (zero? (:exit run-result))
             (str (:out run-result) (:err run-result)))
         (is (str/includes? (:out run-result)
-                           "minimal embedded native fixture: PASS"))))))
+                           "minimal embedded native fixture: PASS"))
+        ;; The native wrapper verifies the restrictive mode and never publishes
+        ;; its digest. This focused child only proves writer-side handoff setup.
+        (is (.isFile (java.io.File. seal)))))))
 
 (deftest converged-database-coordinate-qualifies-one-provider
   (let [result (run-jolt samizdat-converged-fixture-dir "-Spath")]

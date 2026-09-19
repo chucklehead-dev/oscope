@@ -23,7 +23,7 @@ precedence; this profile is not an override mechanism.
 ## Qualification boundary
 
 The checked-in profile is the dependency authority. At this revision it pins
-`casselc/otel` `e876d2eb`, `jolt-chdb` `53e64572`,
+`casselc/otel` `e876d2eb`, `jolt-chdb` `adaa779e`,
 `jolt-otel-clickhouse` `04b1618f`, `casselc/db` `9e8c82a5`, and
 `casselc/data.json` `97298fd8`; the fixture asserts that resolved graph. Do
 not copy older pin values from issue history or from an application's distinct
@@ -114,6 +114,18 @@ before the fixture closes its outer SQLite connection. Repeated query and
 embedded stop calls prove idempotence; the parent test removes chDB scratch
 only after the anchored native child process exits.
 
+After writer shutdown, the native runner retains a mode-0600 private normalized
+head-digest seal. A separate fresh process passes that digest only to
+`jdbc.chdb.durable/snapshot-dbspec`, recovers the immutable local-POSIX
+snapshot, and emits one fixed `generation-match` receipt bit only after its
+readback succeeds. The runner rejects absent, early, duplicate, or malformed
+markers, deletes private child output, and publishes no digest, head, path,
+payload, endpoint, or credential. A real local mutant then advances and
+releases a later lease generation without changing the manifest sequence; the
+old seal must fail `:jdbc.chdb.durable/snapshot-head-mismatch` before native
+reader recovery. This is same-generation snapshot identity evidence only, not
+an S3 freshness, delivery, or general external-reader claim.
+
 The fixture loads neither `oscope.server` nor `oscope.embedded.viewer`. The
 profile still supplies no listener or viewer dependency. It models Samizdat's
 required canonical HTTP-coordinate migration but does not change Samizdat.
@@ -152,7 +164,7 @@ the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
 `e876d2ebba211b4831993e1fb7fb480ea547cc71`, jolt-chDB
-`53e64572634a18853c780ed395f02b1c6a0ee0a5`, and jolt-otel-clickhouse
+`adaa779e1af3e58f1d7a552d79d074630bfbf815`, and jolt-otel-clickhouse
 `04b1618fda22372f5698e0baf7c8277dcf8451ff`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
