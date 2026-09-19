@@ -104,7 +104,13 @@
                                   (select :barrier-start batch))
             server (filterv #(= :server (get-in % [1 :owner]))
                             (select :barrier-end batch))
-            publications (select :publication batch)
+            exporter-publications
+            (filterv #(= :exporter (get-in % [1 :owner]))
+                     (select :publication batch))
+            server-publications
+            (filterv #(= :server (get-in % [1 :owner]))
+                     (select :publication batch))
+            checkpoint? (zero? (mod (inc ordinal) checkpoint-every))
             responses (select :response batch)
             expected-tables (case batch :traces [:traces] :logs [:logs]
                                   :metrics [:gauge :sum :histogram])]
@@ -112,13 +118,18 @@
                          (frequencies (map #(get-in % [1 :table]) inserts)))
                        (= 1 (count applications)) (= 1 (count requests))
                        (= 1 (count exporter-start)) (= 1 (count exporter))
-                       (= 1 (count publications))
+                       ;; Exporter flush always publishes this logical request.
+                       ;; The server then publishes an additional checkpoint on
+                       ;; cadence; treating both as one publication was an
+                       ;; impossible constraint for a scheduled checkpoint.
+                       (= 1 (count exporter-publications))
+                       (= :wal (get-in exporter-publications [0 1 :kind]))
                        (= 1 (count server-start)) (= 1 (count server))
                        (< (ffirst applications) (ffirst requests))
                        (< (ffirst requests) (ffirst inserts))
                        (< (first (last inserts)) (ffirst exporter-start))
-                       (< (ffirst exporter-start) (ffirst publications))
-                       (< (ffirst publications) (ffirst exporter))
+                       (< (ffirst exporter-start) (ffirst exporter-publications))
+                       (< (ffirst exporter-publications) (ffirst exporter))
                        (< (ffirst exporter) (ffirst server-start))
                        (< (ffirst server-start) (ffirst server)))
           (reject! :logical-batch-boundaries))
@@ -126,12 +137,19 @@
                        (= :success (get-in responses [0 1 :outcome]))
                        (< (ffirst server) (ffirst responses)))
           (reject! :ack-before-boundary))
-        (when-not (= (if (zero? (mod (inc ordinal) checkpoint-every))
-                      :checkpoint :flush)
-                     (get-in server [0 1 :kind]))
+        (when-not (and (= (if checkpoint? :checkpoint :flush)
+                         (get-in server [0 1 :kind]))
+                       (= (if checkpoint? 1 0) (count server-publications))
+                       (or (not checkpoint?)
+                           (and (= :checkpoint
+                                   (get-in server-publications [0 1 :kind]))
+                                (< (ffirst server-start)
+                                   (ffirst server-publications))
+                                (< (ffirst server-publications)
+                                   (ffirst server)))))
           (reject! :server-cadence))))
     (let [expected (publication-projection contract)
-          publications (filterv #(= :publication (:event %)) indexed)
+          publications (filterv #(= :publication (get-in % [1 :event])) indexed)
           actual (mapv #(get-in % [1 :kind]) publications)
           receipts (select :generation-receipt :shutdown)
           responses (filterv #(= :response (get-in % [1 :event])) indexed)]
