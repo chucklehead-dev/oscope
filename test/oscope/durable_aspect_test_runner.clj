@@ -29,17 +29,34 @@
 
 (defn checked-woven-receipt [result output index]
   (let [receipt (native-child/checked-receipt result output "fixture" index)
-        markers (filter #(str/starts-with? % ":durable-woven-history ")
-                        (str/split-lines output))
+        lines (str/split-lines output)
+        marker-index (fn [marker]
+                       (first (keep-indexed (fn [offset line]
+                                              (when (= marker line) offset))
+                                            lines)))
+        markers (filter #(str/starts-with? % ":durable-woven-history ") lines)
+        reader-markers (filter #(str/starts-with? % ":durable-woven-reader ") lines)
         match (when (= 1 (count markers))
                 (re-matches #":durable-woven-history fixture 2 ([0-9]{1,9}) ([0-9]{1,9})"
                             (first markers)))
+        reader-match (when (= 1 (count reader-markers))
+                       (re-matches #":durable-woven-reader fixture 2 standalone 0 0 ([0-9]{1,9}) 0 0 1 1 1 1"
+                                   (first reader-markers)))
         history? (if (= index 2)
                    (and match (pos? (parse-long (second match)))
                         (pos? (parse-long (nth match 2))))
-                   (empty? markers))]
+                   (empty? markers))
+        reader? (if (= index 2)
+                  (and history? reader-match
+                       (pos? (parse-long (second reader-match)))
+                       (< (marker-index (first markers))
+                          (marker-index (first reader-markers))))
+                  (empty? reader-markers))]
     ;; Physical settlement and successful assertion/history delivery differ.
-    (assoc receipt :ok? (boolean (and (:ok? receipt) history?)))))
+    ;; For fixture two, both are bound to the same native writer generation:
+    ;; the woven publication trace is accepted only after its checked fresh
+    ;; reader has settled. This is still test evidence, not a production API.
+    (assoc receipt :ok? (boolean (and (:ok? receipt) history? reader?)))))
 
 (defn run-isolated! [executable directory]
   ;; The caller owns the whole parent wall bound. Three60s waits plus5s
@@ -69,6 +86,26 @@
               (recur (inc index) totals (and qualified? (:ok? receipt)))
               {:totals totals :qualified? false :settled? false})))))))
 
+(defn- validate-reader-receipt! []
+  (let [{:keys [terminal? valid? settled? ok? counts] :as receipt}
+        (native-child/checked-reader-receipt)
+        {:keys [test pass fail error]} counts]
+    (when-not (and (map? receipt) (map? counts)
+                   (integer? test) (integer? pass)
+                   (integer? fail) (integer? error)
+                   (= 0 test) (pos? pass) (zero? fail) (zero? error)
+                   terminal? valid? settled? ok?)
+      (throw (ex-info "woven fixture lacks a checked fresh-reader receipt"
+                      {:obligation :native-generation-receipt})))
+    ;; The marker is closed and categorical: fixture and reader identities,
+    ;; result counters, and settlement bits only. It contains no object key,
+    ;; provider configuration, telemetry, or Durable payload.
+    (println :durable-woven-reader "fixture" 2 "standalone" 0
+             test pass fail error
+             (if terminal? 1 0) (if valid? 1 0)
+             (if settled? 1 0) (if ok? 1 0))
+    (flush)))
+
 (defn- validate-standalone! [journal exporter handle private-values]
   (let [events (history/events journal)
         commands
@@ -87,7 +124,8 @@
         (throw (ex-info "oscope Durable diagnostics retained private data"
                         {:secret-class :durable-private-data}))))
     (println :durable-woven-history "fixture" 2 (count commands) (count spans))
-    (flush)))
+    (flush)
+    (validate-reader-receipt!)))
 
 (defn- run-fixture! [index]
   (let [v (prepare-fixture! index)

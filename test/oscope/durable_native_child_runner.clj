@@ -13,11 +13,19 @@
    'oscope.embedded-durable-integration-test/dual-export-preserves-local-and-remote-trace-identity])
 
 (def ^:private nested-settled? (atom true))
+(def ^:private last-reader-receipt (atom nil))
 
 (defn known-native-subtree-settled?
   "Final receipt evidence for the independently joined recovery-reader seam."
   []
   @nested-settled?)
+
+(defn checked-reader-receipt
+  "The current test process's last checked fresh-reader receipt, if any.
+  This is a test-only, categorical handoff: callers must still validate every
+  field they rely on and must not treat a missing receipt as settlement."
+  []
+  @last-reader-receipt)
 (def ^:private readers
   {'standalone 'oscope.durable-integration-test/assert-fresh-reader!
    'embedded 'oscope.embedded-durable-integration-test/assert-fresh-reader!
@@ -166,6 +174,7 @@
   [reader root settled]
   (reset! settled false)
   (reset! nested-settled? false)
+  (reset! last-reader-receipt nil)
   (let [index (reader-index! reader)
         evidence (when (= reader :s3) (failure-evidence-root))
         directory (if evidence
@@ -177,11 +186,15 @@
     ;; Persist the observation before permitting the fixture's cleanup guard.
     ;; IO failure remains a qualification failure with the seal/logs retained.
     (when evidence (publish-reader-evidence! directory receipt))
+    ;; Keep only the parsed categorical receipt in this process. The raw child
+    ;; output remains in its owned directory and is never used as an oracle.
+    (reset! last-reader-receipt receipt)
     (reset! settled (:settled? receipt))
     (reset! nested-settled? (:settled? receipt))
     (when (:valid? receipt) (merge-counts! (:counts receipt)))
     (when-not (:ok? receipt)
-      (throw (ex-info "fresh native reader did not qualify" {})))))
+      (throw (ex-info "fresh native reader did not qualify" {})))
+    receipt))
 
 (defn run-isolated! [executable directory]
   ;; Six bounded waits plus settlement total at most390s, leaving30s budget

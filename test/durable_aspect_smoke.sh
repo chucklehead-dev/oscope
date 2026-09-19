@@ -73,7 +73,7 @@ fi
       (let [result (clojure.test/run-tests n)]
         ;; run-tests also returns :type :summary; counts are the contract.
         (println :durable-woven-control-summary (select-keys result [:type]))
-        (assert (= {:test 3 :pass 28 :fail 0 :error 0}
+        (assert (= {:test 3 :pass 34 :fail 0 :error 0}
                    (select-keys result [:test :pass :fail :error])))))'
   "${jolt_command[@]}" build \
     -m oscope.durable-aspect-test-runner \
