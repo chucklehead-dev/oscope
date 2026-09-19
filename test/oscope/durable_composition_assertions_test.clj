@@ -246,6 +246,13 @@
         "353b's stale S3 oracle omits observed startup/logical composition")
     (is (= 3 (count (filter #(and (= :insert (:event %))
                                  (= :metrics (:batch %))) events))))
+    ;; A logical batch has one exporter WAL publication, plus the server's
+    ;; checkpoint publication when cadence is due. Both must remain visible:
+    ;; collapsing them to one made a normal scheduled checkpoint impossible.
+    (is (= [[:exporter :wal] [:server :checkpoint]]
+           (mapv (juxt :owner :kind)
+                 (filter #(and (= :publication (:event %))
+                               (= :logs (:batch %))) events))))
     (is (= 1 (count (filter #(and (= :barrier-end (:event %))
                                  (= :exporter (:owner %))
                                  (= :metrics (:batch %))) events))))
