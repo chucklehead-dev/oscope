@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Repin the embedded profile to chDB's public snapshot-only normalized-head
+  guard. Extend the native embedded fixture with a private mode-0600 digest
+  seal after writer shutdown, a separate fresh-reader recovery handoff, and
+  exactly one categorical `:generation-match` receipt bit. Reject absent,
+  early, duplicate, and mismatched markers without retaining child output;
+  assert a real local later-lease-generation/same-manifest-sequence mutant
+  fails the old snapshot seal before recovery. This does not expose a Durable
+  head or digest through Oscope status/logging and is not an S3 freshness or
+  delivery claim (Ref #116).
+
 - Refresh the embedded profile and its direct composition pins to merged
   chDB/DB persistence-observation, exporter, and OTel revisions. Add
   `oscope.embedded/status-v2`, which preserves the exact version-1 status API
