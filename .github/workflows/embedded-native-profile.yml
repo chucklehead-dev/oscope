@@ -13,9 +13,12 @@ on:
       # exact-PR-head gate through a stale path filter.
       - src/oscope/embedded/**
       - test/fixtures/minimal-embedded-app/**
+      - test/fixtures/time-provider-durable/**
       - test/oscope/embedded_profile_test.clj
       - test/oscope/embedded_profile_test_runner.clj
+      - test/oscope/time_provider_native_fixture_test.clj
       - test/run_embedded_native_profile.sh
+      - test/run_time_provider_native_fixture.sh
       - test/verify_embedded_native_receipt.sh
 
 permissions:
@@ -79,6 +82,12 @@ jobs:
       - name: Qualify exact Durable native ABI and library
         working-directory: .qualification/jolt-chdb
         run: scripts/qualify-durable-native.sh "$RUNNER_TEMP/oscope-embedded-v2-native"
+      - name: Run independent Durable time-provider producer and reader
+        shell: bash
+        env:
+          JOLT_BIN: jolt
+          JOLT_CHDB_LIB: ${{ runner.temp }}/oscope-embedded-v2-native/native/libchdb.so
+        run: test/run_time_provider_native_fixture.sh
       - name: Run real embedded SQLite and Durable stalled-remote fixture
         id: fixture
         shell: bash
@@ -88,13 +97,16 @@ jobs:
           OSCOPE_EMBEDDED_NATIVE_RECEIPT: ${{ runner.temp }}/oscope-embedded-native-receipt.edn
         run: test/run_embedded_native_profile.sh
       - name: Verify redacted categorical fixture receipt
-        if: ${{ always() }}
+        # The preceding time-provider native fixture has no embedded receipt.
+        # If it fails, this embedded fixture is skipped and no missing receipt
+        # should obscure the primary failure.
+        if: ${{ always() && steps.fixture.outcome != 'skipped' }}
         shell: bash
         run: >-
           test/verify_embedded_native_receipt.sh
           "$RUNNER_TEMP/oscope-embedded-native-receipt.edn"
       - name: Upload redacted failure receipt
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.fixture.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: embedded-native-profile-receipt

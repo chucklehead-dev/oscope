@@ -1,0 +1,17 @@
+{:paths ["src"]
+ :jolt/min-version "0.8.6"
+ :deps {io.github.chucklehead-dev/jolt-chdb
+        {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
+         :git/sha "adaa779e1af3e58f1d7a552d79d074630bfbf815"}
+        ;; Both public coordinate identities must resolve to this one source.
+        jolt-lang/time
+        {:git/url "https://github.com/chucklehead-dev/time.git"
+         :git/sha "2494b21b25cd959573c3e6050cd475e4bf302fdb"}
+        io.github.jolt-lang/time
+        {:git/url "https://github.com/chucklehead-dev/time.git"
+         :git/sha "2494b21b25cd959573c3e6050cd475e4bf302fdb"}}
+ ;; Jolt builds do not implicitly embed a dependency's runtime resources.
+ ;; The native workflow checks out this exact pinned chDB source tuple before
+ ;; compiling, matching the established published Durable fixture pattern.
+ :jolt/build {:embed ["../../../../.qualification/jolt-chdb/resources"]}
+ :aliases {:run {:main-opts ["-m" "time-provider-durable.producer"]}}}

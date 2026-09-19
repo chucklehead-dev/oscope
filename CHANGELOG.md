@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add the separate Oscope #119 Durable time-provider qualification fixture:
+  independently resolved producer and reader roots pin both logical time
+  coordinates to one source, assert the physical `.clj`/`.cljc` union before
+  compiling, checkpoint a fixed Durable row, and recover it in a distinct
+  executable. A checked-in one-coordinate duplicate-provider graph is a red
+  control. Native execution remains a qualified-runtime gate, not a claim that
+  source loading or dependency metadata proves native behavior (Ref #119).
+
 - Repin the embedded profile to chDB's public snapshot-only normalized-head
   guard. Extend the native embedded fixture with a private mode-0600 digest
   seal after writer shutdown, a separate fresh-reader recovery handoff, and
