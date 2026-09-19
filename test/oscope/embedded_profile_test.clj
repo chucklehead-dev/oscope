@@ -433,9 +433,13 @@
             (str (:out run-result) (:err run-result)))
         (is (str/includes? (:out run-result)
                            "minimal embedded native fixture: PASS"))
-        ;; The native wrapper verifies the restrictive mode and never publishes
-        ;; its digest. This focused child only proves writer-side handoff setup.
-        (is (.isFile (java.io.File. seal)))))))
+        ;; The native runner asserts mode 0600 while its owned child is active;
+        ;; this direct-child control deliberately runs its cleanup hook before
+        ;; returning. Success must therefore leave no private seal for a later
+        ;; test or artifact to inspect. The source contract above retains the
+        ;; in-flight mode assertion without turning retained secret data into
+        ;; test evidence.
+        (is (not (.exists (java.io.File. seal))))))))
 
 (deftest converged-database-coordinate-qualifies-one-provider
   (let [result (run-jolt samizdat-converged-fixture-dir "-Spath")]
