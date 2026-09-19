@@ -95,10 +95,12 @@ consumer or independent producer/reader graph has one physical provider (see
 fresh Jolt process the
 fixture opens a real SQLite file for authoritative
 application state and a real local-POSIX Durable chDB writer for telemetry,
-installs an approved typed span manifest, starts one SDK owner, emits and
-exports one span through independent local and remote pipelines, and reads it
-back locally through a bounded typed query while a hermetic remote OTLP peer
-withholds its response. A second stalled peer proves that the application's
+installs an approved typed span manifest, starts one SDK owner, and emits one
+span through independent local and remote pipelines. It reads that span back
+locally through a bounded typed query. The hermetic remote OTLP peer
+deliberately withholds its response, so the remote delivery attempt is a
+bounded stalled failure, not successful remote export. A second stalled peer
+proves that the application's
 canonical HTTP provider still returns a blocked request promptly when its
 thread is interrupted. The status snapshot remains bounded and redacted while
 both pipelines are live. Shutdown retires the query first, cancels and records
