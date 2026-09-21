@@ -7,6 +7,7 @@
             [oscope.durable-native-child-runner-test]
             [oscope.durable-composition-assertions-test]
             [oscope.durable-fault-target-test]
+            [oscope.durable-crash-verify-test]
             [oscope.durable-config-runtime-test]
             [oscope.durable-integration-test]
             [oscope.durable-server-main-test]
@@ -21,6 +22,7 @@
   (let [qualified? (= :supported (:status (native/durable-capability)))
         namespaces ['oscope.durable-composition-assertions-test
                             'oscope.durable-config-runtime-test
+                            'oscope.durable-crash-verify-test
                             'oscope.durable-server-main-test
                             'oscope.embedded-test
                             'oscope.embedded-viewer-test

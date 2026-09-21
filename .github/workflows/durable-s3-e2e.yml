@@ -20,6 +20,7 @@ on:
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
       - test/durable_crash_reopen.sh
+      - test/durable_crash_root_test.sh
       - test/durable_s3_crash_reopen.sh
       - test/durable_fault_acceptance.sh
       - test/durable_aspect_smoke.sh
@@ -29,6 +30,7 @@ on:
       - test/durable-fault-published/deps.edn
       - test/durable-process-published/deps.edn
       - test/oscope/durable_crash_verify.clj
+      - test/oscope/durable_crash_verify_test.clj
       - test/oscope/durable_fault_report_verify.clj
       - test/oscope/durable_fault_server_main.clj
       - test/oscope/durable_fault_verify.clj
@@ -58,6 +60,7 @@ on:
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
       - test/durable_crash_reopen.sh
+      - test/durable_crash_root_test.sh
       - test/durable_s3_crash_reopen.sh
       - test/durable_fault_acceptance.sh
       - test/durable_aspect_smoke.sh
@@ -67,6 +70,7 @@ on:
       - test/durable-fault-published/deps.edn
       - test/durable-process-published/deps.edn
       - test/oscope/durable_crash_verify.clj
+      - test/oscope/durable_crash_verify_test.clj
       - test/oscope/durable_fault_report_verify.clj
       - test/oscope/durable_fault_server_main.clj
       - test/oscope/durable_fault_verify.clj
@@ -118,6 +122,13 @@ jobs:
           ref: 19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774
           path: .qualification/jolt-chdb
           persist-credentials: false
+      - name: Checkout canonical Durable exporter qualification
+        uses: actions/checkout@v4
+        with:
+          repository: chucklehead-dev/jolt-otel-clickhouse
+          ref: 04b1618fda22372f5698e0baf7c8277dcf8451ff
+          path: .qualification/jolt-otel-clickhouse
+          persist-credentials: false
       - name: Checkout canonical Durable aspect pack
         uses: actions/checkout@v4
         with:
@@ -143,6 +154,13 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
         run: test "$(jolt --version)" = "jolt v0.8.6"
+      - name: Validate Durable crash local-root resolver
+        env:
+          JOLT_EDN_BIN: ${{ runner.temp }}/jolt-bin/jolt
+        run: >-
+          test/durable_crash_root_test.sh
+          "$GITHUB_WORKSPACE/.qualification/jolt-chdb"
+          "$GITHUB_WORKSPACE/.qualification/jolt-otel-clickhouse"
       - name: Install aspect compiler linker dependency
         run: |
           sudo apt-get update

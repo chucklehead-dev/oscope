@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Extend the Durable process-crash recovery oracle to traces, logs, gauge,
+  sum, and histogram rows, with exact per-writer identities. Isolated local
+  worktrees may explicitly set `JOLT_CHDB_ROOT` for that test harness; the
+  normal relative checkout layout remains the default (Refs #4).
+
 - Add the separate Oscope #119 Durable time-provider qualification fixture:
   independently resolved producer and reader roots pin both logical time
   coordinates to one source, assert the physical `.clj`/`.cljc` union before
