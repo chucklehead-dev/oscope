@@ -1,9 +1,11 @@
 // wiresink is a stand-in receiver for the wire-cost comparison. It fully
 // decodes what it is sent (so span/log counts are verified and decode cost is
 // real) but stores nothing. It serves:
-//   :4318  OTLP/HTTP protobuf (optionally gzip)   /v1/traces, /v1/logs
-//   :4317  OTLP/gRPC                              TraceService, LogsService
-//   :8126  Datadog agent                          /v0.4/traces (msgpack)
+//
+//	:4318  OTLP/HTTP protobuf (optionally gzip)   /v1/traces, /v1/logs
+//	:4317  OTLP/gRPC                              TraceService, LogsService
+//	:8126  Datadog agent                          /v0.4/traces (msgpack)
+//
 // GET :4318/stats returns counters and this process's CPU time; /reset zeroes them.
 package main
 

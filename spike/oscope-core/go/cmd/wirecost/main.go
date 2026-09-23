@@ -223,6 +223,42 @@ func sinkCounts() (int64, int64, error) {
 
 var sinkStats map[string]int64
 
+// threadCPU sums utime+stime per thread name from /proc (Linux only). Go's
+// threads carry the executable's name; the recorder's are osc-drain and
+// osc-writer; everything else in an oscope run is chDB's own thread pools.
+func threadCPU() map[string]time.Duration {
+	out := map[string]time.Duration{}
+	dirs, _ := os.ReadDir("/proc/self/task")
+	for _, d := range dirs {
+		comm, err1 := os.ReadFile("/proc/self/task/" + d.Name() + "/comm")
+		stat, err2 := os.ReadFile("/proc/self/task/" + d.Name() + "/stat")
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		f := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+2:]))
+		ut, _ := strconv.ParseInt(f[11], 10, 64)
+		st, _ := strconv.ParseInt(f[12], 10, 64)
+		out[strings.TrimSpace(string(comm))] += time.Duration(ut+st) * 10 * time.Millisecond
+	}
+	return out
+}
+
+func groupCPU(before, after map[string]time.Duration) map[string]float64 {
+	self := strings.TrimSpace(func() string { b, _ := os.ReadFile("/proc/self/comm"); return string(b) }())
+	g := map[string]float64{}
+	for name, v := range after {
+		k := "chdb"
+		switch {
+		case name == self:
+			k = "go"
+		case strings.HasPrefix(name, "osc-"):
+			k = name
+		}
+		g[k] += float64((v - before[name]).Microseconds())
+	}
+	return g
+}
+
 func rusage() (cpu time.Duration, maxRSSKB int64) {
 	var ru syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
@@ -234,6 +270,8 @@ func main() {
 	rps := flag.Int("rps", 5000, "requests per second")
 	secs := flag.Int("secs", 10, "measured seconds")
 	dbPath := flag.String("db", "", "oscope store path (required for -mode oscope)")
+	batchRows := flag.Uint("batch", 8192, "oscope: rows per insert")
+	flushMs := flag.Uint("flushms", 1000, "oscope: max ms between inserts")
 	flag.Parse()
 
 	var b backend
@@ -241,7 +279,7 @@ func main() {
 	case "none":
 		b = none{}
 	case "oscope":
-		if err := oscope.Start(oscope.Config{DBPath: *dbPath, Service: "wirecost", RingBytes: 16 << 20, BatchRows: 8192, FlushMs: 1000}); err != nil {
+		if err := oscope.Start(oscope.Config{DBPath: *dbPath, Service: "wirecost", RingBytes: 16 << 20, BatchRows: uint32(*batchRows), FlushMs: uint32(*flushMs)}); err != nil {
 			panic(err)
 		}
 		b = osc{}
@@ -270,6 +308,7 @@ func main() {
 	var ms0, ms1 runtime.MemStats
 	runtime.ReadMemStats(&ms0)
 	cpu0, _ := rusage()
+	th0 := threadCPU()
 	start := time.Now()
 	total := *rps * *secs
 	var inCall time.Duration
@@ -290,6 +329,7 @@ func main() {
 		panic(err)
 	}
 	cpu1, rss := rusage()
+	th1 := threadCPU()
 	runtime.ReadMemStats(&ms1)
 	spans, logs, err := b.counts()
 	if err != nil {
@@ -317,6 +357,20 @@ func main() {
 		"max_rss_mb":          float64(rss) / 1024,
 		"spans":               spans, "logs": logs,
 		"complete": spans == wantSpans && logs == wantLogs,
+	}
+	if *mode == "oscope" {
+		per := map[string]float64{}
+		for k, v := range groupCPU(th0, th1) {
+			per[k] = v / float64(total)
+		}
+		res["thread_cpu_us_per_req"] = per
+		res["batch_rows"] = *batchRows
+	} else if *mode != "none" {
+		per := map[string]float64{}
+		for k, v := range groupCPU(th0, th1) {
+			per[k] = v / float64(total)
+		}
+		res["thread_cpu_us_per_req"] = per
 	}
 	if sinkStats != nil {
 		res["wire_bytes_per_req"] = float64(sinkStats["wire_bytes"]) / float64(total)

@@ -114,3 +114,73 @@ it, and the request becomes a 500 SERVER span with an error status.
 
 **Link order:** the cgo `LDFLAGS` put `-lchdb` first, with `--no-as-needed`, for
 the load-order reason described in `../README.md`.
+
+## Compared with exporting over the wire
+
+`cmd/wirecost` runs one workload through each path at 5,000 requests/s for 10 s. Each request is
+a SERVER span with three children (4 spans, 3 attributes each) plus one correlated
+log, so each run records 200,000 spans and 50,000 logs.
+
+`cmd/wiresink` is the receiver, a separate process on the same machine. It fully decodes
+every payload, so its counts are verified and its decode cost is real, but it stores
+nothing. Every run delivered exact counts with 0 decode errors. dd-trace-go ships spans only.
+
+Numbers are CPU µs per request. App-process figures have the pacing loop's
+10.7 µs/req baseline (`-mode none`) subtracted. Each run was done twice; ranges cover
+both runs. Measured on a 4 vCPU VM with Go 1.25, OTel Go SDK v1.46 (logs v0.22),
+dd-trace-go v2.10.1 and chDB 26.7.3.
+
+**App process: recording and getting the data out**
+
+| Path | CPU µs/req | Allocs/req | Alloc KB/req | GC cycles in 10 s | Wire B/req |
+|---|---:|---:|---:|---:|---:|
+| oscope in-process: Go recording | ~4 | 8 | 0.28 | 5 | — |
+| oscope in-process: Rust drain thread | 10–11 | 0 | 0 | — | — |
+| OTLP/HTTP protobuf (OTel SDK) | 34 | 108 | 11.9 | 15 | 729 |
+| OTLP/HTTP protobuf + gzip | 46 | 108 | 12.9 | 14 | 156 |
+| OTLP/gRPC | 33–35 | 108 | 11.4 | 13 | 730 |
+| dd-trace-go, spans only (no logs) | 42–43 | 108 | 12.5 | 53–54 | 1,871 |
+
+**Storage, which somebody has to pay for**
+
+| Where | CPU µs/req |
+|---|---:|
+| Receiver: decode only, before any storage (OTLP HTTP / gRPC / dd msgpack) | 24–27 / 20–21 / 28–30 |
+| chDB insert and merge in-process, 8k-row batches | 51 |
+| chDB insert and merge in-process, 64k-row batches | 18–19 |
+
+What the numbers say:
+
+- **Recording is 2.5–3× cheaper in-process.** oscope spends about 14 µs/req (Go 4 + drain 10)
+  against 33–46 µs/req for the OTel SDK and 42 µs/req for dd-trace-go, which also sends no logs.
+  It also makes 8 allocations per request instead of 108, which shows up as 5 GC cycles
+  instead of 13–54.
+- **Storage moves into the app.** With an external receiver, the app pays only for
+  encoding. Storage, plus another 20–30 µs/req of decoding, lands on the receiver.
+  In-process, chDB's insert and merge CPU runs inside the app. At 5,000 req/s with 8k-row
+  batches that's about 25% of one core, and 64k-row batches cut it to about 10%.
+- **Totals across both processes:**
+  - Wire: app 34 + decode 20–27 + storage ≈ 75–110 µs/req.
+  - In-process: 14 + storage ≈ 33–65 µs/req.
+  - The same chDB storage cost is assumed on both sides. The receiver-side storage
+    wasn't measured, because the sink stores nothing.
+- **Batch size is the biggest lever on total cost:** 8k → 64k rows took in-process storage
+  from 51 to 19 µs/req. The trade-off is that data becomes visible later.
+- **gzip cuts wire bytes by 4.7× (729 → 156 B/req) for about 12 µs/req more CPU.** That's worth
+  it off-box and wasted on loopback.
+
+Caller-side wall time per request (the time the request goroutine spends inside
+instrumentation) was also recorded. It is noisy on a 4-core box shared with background
+threads and the receiver: oscope 4.9–10.9 µs, OTLP 11.3–12.2 µs, dd-trace-go 25–27 µs. The
+isolated microbenchmark for oscope is about 0.85 µs per span.
+
+Reproduce:
+
+```sh
+go build -o wiresink ./cmd/wiresink && go build -o wirecost ./cmd/wirecost
+./wiresink &
+for m in none oscope otlp-http otlp-http-gzip otlp-grpc dd; do
+  rm -rf wiredb; ./wirecost -mode $m -db wiredb -secs 10
+done
+./wirecost -mode oscope -db wiredb -batch 65536 -flushms 5000   # bigger batches
+```

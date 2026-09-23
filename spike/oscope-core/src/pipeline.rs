@@ -165,6 +165,10 @@ impl Pipeline {
                 let mut scratch = Vec::with_capacity(4096);
                 let mut last_ship = Instant::now();
                 let mut handled_flush = 0u64;
+                // idle backoff: 200us doubling to 5ms, reset when records arrive.
+                // Polling every 200us regardless costs a noticeable slice of a
+                // core at low record rates.
+                let mut idle_shift = 0u32;
                 let ship = |asm: &mut Assembler, table: u8, flush_seq: u64| {
                     let spare = empty_rx.recv().unwrap_or_default();
                     let (rows, buf) = if table == T_TRACES {
@@ -222,7 +226,10 @@ impl Pipeline {
                         g.retain(|r| !(r.thread_gone.load(Ordering::Acquire) && r.is_empty()));
                     }
                     if all_empty {
-                        std::thread::sleep(Duration::from_micros(200));
+                        std::thread::sleep(Duration::from_micros((200u64 << idle_shift).min(5_000)));
+                        idle_shift = (idle_shift + 1).min(5);
+                    } else {
+                        idle_shift = 0;
                     }
                 }
                 drop(full_tx);
