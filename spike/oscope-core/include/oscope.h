@@ -55,6 +55,18 @@ void     osc_span_end(uint64_t span, uint8_t status);
 int32_t  osc_span_record(const osc_span_rec *rec);
 int32_t  osc_log(uint8_t severity, osc_str body, const osc_attr *attrs, uint32_t n_attrs);
 
+/* bulk path: buf = frames of (u32 LE len | record); records are K_FULL (4) or
+ * K_LOG (5) in the ring wire format, little-endian:
+ *   K_FULL: u8 4 | trace_id[16] | u64 span | u64 parent | u32 name | u8 kind |
+ *           u8 status | u64 start_ns | u64 end_ns | u32 n | attr*n
+ *   K_LOG:  u8 5 | u64 ts_ns | trace_id[16] | u64 span | u8 severity |
+ *           u32 len | body | u32 n | attr*n
+ *   attr:   u8 tag | u32 key | (str: u32 len | bytes) (i64/f64: 8) (bool: 1)
+ * Returns records accepted, or -1 if malformed (nothing accepted). */
+int64_t  osc_submit(const uint8_t *buf, size_t len);
+/* call before osc_start in hosts with their own signal handling (Go, JVM) */
+void     osc_set_engine_signal_handlers(uint8_t enabled);
+
 /* read side, for an embedded UI in any language */
 int32_t  osc_query(osc_str sql, const char *format, uint8_t **out, size_t *out_len);
 void     osc_free(uint8_t *p, size_t len);

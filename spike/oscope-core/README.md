@@ -1,6 +1,8 @@
 # oscope-core spike
 
 The design this spike measures is in [design.html](design.html). This directory is standalone Rust; nothing in the Jolt build or tests uses it.
+[go/](go/README.md) is a Go app instrumented at compile time with Orchestrion,
+recording into the same in-process store through the C ABI.
 
 A throwaway Rust spike that measures the proposed design against chDB 26.7.3. It covers:
 
@@ -34,6 +36,14 @@ $B e2e --threads 2 --secs 10 --rate 50000 --path ./db --wal d.wal --fsync
 $B recover --wal d.wal                         # fresh process, replay WAL
 $B otlp --spans 512 --reqs 400 --coalesce 10000
 ```
+
+## `osc_submit`
+
+Hosts whose FFI calls are expensive, or which can't pass pointers inside
+structs (cgo, JVM FFM, jolt.ffi), can encode finished spans and logs
+themselves in the ring wire format documented in `include/oscope.h`. They pass
+a flat buffer with one call. Every record is bounds-checked before any are
+accepted.
 
 ## Embedding from other languages
 

@@ -27,6 +27,13 @@ extern "C" {
     fn chdb_stream_done(s: InsertStream) -> *mut ChdbResult;
     fn chdb_stream_insert_error(s: InsertStream) -> *const c_char;
     fn chdb_destroy_insert_stream(s: InsertStream);
+    fn chdb_set_signal_handlers_enabled(enabled: i32);
+}
+
+/// Must be called before the first connection. Hosts with their own signal
+/// handling (Go, JVM, game loops) turn the engine's handlers off.
+pub fn set_signal_handlers_enabled(on: bool) {
+    unsafe { chdb_set_signal_handlers_enabled(on as i32) }
 }
 
 pub struct Conn {

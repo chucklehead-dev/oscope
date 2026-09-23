@@ -199,3 +199,43 @@ impl Assembler {
         self.open.len()
     }
 }
+
+/// Bounds-checked walk of a host-encoded record. Only K_FULL and K_LOG may be
+/// submitted from outside; anything malformed is rejected before it reaches
+/// the drain thread, which trusts ring contents.
+pub fn validate_submitted(rec: &[u8]) -> bool {
+    struct C<'a>(&'a [u8], usize);
+    impl C<'_> {
+        fn take(&mut self, n: usize) -> Option<&[u8]> {
+            let end = self.1.checked_add(n)?;
+            let s = self.0.get(self.1..end)?;
+            self.1 = end;
+            Some(s)
+        }
+        fn u8(&mut self) -> Option<u8> { self.take(1).map(|b| b[0]) }
+        fn u32(&mut self) -> Option<u32> { self.take(4).map(|b| u32::from_le_bytes(b.try_into().unwrap())) }
+    }
+    fn attrs(c: &mut C) -> Option<()> {
+        let n = c.u32()?;
+        for _ in 0..n {
+            let tag = c.u8()?;
+            c.take(4)?;
+            match tag {
+                A_STR => { let l = c.u32()? as usize; c.take(l)?; }
+                A_I64 | A_F64 => { c.take(8)?; }
+                A_BOOL => { c.take(1)?; }
+                _ => return None,
+            }
+        }
+        Some(())
+    }
+    let mut c = C(rec, 0);
+    let ok = (|| -> Option<()> {
+        match c.u8()? {
+            K_FULL => { c.take(16 + 8 + 8 + 4 + 1 + 1 + 8 + 8)?; attrs(&mut c) }
+            K_LOG => { c.take(8 + 16 + 8 + 1)?; let l = c.u32()? as usize; c.take(l)?; attrs(&mut c) }
+            _ => None,
+        }
+    })();
+    ok.is_some() && c.1 == rec.len()
+}

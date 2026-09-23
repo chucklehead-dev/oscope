@@ -315,6 +315,14 @@ pub fn log(severity: u8, body: &[u8], attrs: &[(u32, AttrVal)]) -> bool {
     })
 }
 
+/// Copy one pre-encoded K_FULL or K_LOG record (validated by the caller) into
+/// this thread's ring. Used by `osc_submit` for hosts that encode records
+/// themselves (Go, JVM, Jolt) and cross the FFI boundary once per batch.
+#[inline]
+pub fn submit_raw(rec: &[u8]) -> bool {
+    with_local(|l| l.ring.push_with(rec.len(), END_RESERVE * l.depth, |w| w.bytes(rec)))
+}
+
 pub fn dropped_total() -> u64 {
     DROPPED.load(Ordering::Relaxed)
 }

@@ -183,6 +183,45 @@ pub unsafe extern "C" fn osc_log(severity: u8, body: osc_str, attrs: *const osc_
     if recorder::log(severity, body.bytes(), &buf[..n]) { 0 } else { -1 }
 }
 
+/// Bulk path: `buf` holds one or more frames `u32 len (LE) | record`, where each
+/// record is a K_FULL span or K_LOG log in the ring wire format (see
+/// include/oscope.h). One FFI crossing per batch, no pointers inside the
+/// buffer. Returns the number of records accepted (the rest were dropped for
+/// lack of ring space), or -1 if the buffer is malformed (nothing accepted).
+#[no_mangle]
+pub unsafe extern "C" fn osc_submit(buf: *const u8, len: usize) -> i64 {
+    if buf.is_null() {
+        return if len == 0 { 0 } else { -1 };
+    }
+    let b = std::slice::from_raw_parts(buf, len);
+    let mut p = 0;
+    while p < b.len() {
+        let Some(h) = b.get(p..p + 4) else { return -1 };
+        let n = u32::from_le_bytes(h.try_into().unwrap()) as usize;
+        let Some(rec) = b.get(p + 4..p + 4 + n) else { return -1 };
+        if !crate::assemble::validate_submitted(rec) {
+            return -1;
+        }
+        p += 4 + n;
+    }
+    let mut accepted = 0;
+    p = 0;
+    while p < b.len() {
+        let n = u32::from_le_bytes(b[p..p + 4].try_into().unwrap()) as usize;
+        if recorder::submit_raw(&b[p + 4..p + 4 + n]) {
+            accepted += 1;
+        }
+        p += 4 + n;
+    }
+    accepted
+}
+
+/// Call before osc_start in hosts that own signal handling (Go, JVM).
+#[no_mangle]
+pub extern "C" fn osc_set_engine_signal_handlers(enabled: u8) {
+    crate::chdb::set_signal_handlers_enabled(enabled != 0)
+}
+
 /// 0 when everything recorded before the call is committed.
 #[no_mangle]
 pub extern "C" fn osc_flush(timeout_ms: u32) -> i32 {

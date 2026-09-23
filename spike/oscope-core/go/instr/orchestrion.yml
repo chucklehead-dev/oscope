@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+  description: Record spans and logs into oscope's in-process chDB store.
+
+aspects:
+  # Start the engine as soon as main runs, flush and stop it when main returns.
+  - id: oscope-main
+    join-point:
+      all-of:
+        - package-name: main
+        - function-body:
+            function:
+              - name: main
+    advice:
+      - prepend-statements:
+          imports:
+            oscopeinstr: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+          template: |-
+            oscopeinstr.Init()
+            defer oscopeinstr.Shutdown()
+
+  # //oscope:span [span.name:<name>] [key:value ...] on any function.
+  - id: oscope-span-directive
+    join-point:
+      function-body:
+        directive: 'oscope:span'
+    advice:
+      - prepend-statements:
+          imports:
+            context: context
+            oscopeinstr: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+          template: |-
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
+            {{- if (eq $ctx "") -}}
+              {{- $ctx = "__oscopeCtx" -}}
+              var __oscopeCtx context.Context = {{ with $req }}{{ $req }}.Context(){{ else }}context.TODO(){{ end }}
+            {{ end -}}
+            {{- $name := .Function.Name -}}
+            {{- range .DirectiveArgs "oscope:span" -}}
+              {{- if eq .Key "span.name" -}}{{- $name = .Value -}}{{- end -}}
+            {{- end -}}
+            var __oscopeEnd func(error)
+            {{ $ctx }}, __oscopeEnd = oscopeinstr.StartSpan({{ $ctx }}, {{ printf "%q" $name }},
+              {{- range .DirectiveArgs "oscope:span" }}
+                {{- if ne .Key "span.name" }} {{ printf "%q" .Key }}, {{ printf "%q" .Value }},{{ end }}
+              {{- end }}
+            )
+            {{- with $req }}
+            {{ $req }} = {{ $req }}.WithContext({{ $ctx }})
+            {{- end }}
+            {{ with .Function.ResultOfType "error" -}}
+            defer func() { __oscopeEnd({{ . }}) }()
+            {{- else -}}
+            defer __oscopeEnd(nil)
+            {{- end }}
+
+  # http.ListenAndServe(addr, h) -> server spans for every request.
+  - id: oscope-http-server
+    join-point:
+      all-of:
+        - function-call: net/http.ListenAndServe
+        - package-filter:
+            root: true   # the app's own module: never the stdlib or dependencies
+        - not:
+            import-path: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+    advice:
+      - wrap-expression:
+          imports:
+            oscopeinstr: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+          template: |-
+            oscopeinstr.ListenAndServe({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
+
+  # client.Do(req) -> client spans + traceparent propagation.
+  - id: oscope-http-client
+    join-point:
+      all-of:
+        - method-call:
+            receiver: net/http.Client
+            name: Do
+            match: pointer-only
+        - package-filter:
+            root: true   # the app's own module: never the stdlib or dependencies
+        - not:
+            import-path: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+    advice:
+      - wrap-expression:
+          imports:
+            oscopeinstr: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+          template: |-
+            oscopeinstr.Do({{ .AST.Fun.X }}, {{ index .AST.Args 0 }})
+
+  # slog.InfoContext / slog.ErrorContext -> also recorded as correlated logs.
+  - id: oscope-slog-info
+    join-point:
+      all-of:
+        - function-call: log/slog.InfoContext
+        - package-filter:
+            root: true   # the app's own module: never the stdlib or dependencies
+        - not:
+            import-path: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+    advice:
+      - wrap-expression:
+          imports:
+            oscopeinstr: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+          template: |-
+            oscopeinstr.InfoContext({{ range .AST.Args }}{{ . }}, {{ end }})
+  - id: oscope-slog-error
+    join-point:
+      all-of:
+        - function-call: log/slog.ErrorContext
+        - package-filter:
+            root: true   # the app's own module: never the stdlib or dependencies
+        - not:
+            import-path: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+    advice:
+      - wrap-expression:
+          imports:
+            oscopeinstr: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr
+          template: |-
+            oscopeinstr.ErrorContext({{ range .AST.Args }}{{ . }}, {{ end }})
