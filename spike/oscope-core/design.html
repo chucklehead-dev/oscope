@@ -1,0 +1,529 @@
+<title>oscope-core</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #F6F7F4;
+  --panel: #ECEFEA;
+  --ink: #16201C;
+  --ink-2: #3B4843;
+  --muted: #62716A;
+  --rule: #D5DBD6;
+  --accent: #006B5E;
+  --rust: #008C7A;
+  --jolt: #B8741A;
+  --target: #16201C;
+  --code-bg: #E9EDE8;
+  --warn: #8A4B0F;
+  --warn-bg: #F6EBDC;
+  --ok: #0F5E3B;
+  --ok-bg: #DDEFE4;
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #121816; --panel: #19211E; --ink: #E3EAE6; --ink-2: #C0CCC6; --muted: #8FA099;
+    --rule: #2A3531; --accent: #5CC7B6; --rust: #27A08F; --jolt: #BC7F22; --target: #E3EAE6;
+    --code-bg: #1B2420; --warn: #E7B06A; --warn-bg: #2B2216; --ok: #7FD3A6; --ok-bg: #16281F;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #121816; --panel: #19211E; --ink: #E3EAE6; --ink-2: #C0CCC6; --muted: #8FA099;
+  --rule: #2A3531; --accent: #5CC7B6; --rust: #27A08F; --jolt: #BC7F22; --target: #E3EAE6;
+  --code-bg: #1B2420; --warn: #E7B06A; --warn-bg: #2B2216; --ok: #7FD3A6; --ok-bg: #16281F;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 96px; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 56px; }
+@media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 16px; } nav.toc { display: none; } }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 13px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: s; }
+nav.toc a { color: var(--muted); text-decoration: none; display: block; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); }
+nav.toc .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+main { min-width: 0; }
+header.doc { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(44px, 7vw, 68px); line-height: 1.02; margin: 10px 0 14px; letter-spacing: -.01em; text-wrap: balance; }
+h1 em { color: var(--accent); }
+.lede { font-size: 19px; line-height: 1.5; color: var(--ink-2); max-width: 64ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 18px; font-size: 13px; color: var(--muted); font-family: var(--mono); }
+section { padding-top: 44px; }
+h2 { font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.1; margin: 0 0 14px; text-wrap: balance; }
+h2 .n { font-family: var(--mono); font-size: 13px; color: var(--muted); display: block; letter-spacing: .06em; margin-bottom: 6px; }
+h3 { font-size: 17px; font-weight: 600; margin: 28px 0 8px; }
+p, li { max-width: 68ch; }
+p { margin: 0 0 14px; }
+ul, ol { padding-left: 22px; margin: 0 0 14px; }
+li { margin-bottom: 6px; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+p code, li code, td code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.55; margin: 0 0 18px; }
+pre .c { color: var(--muted); }
+.answer { display: grid; gap: 14px; margin: 18px 0 8px; }
+.answer > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-top: 1px solid var(--rule); }
+.answer > div:last-child { border-bottom: 1px solid var(--rule); }
+.answer dt, .answer .k { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-top: 3px; }
+.answer p { margin: 0; }
+@media (max-width: 600px) { .answer > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 24px 0; }
+.figs > div { padding: 16px 16px 16px 0; }
+.figs > div + div { border-left: 1px solid var(--rule); padding-left: 16px; }
+.figs b { display: block; font-family: var(--serif); font-weight: 400; font-size: 38px; line-height: 1; font-variant-numeric: tabular-nums; }
+.figs span { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+@media (max-width: 760px) { .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .figs > div:nth-child(3) { border-left: 0; padding-left: 0; } .figs > div:nth-child(n+3) { border-top: 1px solid var(--rule); } }
+.tbl { overflow-x: auto; margin: 0 0 20px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+td.r, th.r { text-align: right; }
+tr.src-jolt td:first-child::before, tr.src-rust td:first-child::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; vertical-align: 1px; }
+tr.src-jolt td:first-child::before { background: var(--jolt); }
+tr.src-rust td:first-child::before { background: var(--rust); }
+.note { font-size: 14px; color: var(--muted); }
+.callout { border-left: 3px solid var(--warn); background: var(--warn-bg); padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 0 0 18px; font-size: 15px; max-width: 72ch; }
+.callout.ok { border-color: var(--ok); background: var(--ok-bg); }
+.callout b { color: var(--ink); }
+figure { margin: 8px 0 24px; }
+figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; max-width: 72ch; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart text { font-family: var(--sans); fill: var(--ink-2); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--ground); font-size: 12px; line-height: 1.4; padding: 8px 10px; border-radius: 6px; max-width: 280px; transform: translate(-50%, calc(-100% - 10px)); }
+.diagram { overflow-x: auto; margin: 8px 0 8px; }
+.diagram svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.diagram text { font-family: var(--sans); fill: var(--ink); }
+.diagram .sm { font-size: 11px; fill: var(--muted); }
+.diagram .mono { font-family: var(--mono); font-size: 11px; fill: var(--ink-2); }
+.box { fill: var(--ground); stroke: var(--rule); stroke-width: 1.2; }
+.box.core { fill: var(--panel); stroke: var(--accent); stroke-width: 1.5; }
+.box.store { fill: var(--panel); stroke: var(--ink-2); }
+.edge { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.edge.hot { stroke: var(--accent); stroke-width: 2; }
+.grp { fill: none; stroke: var(--rule); stroke-dasharray: 4 4; }
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; }
+@media (max-width: 700px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.cols h3 { margin-top: 12px; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); vertical-align: 2px; white-space: nowrap; }
+.pill.now { border-color: var(--accent); color: var(--accent); }
+.phase { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-top: 1px solid var(--rule); }
+.phase:last-child { border-bottom: 1px solid var(--rule); }
+.phase .num { font-family: var(--serif); font-size: 32px; line-height: 1; color: var(--accent); }
+.phase h3 { margin: 0 0 4px; }
+.phase p { margin: 0; font-size: 15px; color: var(--ink-2); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .bar { transition: opacity .15s; } }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="lbl">Contents</div>
+  <ol>
+    <li><a href="#answer">The short answer</a></li>
+    <li><a href="#diagnosis">Where Jolt loses time</a></li>
+    <li><a href="#measured">What the spike measured</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#abi">The C ABI</a></li>
+    <li><a href="#storage">Storage and schema</a></li>
+    <li><a href="#durability">Durability modes</a></li>
+    <li><a href="#collector">Collector</a></li>
+    <li><a href="#ui">UI: HyperDX-lite, Langfuse-lite</a></li>
+    <li><a href="#alternatives">Alternatives</a></li>
+    <li><a href="#risks">Risks</a></li>
+    <li><a href="#plan">Plan</a></li>
+    <li><a href="#spike">Spike code</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="doc">
+  <div class="eyebrow">Design proposal · measured spike · 23 Sep 2026</div>
+  <h1>oscope-core: a Rust engine under <em>oscope</em></h1>
+  <p class="lede">A local ClickStack and Langfuse on chDB, built as one Rust library with a C ABI. It serves four ways: an in-process recorder any language can embed, a single-binary collector with API and web UI, a terminal UI, and a Jolt binding so samizdat and naval-battle keep working unchanged.</p>
+  <div class="meta"><span>Builds on: oscope, jolt-chdb, jolt-otel-clickhouse</span><span>chDB 26.7.3</span><span>Spike: 2.6k lines of Rust, C and Python</span></div>
+</header>
+
+<section id="answer">
+  <h2><span class="n">01</span>The short answer</h2>
+  <p>Your perf problem is not chDB. jolt-chdb's own probe measured a <b>10.3 ms</b> direct native insert for the same 512-row statement that takes <b>60–2,600 ms</b> through the Jolt paths. The time goes to managed JSON encoding, SQL string building, placeholder scanning, JSON WAL records and GC on the Chez heap. So the fix is to move the hot path, the encoders and the WAL out of the managed heap. Replacing chDB would not help.</p>
+  <div class="figs" role="list">
+    <div role="listitem"><b>58 ns</b><span>per span on the recording thread (one-shot API), with zero allocations</span></div>
+    <div role="listitem"><b>66k</b><span>rows/s at 512-row batches on disk with a per-batch fsync WAL (your target: 25k)</span></div>
+    <div role="listitem"><b>204k</b><span>rows/s at 10k-row batches with RowBinary streaming insert</span></div>
+    <div role="listitem"><b>184k</b><span>rows/s WAL recovery into a fresh process (Jolt today: ~17k)</span></div>
+  </div>
+  <div class="answer">
+    <div><div class="k">Recommend</div><p>Write the engine in Rust as <code>oscope-core</code>: recorder, assembler, RowBinary encoders, WAL, chDB writer, OTLP decoder and query service. Expose it as a C ABI (<code>cdylib</code> plus <code>staticlib</code>). Keep Jolt as a host language and as the place UI and policy experiments can live.</p></div>
+    <div><div class="k">Keep</div><p>ClickStack table shapes, oscope's closed-allowlist query plans, the Durable V1 protocol, and the GenAI attribute manifest from samizdat. These are good decisions. Only the runtime underneath them changes.</p></div>
+    <div><div class="k">Change</div><p>Stop sending JSONEachRow SQL text across FFI. Stream RowBinary through <code>chdb_stream_insert</code>, WAL the encoded bytes, coalesce small batches, and run the upstream <code>chdb-rust</code> Durable implementation instead of maintaining a port.</p></div>
+    <div><div class="k">Watch</div><p>libchdb is 566 MB. "Single binary" in practice means one executable plus one engine file, or a self-extracting bundle. See <a href="#risks">Risks</a>.</p></div>
+  </div>
+</section>
+
+<section id="diagnosis">
+  <h2><span class="n">02</span>Where Jolt loses time</h2>
+  <p>These numbers come from your repos' own benchmark docs and changelogs. They were measured on an i7-1185G7 under WSL2, a different machine from the spike, so compare their shape rather than the exact values.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Path (jolt-chdb probe, 512-row, 348,877-byte statement)</th><th class="r">p50</th></tr></thead>
+    <tbody>
+      <tr class="src-jolt"><td>Durable, encoding included (Jolt 0.8.3, pre-optimisation)</td><td class="r">2,633.9 ms</td></tr>
+      <tr class="src-jolt"><td>data.json WAL encoding</td><td class="r">1,315.0 ms</td></tr>
+      <tr class="src-jolt"><td><code>?</code> placeholder rewrite scan</td><td class="r">718.2 ms</td></tr>
+      <tr class="src-jolt"><td>Exporter JSONEachRow encoding</td><td class="r">645.6 ms</td></tr>
+      <tr class="src-jolt"><td>Ordinary JDBC insert</td><td class="r">529.3 ms</td></tr>
+      <tr class="src-jolt"><td>Best current Durable path (specialised log encoder, 100×512)</td><td class="r">89.2 ms</td></tr>
+      <tr><td><b>Direct native insert of the same statement</b></td><td class="r"><b>10.3 ms</b></td></tr>
+    </tbody>
+  </table></div>
+  <p>The exporter baseline tells the same story from the other side. About 1,000 items/s allocated 3.54 GB of Scheme heap for 5,000 items, which is about <b>700 KB per telemetry item</b>. Memory-backed and filesystem-backed chDB differed by under 1%, so storage was never the constraint.</p>
+  <p>The spike's own JSONEachRow control lands at 8.1 ms p50 for 512 rows on this VM. That matches your 10.3 ms native floor, which means the chDB floor is consistent across the two machines and the gap is all managed-side work.</p>
+</section>
+
+<section id="measured">
+  <h2><span class="n">03</span>What the spike measured</h2>
+  <p>I built the proposed hot path, drain, encoder, writer, WAL and OTLP decoder in Rust against libchdb 26.7.3 and measured each stage. The machine was a 4 vCPU Xeon @ 2.10 GHz VM with 15 GB RAM. Every run is a single run and every run verifies its row counts in chDB. Synthetic rows carry 3 span attributes and 3 resource attributes, stored in ClickStack's <code>Map(LowCardinality(String), String)</code> columns.</p>
+
+  <figure class="chart" id="admit">
+    <div class="legend"><span><i style="background:var(--jolt)"></i>Jolt, from repo docs (different hardware)</span><span><i style="background:var(--rust)"></i>Rust spike</span><span><i style="background:none;border-left:2px solid var(--target);width:0;height:12px;border-radius:0"></i>25k rows/s target</span></div>
+    <svg id="admit-svg" viewBox="0 0 760 300" role="img" aria-label="Rows per second at 512-row batches, Jolt vs Rust spike"></svg>
+    <div class="tip" id="admit-tip" hidden></div>
+    <figcaption>Admission throughput at 512-row batches, the workload your Durable target is defined on. The Jolt bars include the full Durable protocol. The Rust WAL bar is a local binary WAL with a per-batch fsync, not the S3 protocol. The same values are in the table below.</figcaption>
+  </figure>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Stage</th><th>Configuration</th><th class="r">Result</th></tr></thead>
+    <tbody>
+      <tr class="src-rust"><td>Hot path, incremental API</td><td>start + 3 attributes + end; 1 → 4 threads</td><td class="r">115 → 117 ns/span, 0 allocations</td></tr>
+      <tr class="src-rust"><td>Hot path, one-shot API</td><td><code>osc_span_record</code>; 1 → 4 threads</td><td class="r">58 → 62 ns/span, 65 M spans/s total</td></tr>
+      <tr class="src-rust"><td>Insert, 512 rows</td><td>JSONEachRow / RowBinary stream, in memory</td><td class="r">61k / 60k rows/s</td></tr>
+      <tr class="src-rust"><td>Insert, 512 rows, on disk</td><td>RowBinary / with fsync WAL</td><td class="r">62k / 66k rows/s</td></tr>
+      <tr class="src-rust"><td>Insert, 512 rows, via a Buffer table</td><td>RowBinary; p50 4.1 ms</td><td class="r">107k rows/s</td></tr>
+      <tr class="src-rust"><td>Insert, 10k rows</td><td>JSONEachRow / RowBinary stream</td><td class="r">110k / 204k rows/s</td></tr>
+      <tr class="src-rust"><td>Insert, 10k rows, on disk</td><td>RowBinary + fsync WAL</td><td class="r">178k rows/s</td></tr>
+      <tr class="src-rust"><td>End to end, at rate</td><td>2 threads, 120k spans/s offered, plus 1 log per 16 spans</td><td class="r">0 dropped, committed within 60 ms of the producers stopping</td></tr>
+      <tr class="src-rust"><td>End to end, overloaded</td><td>15 M spans/s offered</td><td class="r">192k spans/s committed; whole spans shed; committed + dropped = produced</td></tr>
+      <tr class="src-rust"><td>Durable end to end</td><td>disk, per-batch fsync, 100k spans/s</td><td class="r">1,000,448 spans, 0 dropped</td></tr>
+      <tr class="src-rust"><td>Recovery</td><td>replay a 269 MB WAL in a fresh process</td><td class="r">184k rows/s, exact count</td></tr>
+      <tr class="src-rust"><td>OTLP/HTTP JSON</td><td>decode on one core / decode + insert, coalesced to 10k rows</td><td class="r">2.2 µs/span / 138k spans/s</td></tr>
+      <tr class="src-rust"><td>Python via ctypes</td><td>4 FFI calls per span</td><td class="r">2.7 µs/span, 0 dropped</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>What the numbers say about the design</h3>
+  <ul>
+    <li><b>Each insert has a fixed cost of about 7 ms.</b> Most of it is MergeTree creating a part. It makes JSONEachRow and RowBinary tie at 512 rows. At 10k rows, RowBinary is 1.85× faster and half the bytes (274 vs 536 B/row). So batch size matters more than format, and a <code>Buffer</code> table cuts that fixed cost to about 2.5 ms for apps that flush often.</li>
+    <li><b>Encoding is not the bottleneck in Rust.</b> RowBinary encoding is under 3% of batch time. The drain thread assembles and encodes a row in about 0.5 µs, so one core can drain about 1.8 M rows/s. chDB inserts are the ceiling at about 200k rows/s per writer.</li>
+    <li><b>The durable WAL is almost free.</b> Writing already-encoded RowBinary bytes with a CRC frame and fsyncing each batch costs 1–2 ms per 10k rows. The Jolt design pays for JSON-encoding every statement a second time.</li>
+    <li><b>Clock reads are a real share of the hot path.</b> <code>clock_gettime</code> costs 28 ns on this VM and the incremental API calls it twice per span. A TSC-based clock calibrated by the drain thread would bring the hot path to about 60 ns.</li>
+  </ul>
+  <div class="callout"><b>Found along the way.</b> Putting binary data inline after <code>FORMAT RowBinary\n</code> in <code>chdb_query_n</code> fails intermittently. The parser skips leading whitespace, so a batch whose first timestamp byte is 0x09, 0x0A, 0x0D or 0x20 misaligns. That happens about 4 times in 256 batches. Always use <code>chdb_stream_insert</code>. The <code>ThreadStatus</code> corruption jolt-chdb reports for long-running stream inserts did not reproduce here: several hundred stream inserts per process on one dedicated writer thread, with no errors.</div>
+</section>
+
+<section id="architecture">
+  <h2><span class="n">04</span>Architecture</h2>
+  <p>There is one core and four ways to run it. Every path into storage converges on the same writer, so in-process recording, the OTLP collector and WAL replay share batching, durability and schema.</p>
+  <div class="diagram">
+  <svg viewBox="0 0 900 470" role="img" aria-label="oscope-core architecture: hosts record into per-thread rings; a drain thread assembles and encodes rows; a writer thread appends to the WAL and streams RowBinary into chDB; an OTLP receiver feeds the same writer; a query service serves the API, web UI and TUI; SQLite holds metadata.">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+    <marker id="ahh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+    <!-- hosts -->
+    <text x="20" y="24" class="sm">HOSTS (in-process)</text>
+    <rect class="box" x="20" y="36" width="170" height="40" rx="6"/><text x="34" y="61" font-size="13">C · C++ · Zig · Rust</text>
+    <rect class="box" x="20" y="86" width="170" height="40" rx="6"/><text x="34" y="111" font-size="13">Jolt (jolt.ffi)</text>
+    <rect class="box" x="20" y="136" width="170" height="40" rx="6"/><text x="34" y="161" font-size="12.5">Python · Node · JVM · Go</text>
+    <!-- remote -->
+    <text x="20" y="232" class="sm">REMOTE APPS</text>
+    <rect class="box" x="20" y="244" width="170" height="40" rx="6"/><text x="34" y="269" font-size="13">Any OTel SDK</text>
+    <!-- core group -->
+    <rect class="grp" x="226" y="14" width="440" height="340" rx="10"/>
+    <text x="240" y="34" class="sm">oscope-core (Rust, C ABI)</text>
+    <rect class="box core" x="240" y="48" width="180" height="120" rx="8"/>
+    <text x="254" y="72" font-size="13" font-weight="600">Per-thread rings</text>
+    <text x="254" y="92" class="sm">SPSC, lock-free, no alloc</text>
+    <text x="254" y="108" class="sm">drop whole spans when full</text>
+    <text x="254" y="124" class="sm">END reserved at START</text>
+    <text x="254" y="150" class="mono">58–115 ns/span</text>
+    <rect class="box core" x="460" y="48" width="190" height="120" rx="8"/>
+    <text x="474" y="72" font-size="13" font-weight="600">Drain + assemble</text>
+    <text x="474" y="92" class="sm">rebuild spans, stringify attrs</text>
+    <text x="474" y="108" class="sm">encode RowBinary rows</text>
+    <text x="474" y="124" class="sm">pooled state, no steady alloc</text>
+    <text x="474" y="150" class="mono">~0.5 µs/row</text>
+    <rect class="box core" x="240" y="230" width="180" height="104" rx="8"/>
+    <text x="254" y="254" font-size="13" font-weight="600">OTLP receiver</text>
+    <text x="254" y="274" class="sm">HTTP JSON now; protobuf,</text>
+    <text x="254" y="290" class="sm">gzip, gRPC later</text>
+    <text x="254" y="316" class="mono">2.2 µs/span JSON</text>
+    <rect class="box core" x="460" y="200" width="190" height="134" rx="8"/>
+    <text x="474" y="224" font-size="13" font-weight="600">Writer</text>
+    <text x="474" y="244" class="sm">coalesce to batch / interval</text>
+    <text x="474" y="260" class="sm">WAL append (+fsync policy)</text>
+    <text x="474" y="276" class="sm">chdb_stream_insert RowBinary</text>
+    <text x="474" y="292" class="sm">flush barriers, stats</text>
+    <text x="474" y="318" class="mono">60k–200k rows/s</text>
+    <!-- storage -->
+    <rect class="box store" x="706" y="190" width="176" height="92" rx="8"/>
+    <text x="720" y="214" font-size="13" font-weight="600">chDB (libchdb)</text>
+    <text x="720" y="234" class="sm">otel_traces · otel_logs</text>
+    <text x="720" y="250" class="sm">otel_metrics_* · llm_* views</text>
+    <text x="720" y="268" class="sm">memory · path · Durable</text>
+    <rect class="box store" x="706" y="300" width="176" height="54" rx="8"/>
+    <text x="720" y="323" font-size="13" font-weight="600">WAL segments</text>
+    <text x="720" y="341" class="sm">local dir or object store</text>
+    <rect class="box store" x="706" y="372" width="176" height="54" rx="8"/>
+    <text x="720" y="395" font-size="13" font-weight="600">SQLite metadata</text>
+    <text x="720" y="413" class="sm">searches · boards · prompts</text>
+    <!-- query -->
+    <rect class="box core" x="240" y="376" width="410" height="50" rx="8"/>
+    <text x="254" y="398" font-size="13" font-weight="600">Query service</text>
+    <text x="254" y="415" class="sm">typed plans → SQL with bound params; HTTP API + SSE live tail</text>
+    <rect class="box" x="20" y="376" width="170" height="50" rx="6"/>
+    <text x="34" y="398" font-size="13">Web UI · TUI</text>
+    <text x="34" y="415" class="sm">embedded viewer</text>
+    <!-- edges -->
+    <path class="edge hot" d="M190,56 C212,56 218,90 238,98" marker-end="url(#ahh)"/>
+    <path class="edge hot" d="M190,106 L238,106" marker-end="url(#ahh)"/>
+    <path class="edge hot" d="M190,156 C212,156 218,120 238,114" marker-end="url(#ahh)"/>
+    <path class="edge hot" d="M420,108 L458,108" marker-end="url(#ahh)"/>
+    <path class="edge hot" d="M555,168 L555,198" marker-end="url(#ahh)"/>
+    <path class="edge" d="M190,264 L238,264" marker-end="url(#ah)"/>
+    <path class="edge" d="M420,282 L458,282" marker-end="url(#ah)"/>
+    <path class="edge hot" d="M650,240 L704,240" marker-end="url(#ahh)"/>
+    <path class="edge" d="M650,300 C680,300 684,326 704,326" marker-end="url(#ah)"/>
+    <path class="edge" d="M704,262 C680,300 672,380 652,396" marker-end="url(#ah)"/>
+    <path class="edge" d="M704,398 L652,404" marker-end="url(#ah)"/>
+    <path class="edge" d="M240,401 L192,401" marker-end="url(#ah)"/>
+    <text x="20" y="456" class="sm">Four shells over one core: libosc (embed) · oscope (collector + API + web) · oscope tui · jolt-oscope (binding)</text>
+  </svg>
+  </div>
+  <h3>The four shells</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Shell</th><th>What it is</th><th>Replaces</th></tr></thead>
+    <tbody>
+      <tr><td><code>libosc</code></td><td>The <code>cdylib</code> and <code>staticlib</code> with <code>oscope.h</code>. Embeds recording, storage and the query service in any process. It can start the web viewer on loopback, as <code>oscope.embedded/start!</code> does today.</td><td>oscope embedded mode, the jolt-otel-clickhouse exporter</td></tr>
+      <tr><td><code>oscope</code></td><td>One executable: an OTLP receiver on :4318, the HTTP API, and a web UI whose assets are compiled in. Uses the same writer and WAL.</td><td>The oscope server, <code>durable-server-dev</code></td></tr>
+      <tr><td><code>oscope tui</code></td><td>A terminal UI (ratatui) that is a strict HTTP client of the API. It follows the same client-only rule as samizdat's TUI.</td><td>—</td></tr>
+      <tr><td><code>jolt-oscope</code></td><td>A thin Jolt library over the C ABI, built as a <code>casselc/otel</code> SDK exporter or span processor. Your apps keep calling <code>otel.trace/with-span</code> and the <code>samizdat.telemetry.hook</code> seam.</td><td>The Jolt-side encoding and insert path</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="abi">
+  <h2><span class="n">05</span>The C ABI</h2>
+  <p>The rules are the ones that make an ABI cheap from every FFI: integer handles, borrowed <code>(ptr, len)</code> strings, plain structs, no callbacks, and no ownership transfer on the recording path. Strings you repeat, such as span names and attribute keys, are interned once at setup, so hot calls pass a <code>u32</code>. Parent context comes from a thread-local span stack, and an explicit parent can be passed instead. When a ring is full, the recorder refuses the whole span at START and counts it. It never blocks the caller.</p>
+<pre><span class="c">/* incremental: natural for C/Rust/Zig and for wrappers that map to with-span */</span>
+uint64_t osc_span_start(uint32_t name, uint8_t kind);            <span class="c">// parent = innermost open span</span>
+void     osc_span_attr_i64(uint64_t span, uint32_t key, int64_t v);
+void     osc_span_attr_str(uint64_t span, uint32_t key, osc_str v);
+void     osc_span_end(uint64_t span, uint8_t status);
+
+<span class="c">/* one-shot: one crossing per finished span, for hosts where FFI calls cost more */</span>
+int32_t  osc_span_record(const osc_span_rec *rec);                <span class="c">// ids, times, attrs[]</span>
+int32_t  osc_log(uint8_t severity, osc_str body, const osc_attr *attrs, uint32_t n);
+
+<span class="c">/* proposed, not in the spike: the host writes N records in the ring wire format
+   into its own buffer and hands them over in one call (zero per-span crossings) */</span>
+int32_t  osc_submit(const uint8_t *records, size_t len);
+
+<span class="c">/* lifecycle and read side */</span>
+int32_t  osc_start(const osc_config *);   int32_t osc_flush(uint32_t timeout_ms);
+int32_t  osc_query(osc_str sql, const char *fmt, uint8_t **out, size_t *len);  void osc_free(uint8_t*, size_t);</pre>
+  <h3>Choosing the API per host</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Host</th><th>Binding</th><th>Use</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>C, C++, Zig, Rust</td><td>direct / <code>rlib</code></td><td>incremental</td><td>Calls are nearly free. Rust can use the crate directly and skip the ABI.</td></tr>
+      <tr><td>Jolt</td><td><code>jolt.ffi</code></td><td>one-shot, then <code>osc_submit</code></td><td>Chez bytevector stores are cheap, and maps, strings and <code>ffi/alloc</code> are not. Filling a reusable bytevector in the wire format and submitting it once per batch keeps the Scheme heap out of it.</td></tr>
+      <tr><td>Python</td><td>cffi or PyO3 wheel</td><td>one-shot</td><td>ctypes measured 2.7 µs/span for 4 calls, nearly all of it ctypes. A PyO3 module drops that to low hundreds of ns.</td></tr>
+      <tr><td>Node, Bun</td><td>N-API / <code>bun:ffi</code></td><td>one-shot, or submit</td><td>Batch across the boundary. Pass typed arrays as the record buffer.</td></tr>
+      <tr><td>JVM</td><td>FFM (Panama)</td><td>submit</td><td>Write into a <code>MemorySegment</code> and submit it with one downcall.</td></tr>
+      <tr><td>Go</td><td>cgo</td><td>submit</td><td>A cgo call costs tens of ns plus scheduler effects, so batch in Go and cross once.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The spike checked three of these paths end to end. A C program linked against the library recorded nested spans from two threads plus correlated logs, and it read them back through <code>osc_query</code>. A C program that loads the library with <code>dlopen</code>, as every FFI does, did the same. Python ctypes recorded 200,000 spans with exact counts and no drops.</p>
+</section>
+
+<section id="storage">
+  <h2><span class="n">06</span>Storage and schema</h2>
+  <ul>
+    <li><b>ClickStack tables, unchanged.</b> <code>otel_traces</code>, <code>otel_logs</code> and <code>otel_metrics_{gauge,sum,histogram}</code> keep the collector's column names and types, including the <code>Events</code> and <code>Links</code> nested columns. HyperDX or ClickStack pointed at an exported database should just work.</li>
+    <li><b>RowBinary streaming insert is the only write path.</b> Encoders append into reused buffers. The writer holds one connection, reads go through a second connection to the same path, and the two never contend.</li>
+    <li><b>Batching policy lives in config, not code.</b> Flush at N rows or T ms, whichever comes first. Use a <code>Buffer</code> engine table when an embedded app wants data visible within a few ms. Default to 8–10k-row inserts for throughput.</li>
+    <li><b>Langfuse-shaped views come from GenAI conventions.</b> A materialised view over <code>otel_traces</code> fills <code>llm_generations</code> from <code>gen_ai.*</code> and <code>langfuse.*</code> attributes: model, input, output and total tokens, cache hits, latency and cost. Cost comes from a price table kept in SQLite. samizdat's attribute manifest already emits these attributes. Scores and feedback go in an <code>llm_scores</code> MergeTree table keyed by trace and observation id.</li>
+    <li><b>SQLite plays the role Mongo plays in HyperDX.</b> It holds sources, saved searches, dashboards, alert rules, the model price table, prompt versions, dataset definitions and annotation queues. This is small and relational, needs transactions, and changes by hand. SQLite in WAL mode fits and adds only about 1 MB.</li>
+    <li><b>Typed attribute promotion stays.</b> oscope's promoted typed columns become <code>ALTER TABLE ... ADD COLUMN ... MATERIALIZED SpanAttributes['k']</code> driven by the same manifest. The hot path is unaffected.</li>
+  </ul>
+</section>
+
+<section id="durability">
+  <h2><span class="n">07</span>Durability modes</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Mode</th><th>Storage</th><th>Ack means</th><th>Crash loses</th></tr></thead>
+    <tbody>
+      <tr><td>Ephemeral</td><td><code>:memory:</code></td><td>enqueued</td><td>everything</td></tr>
+      <tr><td>Local</td><td>chDB path</td><td>inserted as a part</td><td>the unflushed batch plus parts not yet fsynced (chDB does not fsync parts by default)</td></tr>
+      <tr><td>Local durable</td><td>path + binary WAL</td><td>WAL frame fsynced (group commit)</td><td>nothing acknowledged</td></tr>
+      <tr><td>Object-store durable</td><td>Durable V1 through <code>chdb-rust</code> (<code>features = ["durable"]</code>)</td><td>WAL segment published by <code>head.json</code> CAS</td><td>nothing acknowledged. Single-writer lease with generation fencing, as today.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The WAL frame is <code>magic · table · rows · len · crc32 · RowBinary payload</code>. Replay needs no parsing: it streams the payload straight back into <code>chdb_stream_insert</code>. That is why recovery runs at 184k rows/s against about 17k in Jolt. For exactly-once replay, each frame gets a sequence number used as <code>insert_deduplication_token</code>, with <code>non_replicated_deduplication_window</code> enabled on the tables. The spike truncates the WAL after replay and does not have this yet.</p>
+  <p>For the object-store tier, <code>jolt-chdb/bench/rust-durable-recovery-oracle</code> already depends on <code>chdb-rust</code> with its <code>durable</code> feature, the implementation your Jolt code is qualified against. A Rust core can use it directly. Your Quint models and ITF traces stay valuable as conformance tests run against that library.</p>
+</section>
+
+<section id="collector">
+  <h2><span class="n">08</span>Collector</h2>
+  <ul>
+    <li><span class="pill now">now</span> <b>OTLP/HTTP JSON</b> on <code>/v1/traces|logs|metrics</code>. The spike's borrowing serde decoder writes RowBinary directly with no intermediate row objects. Decode runs per request on the HTTP worker threads and scales with cores. The single writer coalesces requests into large inserts. Coalescing took ingest from 44k to 138k spans/s.</li>
+    <li><span class="pill">next</span> <b>OTLP/HTTP protobuf and gzip.</b> This is <code>prost</code> plus the <code>opentelemetry-proto</code> definitions: the same decode-to-RowBinary shape and less work than JSON. It is days of work, not a project.</li>
+    <li><span class="pill">later</span> <b>OTLP/gRPC</b> with <code>tonic</code> on :4317, behind a cargo feature to keep the default binary small.</li>
+    <li><b>Admission control keeps oscope's semantics.</b> The body cap and bounded queue stay; a full queue returns 429 and a failed durability boundary returns 503. In durable mode, 2xx waits for the WAL group commit, not the chDB insert. Group commit batches concurrent requests into one fsync.</li>
+    <li><b>Receiver and embedded recording share the writer.</b> An app can embed <code>libosc</code> and also accept OTLP from child processes, such as samizdat's tool subprocesses using <code>TRACEPARENT</code>, into one store.</li>
+  </ul>
+</section>
+
+<section id="ui">
+  <h2><span class="n">09</span>UI: HyperDX-lite and Langfuse-lite</h2>
+  <p>The UI talks only to the HTTP API. The same API serves the web UI, the TUI and embedded viewers. Queries are oscope's typed, closed-allowlist plans compiled to SQL with bound parameters (<code>chdb_query_with_params</code>), so no user text ever becomes an identifier or expression.</p>
+  <div class="cols">
+    <div>
+      <h3>HyperDX-lite</h3>
+      <ul>
+        <li>Search bar with a Lucene-style subset (<code>service:checkout level:error http.status_code:&gt;=500</code>) compiled to plans</li>
+        <li>Log and span tables with a live tail over SSE, plus a histogram of volume by severity</li>
+        <li>Trace waterfall with correlated logs inline, via <code>otel_traces_trace_id_ts</code></li>
+        <li>Service view showing RED metrics from spans: rate, errors, p50/p95/p99</li>
+        <li>Metric explorer for gauge, sum and histogram, covering your existing explorers</li>
+        <li>Saved searches and dashboards stored in SQLite</li>
+        <li>Export to Arrow or Parquet, as oscope's <code>raw_export</code> does today</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Langfuse-lite</h3>
+      <ul>
+        <li>Sessions → traces → observations tree using <code>langfuse.session.id</code> and <code>langfuse.observation.type</code></li>
+        <li>Generations table: model, tokens, cost, latency, finish reason</li>
+        <li>Input and output viewer, which shows digest-only content when capture is off (samizdat's default)</li>
+        <li>Scores and feedback: record from the UI or the API, and aggregate per model and prompt version</li>
+        <li>Cost and token dashboards over time and per model</li>
+        <li>Later: prompt registry, datasets and evaluation runs, all metadata in SQLite</li>
+      </ul>
+    </div>
+  </div>
+  <p><b>Web tech.</b> Use a server-driven page with a small interactive layer: htmx or a Preact bundle of about 30 KB, with uPlot for charts. Compile it into the binary with <code>rust-embed</code>. The waterfall and the table grid are the only parts that need real client code. Everything else can be server-rendered, as oscope's Ring UI is today, and it still works without JavaScript.</p>
+</section>
+
+<section id="alternatives">
+  <h2><span class="n">10</span>Alternatives</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Verdict</th><th>Reasoning</th></tr></thead>
+    <tbody>
+      <tr><td><b>Rust core + C ABI</b></td><td><b>Recommended</b></td><td>Measured above. It gives the best C ABI story of any safe language (<code>cbindgen</code>, <code>cdylib</code> and <code>staticlib</code>), mature crates for everything in this design (<code>axum</code>, <code>prost</code>, <code>tonic</code>, <code>ratatui</code>, <code>rusqlite</code>), and <code>chdb-rust</code> already includes Durable.</td></tr>
+      <tr><td>Zig core</td><td>Viable</td><td>It is just as good at C interop and at controlling allocation. The ecosystem for HTTP, protobuf and TUI is thinner, and there is no Durable library, so you would port it again.</td></tr>
+      <tr><td>C++ core</td><td>Viable, not preferred</td><td>It is closest to chDB internals and could link the static engine one day. It costs more in memory safety for code that parses untrusted network input.</td></tr>
+      <tr><td>Go</td><td>Collector only</td><td>It works well as a standalone collector. It is a poor in-process library for other languages: cgo cost, its own runtime and GC in the host, and an awkward <code>c-shared</code> build.</td></tr>
+      <tr><td><b>Stay in Jolt, tweaked</b></td><td>Possible for the 25k target</td><td>The spike suggests four changes would meet 25k rows/s at 512 rows even with managed code. (1) Encode RowBinary into reused bytevectors instead of JSON strings. (2) Send it with <code>chdb_stream_insert</code>, so there is no SQL text and no placeholder scan. (3) WAL the same bytes. (4) Coalesce into 8–10k-row batches. That removes every step in your probe that costs over 500 ms. It does not give you a cross-language ABI.</td></tr>
+    </tbody>
+  </table></div>
+  <p>These paths can be combined. A good sequence is to build the Rust core and point <code>jolt-otel-clickhouse</code> at it through <code>jolt-oscope</code>. Your Jolt code keeps its APIs and loses its hot path.</p>
+</section>
+
+<section id="risks">
+  <h2><span class="n">11</span>Risks and open questions</h2>
+  <ul>
+    <li><b>Binary size.</b> libchdb.so is 566 MB already stripped (174 MB as a tarball). The Rust core is 5.8 MB. Options: ship a two-file distribution, or a self-extracting single executable that unpacks the engine to a cache directory on first run. Another option is the jolt-chdb approach of a pinned, digest-checked download. A statically linked engine would need an upstream chDB build.</li>
+    <li><b>The engine is process-global.</b> chDB allows one storage path per process, and closing the last connection shuts the engine down; reconnecting is risky on macOS. If the host app already uses chDB, the embedded recorder has to share its engine and path. The API should take an existing connection.</li>
+    <li><b>Load order.</b> When libchdb was a transitive startup dependency behind libc, its static initialisers recursed and the process crashed before <code>main</code>. The fix was either linking <code>-lchdb</code> first or loading with <code>dlopen</code>. Bindings should dlopen. Document the link order for static hosts.</li>
+    <li><b>Signal handlers.</b> chDB installs handlers. Embedded hosts such as game loops should call <code>chdb_set_signal_handlers_enabled(0)</code> before connecting. This needs a test in naval-battle.</li>
+    <li><b>Stream insert stability.</b> It did not reproduce here, but jolt-chdb saw <code>ThreadStatus</code> corruption. Keep the writer on one dedicated OS thread, as the spike does, and add a soak test of hours rather than minutes.</li>
+    <li><b>Overload semantics.</b> Attribute records can still drop after their span's START succeeds, which leaves a partial span. Both drops are counted. If partial spans are unacceptable, reserve attribute space at START too, or mark the span <code>truncated</code>.</li>
+    <li><b>Spans ended on a different thread from the one that started them.</b> The assembler holds END records that arrive before their START. Open spans need an age-based eviction, not written yet, so a span that never ends cannot grow memory without bound.</li>
+  </ul>
+</section>
+
+<section id="plan">
+  <h2><span class="n">12</span>Plan</h2>
+  <div class="phase"><div class="num">1</div><div><h3>Core library</h3><p>Harden the spike into <code>oscope-core</code>: logs and metrics (histograms aggregated on the drain side), Events and Links, a TSC clock, <code>osc_submit</code>, <code>cbindgen</code> headers, and a soak test. Done when a Rust and a C embedding hold 100k spans/s for an hour with exact counts.</p></div></div>
+  <div class="phase"><div class="num">2</div><div><h3>Jolt binding and adoption</h3><p>Write <code>jolt-oscope</code> as a <code>casselc/otel</code> exporter over <code>osc_submit</code>. Switch naval-battle's woven build and samizdat's <code>local</code> destination to it. Done when both run with unchanged app code and the naval-battle frame budget holds.</p></div></div>
+  <div class="phase"><div class="num">3</div><div><h3>Single binary and collector</h3><p>Build the <code>oscope</code> executable: axum, OTLP/HTTP JSON and protobuf, 429/503 admission, the durable local WAL with group commit and dedup tokens, and the HTTP API. Done when oscope's existing sample emitter and Langfuse interop gate pass against it.</p></div></div>
+  <div class="phase"><div class="num">4</div><div><h3>HyperDX-lite UI and TUI</h3><p>Search, tables, live tail, waterfall, service view, saved searches in SQLite, and the ratatui client over the same API.</p></div></div>
+  <div class="phase"><div class="num">5</div><div><h3>Langfuse-lite and Durable object store</h3><p>Generation views, costs, scores, and the session tree. Durable V1 through <code>chdb-rust</code>, with your Quint and ITF traces as its conformance suite.</p></div></div>
+</section>
+
+<section id="spike">
+  <h2><span class="n">13</span>Spike code</h2>
+  <p>The spike is 2.6k lines, at <code>spike/oscope-core/</code> in the oscope repo, with a README of every command above. It is throwaway code, meant to be measured and then replaced.</p>
+<pre>src/ring.rs        per-thread SPSC byte ring, contiguous fast path, reserve-aware push
+src/recorder.rs    interning, thread-local span stack, incremental + one-shot + log APIs
+src/assemble.rs    drain side: rebuild spans, pooled state, early-END handling
+src/encode.rs      ClickStack DDL, RowBinary + JSONEachRow encoders
+src/pipeline.rs    drain thread → bounded buffer channel → writer thread, flush barriers
+src/wal.rs         CRC-framed binary WAL + replay
+src/otlp_json.rs   OTLP/HTTP JSON → RowBinary, borrowing decode
+src/chdb.rs        libchdb 26.7 binding (query_n, stream insert)
+src/ffi.rs         C ABI;  include/oscope.h
+src/bin/bench.rs   hot | insert | e2e | recover | otlp
+examples/          hello.c (linked), dl.c (dlopen), py_ctypes.py</pre>
+</section>
+</main>
+</div>
+
+<script>
+(function () {
+  var data = [
+    { label: "Jolt Durable, generic encoder", v: 3348, src: "jolt", note: "jolt-otel-clickhouse CHANGELOG, 100×512 logs, p50 158.8 ms" },
+    { label: "Jolt Durable, specialised log encoder", v: 5725, src: "jolt", note: "jolt-otel-clickhouse CHANGELOG, 100×512 logs, p50 89.2 ms" },
+    { label: "Rust JSONEachRow, in memory", v: 60974, src: "rust", note: "chdb_query_n, p50 8.06 ms" },
+    { label: "Rust RowBinary stream, disk", v: 62277, src: "rust", note: "chdb_stream_insert, p50 7.35 ms" },
+    { label: "Rust RowBinary + fsync WAL, disk", v: 65513, src: "rust", note: "WAL frame fsynced before insert, p50 7.27 ms" },
+    { label: "Rust RowBinary via Buffer table", v: 107126, src: "rust", note: "Buffer engine in front of MergeTree, p50 4.09 ms" }
+  ];
+  var target = 25000, max = 120000;
+  var svg = document.getElementById("admit-svg"), tip = document.getElementById("admit-tip"), fig = document.getElementById("admit");
+  var NS = "http://www.w3.org/2000/svg";
+  var W = 760, left = 250, right = 70, top = 10, band = 40, barH = 22;
+  var plotW = W - left - right, H = top + data.length * band + 34;
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  function el(n, a, p) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); (p || svg).appendChild(e); return e; }
+  function x(v) { return left + (v / max) * plotW; }
+  var ticks = [0, 25000, 50000, 75000, 100000];
+  ticks.forEach(function (t) {
+    el("line", { x1: x(t), x2: x(t), y1: top, y2: top + data.length * band, stroke: "var(--rule)", "stroke-width": 1 });
+    var tx = el("text", { x: x(t), y: top + data.length * band + 20, "text-anchor": "middle", "font-size": 11 });
+    tx.textContent = t === 0 ? "0" : (t / 1000) + "k";
+  });
+  var axisLbl = el("text", { x: W - right, y: top + data.length * band + 20, "text-anchor": "start", "font-size": 11, dx: 8 });
+  axisLbl.textContent = "rows/s";
+  data.forEach(function (d, i) {
+    var y = top + i * band + (band - barH) / 2;
+    var lab = el("text", { x: left - 12, y: y + barH / 2 + 4, "text-anchor": "end", "font-size": 12.5 });
+    lab.textContent = d.label;
+    var w = Math.max(x(d.v) - left, 2), r = Math.min(4, w / 2);
+    var p = "M" + left + "," + y + " h" + (w - r) + " a" + r + "," + r + " 0 0 1 " + r + "," + r + " v" + (barH - 2 * r) + " a" + r + "," + r + " 0 0 1 " + (-r) + "," + r + " h" + (-(w - r)) + " z";
+    var bar = el("path", { d: p, fill: d.src === "rust" ? "var(--rust)" : "var(--jolt)", "class": "bar", tabindex: 0, role: "img", "aria-label": d.label + ": " + d.v.toLocaleString() + " rows per second" });
+    var val = el("text", { x: x(d.v) + 8, y: y + barH / 2 + 4, "font-size": 12, "font-weight": 600 });
+    val.style.fill = "var(--ink)";
+    val.textContent = d.v.toLocaleString();
+    var hit = el("rect", { x: 0, y: top + i * band, width: W, height: band, fill: "transparent" });
+    function show() {
+      tip.hidden = false;
+      tip.innerHTML = "<b>" + d.label + "</b><br>" + d.v.toLocaleString() + " rows/s · " + (d.v / target).toFixed(2) + "× target<br>" + d.note;
+      var rb = svg.getBoundingClientRect(), fb = fig.getBoundingClientRect(), s = rb.width / W;
+      tip.style.left = Math.min(Math.max((x(d.v) * s) + (rb.left - fb.left), 140), fb.width - 140) + "px";
+      tip.style.top = (y * s + (rb.top - fb.top)) + "px";
+      svg.querySelectorAll(".bar").forEach(function (b) { b.style.opacity = b === bar ? 1 : 0.45; });
+    }
+    function hide() { tip.hidden = true; svg.querySelectorAll(".bar").forEach(function (b) { b.style.opacity = 1; }); }
+    hit.addEventListener("mouseenter", show); hit.addEventListener("mouseleave", hide);
+    bar.addEventListener("focus", show); bar.addEventListener("blur", hide);
+  });
+  el("line", { x1: x(target), x2: x(target), y1: top - 4, y2: top + data.length * band, stroke: "var(--target)", "stroke-width": 2 });
+})();
+</script>
