@@ -150,15 +150,13 @@ Overhead:
 | Measurement | Result |
 |---|---|
 | App throughput, plain `go build` vs woven, 5,000 requests × 3 runs | 4,827–5,059 req/s plain, 4,831–5,048 req/s woven: no measurable difference |
-| `BenchmarkSpan`: start + 3 attributes + end | 820–850 ns/op, 72 B/op, 2 allocs/op |
+| `BenchmarkSpan`: start + 3 attributes + end, before the optimisation pass (below) | 820–850 ns/op, 72 B/op, 2 allocs/op |
 | Of that, a bare cgo call | about 95 ns |
 | Of that, Go-side span building (time, IDs, interning, context) | about 310 ns |
 | `BenchmarkLog` | 209 ns/op, 0 allocs/op |
 | DataDog symbols in the woven binary | 0 |
 
-The two allocations are `context.WithValue`. The obvious next optimisation is
-to have the aspect intern span names and keys at package init, which removes the
-`sync.Map` lookups.
+The optimisation pass below took this to 306 ns/span with 1 allocation.
 
 ## Hosting chDB in a Go process
 
@@ -189,53 +187,66 @@ every payload, so its counts are verified and its decode cost is real, but it st
 nothing. Every run delivered exact counts with 0 decode errors. dd-trace-go ships spans only.
 
 Numbers are CPU µs per request. App-process figures have the pacing loop's
-10.7 µs/req baseline (`-mode none`) subtracted. Each run was done twice; ranges cover
+10.8 µs/req baseline (`-mode none`) subtracted. Each run was done twice; ranges cover
 both runs. Measured on a 4 vCPU VM with Go 1.25, OTel Go SDK v1.46 (logs v0.22),
-dd-trace-go v2.10.1 and chDB 26.7.3.
+dd-trace-go v2.10.1 and chDB 26.7.3. The oscope row includes storing everything in chDB.
+The other rows only get data out of the process.
 
-**App process: recording and getting the data out**
-
-| Path | CPU µs/req | Allocs/req | Alloc KB/req | GC cycles in 10 s | Wire B/req |
-|---|---:|---:|---:|---:|---:|
-| oscope in-process: Go recording | ~4 | 8 | 0.28 | 5 | — |
-| oscope in-process: Rust drain thread | 10–11 | 0 | 0 | — | — |
-| OTLP/HTTP protobuf (OTel SDK) | 34 | 108 | 11.9 | 15 | 729 |
-| OTLP/HTTP protobuf + gzip | 46 | 108 | 12.9 | 14 | 156 |
-| OTLP/gRPC | 33–35 | 108 | 11.4 | 13 | 730 |
-| dd-trace-go, spans only (no logs) | 42–43 | 108 | 12.5 | 53–54 | 1,871 |
-
-**Storage, which somebody has to pay for**
-
-| Where | CPU µs/req |
-|---|---:|
-| Receiver: decode only, before any storage (OTLP HTTP / gRPC / dd msgpack) | 24–27 / 20–21 / 28–30 |
-| chDB insert and merge in-process, 8k-row batches | 51 |
-| chDB insert and merge in-process, 64k-row batches | 18–19 |
+| Path | App CPU µs/req | Allocs/req | Alloc KB/req | GC cycles in 10 s | Caller µs/req | Wire B/req | Receiver decode µs/req |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **oscope in-process, incl. storage** | **27.4–27.7** | **4** | **0.20** | **5** | **3.8–4.0** | — | — |
+| of which: Go recording | 4.0–4.2 | | | | | | |
+| of which: Rust drain thread | 1.4–1.6 | | | | | | |
+| of which: chDB (Buffer insert + merges) | 19.6–20.4 | | | | | | |
+| OTLP/HTTP protobuf (OTel SDK) | 33–34 | 108 | 11.9 | 14 | 12.2–12.4 | 729 | 25–27 |
+| OTLP/HTTP protobuf + gzip | 45–48 | 108 | 12.9 | 14 | 12.0–12.6 | 156 | 26–32 |
+| OTLP/gRPC | 35–36 | 108 | 11.5 | 13 | 11.8–12.3 | 730 | 21–22 |
+| dd-trace-go, spans only (no logs) | 43–46 | 108 | 12.4 | 53–54 | 26.5–27.4 | 1,872 | 33–38 |
 
 What the numbers say:
 
-- **Recording is 2.5–3× cheaper in-process.** oscope spends about 14 µs/req (Go 4 + drain 10)
-  against 33–46 µs/req for the OTel SDK and 42 µs/req for dd-trace-go, which also sends no logs.
-  It also makes 8 allocations per request instead of 108, which shows up as 5 GC cycles
-  instead of 13–54.
-- **Storage moves into the app.** With an external receiver, the app pays only for
-  encoding. Storage, plus another 20–30 µs/req of decoding, lands on the receiver.
-  In-process, chDB's insert and merge CPU runs inside the app. At 5,000 req/s with 8k-row
-  batches that's about 25% of one core, and 64k-row batches cut it to about 10%.
-- **Totals across both processes:**
-  - Wire: app 34 + decode 20–27 + storage ≈ 75–110 µs/req.
-  - In-process: 14 + storage ≈ 33–65 µs/req.
-  - The same chDB storage cost is assumed on both sides. The receiver-side storage
-    wasn't measured, because the sink stores nothing.
-- **Batch size is the biggest lever on total cost:** 8k → 64k rows took in-process storage
-  from 51 to 19 µs/req. The trade-off is that data becomes visible later.
-- **gzip cuts wire bytes by 4.7× (729 → 156 B/req) for about 12 µs/req more CPU.** That's worth
-  it off-box and wasted on loopback.
+- **In-process recording plus storage now costs less than exporting alone.** oscope,
+  including chDB storage, uses 27.5 µs/req of app CPU. The OTel SDK uses 33–48 µs/req
+  just to encode and send, before the receiver spends 21–32 µs/req decoding and then
+  pays for storage on top.
+- **The recording part is 6–8× cheaper than an SDK export.** It costs about 5.6 µs/req:
+  about 4 in Go and 1.5 in the drain thread. It makes 4 allocations per request
+  instead of 108 (one per span, none per log), which shows up as 5 GC cycles instead
+  of 13–54.
+- **The request goroutine pays 3–7× less:** about 3.9 µs per request inside
+  instrumentation, against 12 µs for the OTel SDK and 27 µs for dd-trace-go.
+- **gzip trades CPU for bytes:** 4.7× fewer bytes on the wire (729 → 156 B/req) for about
+  12 µs/req more CPU. That's worth it off-box and wasted on loopback.
 
-Caller-side wall time per request (the time the request goroutine spends inside
-instrumentation) was also recorded. It is noisy on a 4-core box shared with background
-threads and the receiver: oscope 4.9–10.9 µs, OTLP 11.3–12.2 µs, dd-trace-go 25–27 µs. The
-isolated microbenchmark for oscope is about 0.85 µs per span.
+### The optimisation pass
+
+What changed between the first measurement of this workload (78–92 µs/req for oscope)
+and the table above (27.5):
+
+| Change | Where | Effect |
+|---|---|---|
+| Drain thread parks 10–50 ms. `flush()` wakes it, and so does a producer whose ring passes half full, instead of timed polling. | `src/pipeline.rs`, `src/ring.rs` | drain 16 → 1.6 µs/req. On a VM each timed wake-up costs tens of µs; assembling a record costs 120 ns. |
+| A Buffer table sits in front of each MergeTree table (`OSCOPE_BUFFER_SECS`, default 10). Inserts are queryable at once via `*_buf`, and MergeTree gets 10–30 s parts. | `src/pipeline.rs` | chDB 42–51 → about 20 µs/req, store 25 → 11 MB. The WAL covers the Buffer's crash window, and replay flushes it before removing the WAL. |
+| One allocation per span: a custom context type instead of `context.WithValue`. | `oscope/oscope.go` | 2 → 1 alloc/span |
+| Pre-interned `Key`s for names and attributes | `oscope/oscope.go`, `instr/*` | 426 → 306 ns/span (benchmark medians) |
+| One clock read at `End` (monotonic delta) instead of two | `oscope/oscope.go` | included above |
+| Striped batching of `osc_submit`: one cgo call per ~32 KiB, with a 20 ms ticker | `oscope/oscope.go` | about 45 ns/span (306 vs 353 ns direct) |
+
+Tried and rejected:
+
+- **LZ4 instead of ZSTD(1)** saved about 5% chDB CPU but used 58–76% more disk.
+- **Bigger direct inserts without a Buffer** (up to 64k rows on a 1 s flush) cut chDB CPU to about
+  30 µs/req, but data became visible later. The Buffer did better on both counts.
+
+`go test ./oscope -bench .` benchmark medians (6 runs × 500k):
+
+| Benchmark | Result |
+|---|---|
+| Span with string keys | 426 ns, 48 B/op, 1 alloc |
+| Span with pre-interned keys | 306 ns |
+| Span with keys, direct submit | 353 ns |
+| Span with keys, parallel | 277 ns |
+| Log | 166 ns, 0 allocs |
 
 Reproduce:
 
@@ -245,5 +256,6 @@ go build -o wiresink ./cmd/wiresink && go build -o wirecost ./cmd/wirecost
 for m in none oscope otlp-http otlp-http-gzip otlp-grpc dd; do
   rm -rf wiredb; ./wirecost -mode $m -db wiredb -secs 10
 done
-./wirecost -mode oscope -db wiredb -batch 65536 -flushms 5000   # bigger batches
+OSCOPE_BUFFER_SECS=0 ./wirecost -mode oscope -db wiredb -batch 65536   # no Buffer, big inserts
+OSCOPE_CODEC=lz4 ./wirecost -mode oscope -db wiredb                      # LZ4 instead of ZSTD
 ```

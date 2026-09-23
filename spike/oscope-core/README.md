@@ -37,6 +37,17 @@ $B recover --wal d.wal                         # fresh process, replay WAL
 $B otlp --spans 512 --reqs 400 --coalesce 10000
 ```
 
+## Storage layout
+
+Each MergeTree table (`otel_traces`, `otel_logs`) has a Buffer table in front of
+it (`otel_traces_buf`, `otel_logs_buf`). Rows are queryable through the `_buf`
+table as soon as they are inserted, and the Buffer writes 10–30 s chunks into
+MergeTree. At 25k rows/s that halved chDB CPU and on-disk size compared with
+direct 8k-row inserts. `osc_flush` forces the Buffer out, so after a flush the
+MergeTree tables are complete. Live queries that want the newest rows should read
+the `_buf` tables. `OSCOPE_BUFFER_SECS` sets the interval (default 10); 0 turns the
+Buffer off.
+
 ## `osc_submit`
 
 Hosts whose FFI calls are expensive, or which can't pass pointers inside
