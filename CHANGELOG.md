@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Pin the merged jolt-chDB Durable startup envelope consistently in the
+  standalone and embedded qualification profiles. Display its closed startup
+  stage without losing a known underlying lease or S3 diagnostic category and
+  action; unknown failures retain the generic category. The public diagnostic
+  never renders exception messages, cause data, endpoints, paths, credentials,
+  or telemetry payloads (Ref #157).
+
 - Add the separate Oscope #119 Durable time-provider qualification fixture:
   independently resolved producer and reader roots pin both logical time
   coordinates to one source, assert the physical `.clj`/`.cljc` union before

@@ -164,20 +164,19 @@ the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
 `e876d2ebba211b4831993e1fb7fb480ea547cc71`, jolt-chDB
-`adaa779e1af3e58f1d7a552d79d074630bfbf815`, and jolt-otel-clickhouse
+`6b982d5487a8fffcb763306e098bb7b55ace9888`, and jolt-otel-clickhouse
 `04b1618fda22372f5698e0baf7c8277dcf8451ff`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration
 must be applied by Samizdat itself because dependency aliases do not propagate.
 
-The provider lineage needed by the modeled graph is converged. jolt-chDB's
-merged main revision uses
-the canonical `jolt-lang/db` key at reviewed provider `6db79163`. The updated
-`test/fixtures/samizdat-converged-db-graph` models Samizdat's required repoint
-to merged `casselc/db` main `96324713` under that same key. Qualification uses
-the resolved local git checkout to verify that `96324713` descends from
-`6db79163`. Actual `jolt -Spath` resolution then proves that the authoritative
+The `test/fixtures/samizdat-converged-db-graph` fixture models Samizdat's
+required repoint of the canonical `jolt-lang/db` key to `casselc/db`
+`96324713`. Qualification uses the resolved local git checkout to verify that
+this DB provider revision descends from the earlier reviewed DB provider
+`6db79163`; neither SHA is a jolt-chDB revision. Actual `jolt -Spath`
+resolution then proves that the authoritative
 `db/sqlite.clj` surface and Durable chDB coexist with exactly one physical
 `db/**` source root.
 The separate `samizdat-pre-convergence-db-graph` fixture pins the old

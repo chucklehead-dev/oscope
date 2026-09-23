@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: chucklehead-dev/jolt-chdb
-          ref: adaa779e1af3e58f1d7a552d79d074630bfbf815
+          ref: 6b982d5487a8fffcb763306e098bb7b55ace9888
           path: .qualification/jolt-chdb
           fetch-depth: 1
           submodules: recursive
