@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Pin the merged jolt-chDB Durable startup envelope consistently in the
-  standalone and embedded qualification profiles. Display its closed startup
+  standalone and embedded qualification profiles, including the published
+  woven S3 fixture's local chDB checkout. Display its closed startup
   stage without losing a known underlying lease or S3 diagnostic category and
   action; unknown failures retain the generic category. The public diagnostic
   never renders exception messages, cause data, endpoints, paths, credentials,

@@ -34,8 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      PINNED_JOLT_SOURCE_SHA: bf8a5dde7bebb5658d218e9757ab1df0aa9c3b95
-      PINNED_JOLT_VERSION: jolt v0.8.6-599-gbf8a5dde
+      PINNED_JOLT_SOURCE_SHA: 57e591d4d6481c5536858575ffc006cf5a41adbf
+      PINNED_JOLT_VERSION: jolt v0.8.6-37-g57e591d4
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
