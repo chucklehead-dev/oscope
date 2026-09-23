@@ -5,11 +5,11 @@
 
 (def ^:private runtime-floor "0.8.6")
 (def ^:private root-driver-sha
-  "adaa779e1af3e58f1d7a552d79d074630bfbf815")
+  "6b982d5487a8fffcb763306e098bb7b55ace9888")
 (def ^:private ordinary-driver-sha
   "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
 (def ^:private woven-qualification-driver-sha
-  "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
+  "6b982d5487a8fffcb763306e098bb7b55ace9888")
 (def ^:private aspect-sha
   "3773a67801bdcbd63c6484f95fa07a4b8afddb72")
 (def ^:private aspect-compiler-sha
@@ -90,7 +90,9 @@
     {:native-source (boolean
                      (re-find (re-pattern
                                (str "repository: chucklehead-dev/jolt-chdb\\s+ref: "
-                                    ordinary-driver-sha "(?:\\s|$)")) workflow))
+                                    (if woven? woven-qualification-driver-sha
+                                        ordinary-driver-sha)
+                                    "(?:\\s|$)")) workflow))
      :artifact-pins (and (every? #(immutable-pin-shape? % #"[1-9][0-9]*")
                                 (take 3 pins))
                          (immutable-pin-shape? (nth pins 3) #"[a-f0-9]{40}")
@@ -124,7 +126,8 @@
 (defn- synthetic-qualified-declaration-fixture []
   ;; SYNTHETIC DECLARATION FIXTURE ONLY: these invented pins are grammar
   ;; controls, never real artifact provenance or a candidate release snapshot.
-  (str "repository: chucklehead-dev/jolt-chdb\nref: " ordinary-driver-sha "\n"
+  (str "repository: chucklehead-dev/jolt-chdb\nref: "
+       woven-qualification-driver-sha "\n"
        "QUALIFIED_RUNTIME_REPOSITORY: casselc/jolt\n"
        "QUALIFIED_RUNTIME_COMPILER_SOURCE: aea91781bbab68bf174fef4a689bb00dcf834ded\n"
        "QUALIFIED_RUNTIME_COMPILER_TREE: a31de1596fcabd0e45fbcbc528842805acea0ee7\n"
@@ -154,7 +157,8 @@
   (let [fixture (synthetic-qualified-declaration-fixture)]
     (is (every? true? (vals (native-provider-contract fixture true))))
     (doseq [[boundary old replacement]
-            [[:native-source ordinary-driver-sha "dbc2db22130c7e783739c79bc24691dcbba21906"]
+            [[:native-source woven-qualification-driver-sha
+              "dbc2db22130c7e783739c79bc24691dcbba21906"]
              [:artifact-pins "QUALIFIED_RUNTIME_RUN_ID: 1" "QUALIFIED_RUNTIME_RUN_ID: pending"]
              [:artifact-pins "QUALIFIED_RUNTIME_BINARY_SHA256:" "MISSING_BINARY_PIN:"]
              [:trusted-identity "QUALIFIED_RUNTIME_REPOSITORY: casselc/jolt"

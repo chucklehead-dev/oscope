@@ -2,7 +2,7 @@
  :jolt/min-version "0.8.6"
  :deps {io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "adaa779e1af3e58f1d7a552d79d074630bfbf815"}
+         :git/sha "6b982d5487a8fffcb763306e098bb7b55ace9888"}
         ;; Both public coordinate identities must resolve to this one source.
         jolt-lang/time
         {:git/url "https://github.com/chucklehead-dev/time.git"

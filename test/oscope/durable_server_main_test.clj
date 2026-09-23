@@ -15,6 +15,24 @@
            {:private "must-not-escape"}
            (ex-info "inner secret" {:type type :path ["secret"]})))
 
+(defn- startup-stage-error [stage]
+  ;; Match the new jolt-chdb public envelope while putting canaries in every
+  ;; non-public position. The display must consume only the closed stage.
+  (ex-info "outer password=secret path=/private/store"
+           {:credential "secret"}
+           (ex-info "Durable startup failed"
+                    {:type :jdbc.chdb.durable/startup-failed
+                     :jdbc.chdb.durable/startup-stage stage})))
+
+(defn- startup-stage-with-cause [stage cause-type]
+  (ex-info "outer password=secret path=/private/store"
+           {:credential "secret"}
+           (ex-info "Durable startup failed"
+                    {:type ::durable/startup-failed
+                     :jdbc.chdb.durable/startup-stage stage}
+                    (ex-info "inner password=secret endpoint=private"
+                             {:type cause-type :endpoint "private"}))))
+
 (defn- options [environment calls]
   (durable-main/durable-options
    environment
@@ -259,6 +277,41 @@
     (is (= :server-failed (:category diagnostic)))
     (is (not (re-find #"secret|private|password" (pr-str diagnostic))))))
 
+(deftest startup-stage-diagnostic-is-closed-and-optional
+  (let [diagnostic (durable-main/failure-diagnostic
+                    (startup-stage-error :recover))]
+    ;; The generic category remains available; :stage is only extra context.
+    (is (= :server-failed (:category diagnostic)))
+    (is (= :recover (:stage diagnostic)))
+    (is (= #{:category :message :action :stage} (set (keys diagnostic))))
+    (is (not (re-find #"secret|private|password|credential|endpoint|token"
+                      (pr-str diagnostic)))))
+  (doseq [stage [:unknown "recover" {:stage :recover} nil]]
+    (let [diagnostic (durable-main/failure-diagnostic (startup-stage-error stage))]
+      (is (= :server-failed (:category diagnostic)))
+      (is (not (contains? diagnostic :stage)))))
+  (let [diagnostic
+        (durable-main/failure-diagnostic
+         (ex-info "not a Durable startup envelope"
+                  {:type :other/failure
+                   :jdbc.chdb.durable/startup-stage :recover}))]
+    (is (= :server-failed (:category diagnostic)))
+    (is (not (contains? diagnostic :stage)))))
+
+(deftest startup-stage-preserves-known-cause-diagnostics
+  (doseq [[stage cause-type category]
+          [[:acquire-lease ::control/lease-held :lease-held]
+           [:read-head ::durable-s3/permission :storage-permission]
+           [:read-head ::durable-s3/provider :storage-provider]]]
+    (let [diagnostic
+          (durable-main/failure-diagnostic
+           (startup-stage-with-cause stage cause-type))]
+      (is (= category (:category diagnostic)))
+      (is (= stage (:stage diagnostic)))
+      (is (= #{:category :message :action :stage} (set (keys diagnostic))))
+      (is (not (re-find #"secret|private|password|credential|endpoint|token"
+                        (pr-str diagnostic)))))))
+
 (deftest main-prints-and-throws-only-bounded-diagnostics
   (doseq [[type category]
           [[::control/lease-held :lease-held]
@@ -287,3 +340,50 @@
       (is (not (re-find #"secret|private|password"
                         (str output " " (ex-message @caught) " "
                              (pr-str (ex-data @caught)))))))))
+
+(deftest main-renders-only-the-closed-durable-startup-stage
+  (let [failure (startup-stage-error :read-head)
+        caught (atom nil)
+        output
+        (with-out-str
+          (binding [*err* *out*]
+            (with-redefs [durable-main/system-environment (constantly {})
+                          durable-main/resolve-config (fn [_ _] ::resolved)
+                          durable-main/execute! (fn [_ _] (throw failure))]
+              (try
+                (durable-main/-main)
+                (catch Throwable error
+                  (reset! caught error))))))]
+    (is (= {:oscope.durable-server/error true
+            :category :server-failed
+            :stage :read-head}
+           (ex-data @caught)))
+    (is (re-find #"Durable startup stage: read-head" output))
+    (is (re-find #"failed \[server-failed\]" output))
+    (is (not (re-find #"secret|private|password|credential|endpoint|token"
+                      (str output " " (ex-message @caught) " "
+                           (pr-str (ex-data @caught))))))))
+
+(deftest main-renders-underlying-lease-category-through-startup-envelope
+  (let [failure (startup-stage-with-cause :acquire-lease ::control/lease-held)
+        caught (atom nil)
+        output
+        (with-out-str
+          (binding [*err* *out*]
+            (with-redefs [durable-main/system-environment (constantly {})
+                          durable-main/resolve-config (fn [_ _] ::resolved)
+                          durable-main/execute! (fn [_ _] (throw failure))]
+              (try
+                (durable-main/-main)
+                (catch Throwable error
+                  (reset! caught error))))))]
+    (is (= {:oscope.durable-server/error true
+            :category :lease-held
+            :stage :acquire-lease}
+           (ex-data @caught)))
+    (is (re-find #"failed \[lease-held\]" output))
+    (is (re-find #"Durable startup stage: acquire-lease" output))
+    (is (re-find #"wait for lease expiry" output))
+    (is (not (re-find #"secret|private|password|credential|endpoint|token"
+                      (str output " " (ex-message @caught) " "
+                           (pr-str (ex-data @caught))))))))

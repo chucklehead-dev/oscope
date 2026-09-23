@@ -9,7 +9,7 @@
          :git/sha "e876d2ebba211b4831993e1fb7fb480ea547cc71"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "adaa779e1af3e58f1d7a552d79d074630bfbf815"}
+         :git/sha "6b982d5487a8fffcb763306e098bb7b55ace9888"}
         ;; A direct pin prevents the old transitive DB time provider winning.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"

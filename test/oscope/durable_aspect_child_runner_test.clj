@@ -16,8 +16,13 @@
 
 (deftest woven-final-receipts-require-real-history-and-nonzero-counts
   (let [check #(runner/checked-woven-receipt {:exit 0} % 2)
-        good (receipt 2 36)]
-    (is (:ok? (check good)))
+        good (receipt 2 36)
+        diagnostic #(runner/closed-failure-diagnostic (check %1) %1 2)]
+    (is (and (:ok? (check good))
+             (= {:executed? true
+                 :receipt-counts {:test 1 :pass 36 :fail 0 :error 0}
+                 :history-counts [12 8] :reader-pass 16 :stage :fixture}
+                (diagnostic (str good ":durable-woven-failure-stage fixture\n")))))
     (is (= {:test 1 :pass 36 :fail 0 :error 0} (:counts (check good))))
     (doseq [bad ["" (str good good)
                  (receipt 1 36)
@@ -38,8 +43,24 @@
                  (str good ":durable-woven-reader fixture 2 standalone 0 0 16 0 0 1 1 1 1\n")
                  (str good ":durable-native-nested-unsettled\n")]]
       (is (not (:ok? (check bad)))))
-    (is (not (:settled? (check ""))))
-    (is (not (:ok? (runner/checked-woven-receipt {:exit 1} good 2))))
+    (is (and (not (:settled? (check "")))
+             (= {:executed? false :receipt-counts nil
+                 :history-counts nil :reader-pass nil :stage :absent}
+                (diagnostic (str ":durable-woven-failure-stage secret=private\n"
+                                 "private payload and path /tmp/private\n")))
+             (= :absent (:stage (diagnostic
+                                 (str good ":durable-woven-failure-stage fixture\n"
+                                      ":durable-woven-failure-stage reader\n"))))))
+    (let [failed (str (receipt 2 35)
+                      ":durable-woven-failure-stage fixture\n")
+          failed (.replace failed " 35 0 0 1\n" " 35 1 0 1\n")
+          checked (runner/checked-woven-receipt {:exit 1} failed 2)]
+      (is (and (not (:ok? checked))
+               (= {:test 1 :pass 35 :fail 1 :error 0}
+                  (:receipt-counts
+                   (runner/closed-failure-diagnostic checked failed 2)))
+               (= :fixture
+                  (:stage (runner/closed-failure-diagnostic checked failed 2))))))
     (is (not (:ok? (runner/checked-woven-receipt
                    {:exit 0 :child/terminal? false} good 2))))
     (is (:ok? (runner/checked-woven-receipt {:exit 0} (receipt 0 4) 0)))

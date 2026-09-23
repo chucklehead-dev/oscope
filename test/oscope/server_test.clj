@@ -49,7 +49,8 @@
         ;; README retains the historical qualification receipt; live CI uses
         ;; the current driver/native qualification coordinate independently.
         historical-durable-sha "dbc2db22130c7e783739c79bc24691dcbba21906"
-        live-driver-sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"
+        s3-driver-sha "6b982d5487a8fffcb763306e098bb7b55ace9888"
+        aws-driver-sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"
         aspect-sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"
         compiler-sha "f00bc93bdd8274b14087b74272aadeffb60e0447"
         compiler-version "jolt v0.8.6-5-gf00bc93b"
@@ -74,8 +75,8 @@
          readme
          "Available with the same qualified native library through the Jolt-native libcurl/SigV4 backend."))
     (is (str/includes? readme historical-durable-sha))
-    (is (str/includes? s3-workflow live-driver-sha))
-    (is (str/includes? aws-workflow live-driver-sha))
+    (is (str/includes? s3-workflow s3-driver-sha))
+    (is (str/includes? aws-workflow aws-driver-sha))
     (is (str/includes? readme aspect-sha))
     (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes? readme compiler-sha))

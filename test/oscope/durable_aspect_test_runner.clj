@@ -16,6 +16,32 @@
    (var oscope.durable-integration-test/corrupt-head-fails-before-ingress)
    (var oscope.durable-integration-test/standalone-server-flushes-through-durable-jdbc-adapter)])
 
+(def ^:private failure-stage (atom :startup))
+
+(defn closed-failure-diagnostic [_receipt output index]
+  ;; Only fixed markers and bounded decimal counts cross from a failed child's
+  ;; private output into CI. Never echo an unmatched line or exception data.
+  (let [lines (str/split-lines output)
+        one-match (fn [prefix pattern]
+                    (let [candidates (filter #(str/starts-with? % prefix) lines)]
+                      (when (= 1 (count candidates))
+                        (re-matches pattern (first candidates)))))
+        history (one-match ":durable-woven-history "
+                           #":durable-woven-history fixture 2 ([0-9]{1,9}) ([0-9]{1,9})")
+        reader (one-match ":durable-woven-reader "
+                          #":durable-woven-reader fixture 2 standalone 0 0 ([0-9]{1,9}) 0 0 1 1 1 1")
+        native (one-match ":durable-native-receipt "
+                          #":durable-native-receipt fixture ([0-9]{1,9}) ([0-9]{1,9}) ([0-9]{1,9}) ([0-9]{1,9}) ([0-9]{1,9}) ([01])")
+        stage (one-match ":durable-woven-failure-stage "
+                         #":durable-woven-failure-stage (startup|init|fixture|history|telemetry|reader|shutdown|receipt)")]
+    {:executed? (= 1 (count (filter #(= (str ":durable-native-executed fixture " index) %) lines)))
+     :receipt-counts (when (and native (= index (parse-long (second native))))
+                       (zipmap [:test :pass :fail :error]
+                               (mapv parse-long (take 4 (drop 2 native)))))
+     :history-counts (when history (mapv parse-long (rest history)))
+     :reader-pass (when reader (parse-long (second reader)))
+     :stage (if stage (keyword (second stage)) :absent)}))
+
 (defn prepare-fixture! [index]
   (let [v (get woven-fixtures index)
         actual (set (for [[name v] (ns-publics 'oscope.durable-integration-test)
@@ -74,19 +100,23 @@
                                    {:timeout-ms 60000 :settlement-ms 5000})
                 terminal? (and (integer? (:exit result))
                                (not= false (:child/terminal? result)))
-                receipt (checked-woven-receipt
-                         result (if (and terminal? (.exists out)) (slurp out) "") index)
+                output (if (and terminal? (.exists out)) (slurp out) "")
+                receipt (checked-woven-receipt result output index)
                 totals (if (:valid? receipt)
                          (merge-with + totals (:counts receipt)) totals)]
             (println :durable-woven-child index :exit (:exit result)
                      :valid (:valid? receipt) :settled (:settled? receipt)
                      :qualified (:ok? receipt))
+            (when-not (:ok? receipt)
+              (println :durable-woven-diagnostic index
+                       (closed-failure-diagnostic receipt output index)))
             (flush)
             (if (:settled? receipt)
               (recur (inc index) totals (and qualified? (:ok? receipt)))
               {:totals totals :qualified? false :settled? false})))))))
 
 (defn- validate-reader-receipt! []
+  (reset! failure-stage :reader)
   (let [{:keys [terminal? valid? settled? ok? counts] :as receipt}
         (native-child/checked-reader-receipt)
         {:keys [test pass fail error]} counts]
@@ -107,6 +137,7 @@
     (flush)))
 
 (defn- validate-standalone! [journal exporter handle private-values]
+  (reset! failure-stage :history)
   (let [events (history/events journal)
         commands
         (assertions/assert-ingest-history!
@@ -117,7 +148,8 @@
           ;; both precede the three confirmed logical ingest batches.
           :expected-publication-kinds [:checkpoint :checkpoint :wal :wal :wal]
           :require-renewal? true})
-        [spans durations] (telemetry/validate! exporter handle private-values)
+        [spans durations] (do (reset! failure-stage :telemetry)
+                              (telemetry/validate! exporter handle private-values))
         printed (pr-str [events spans durations])]
     (doseq [private-value private-values]
       (when (.contains printed private-value)
@@ -128,6 +160,7 @@
     (validate-reader-receipt!)))
 
 (defn- run-fixture! [index]
+  (reset! failure-stage :init)
   (let [v (prepare-fixture! index)
         journal (history/journal)
         exporter (memory/multisignal-exporter)
@@ -135,9 +168,11 @@
                            :exporter exporter :processor :simple
                            :runtime-metrics? false :logs? false
                            :bridge-logging? false})
+        completed? (atom false)
         private-values ["oscope-test" "oscope-test-instance" "head.json"
                         "wal/" "checkpoints/"]]
     (try
+      (reset! failure-stage :fixture)
       (println :durable-native-executed "fixture" index)
       (flush)
       (binding [history/*journal* journal
@@ -146,11 +181,20 @@
       (let [{:keys [test pass fail error]} @test/counters]
         (when (and (= index 2) (= test 1) (pos? pass) (zero? (+ fail error)))
           (validate-standalone! journal exporter handle private-values)))
-      (finally (sdk/shutdown! handle)))
+      (reset! completed? true)
+      (finally
+        (when @completed? (reset! failure-stage :shutdown))
+        (sdk/shutdown! handle)))
+    (reset! failure-stage :receipt)
     (let [{:keys [test pass fail error]} @test/counters
           settled (native-child/known-native-subtree-settled?)]
       (println :durable-native-receipt "fixture" index test pass fail error
                (if settled 1 0))
+      (when (and (= 2 index)
+                 (not (and (= 1 test) (pos? pass)
+                           (zero? (+ fail error)) settled)))
+        (println :durable-woven-failure-stage
+                 (if (pos? (+ fail error)) "fixture" "receipt")))
       (flush)
       (System/exit (if (and (= 1 test) (pos? pass) (zero? (+ fail error)) settled) 0 1)))))
 
@@ -182,6 +226,13 @@
     (catch Throwable _
       (when-not (native-child/known-native-subtree-settled?)
         (println :durable-native-nested-unsettled))
+      (when (= ["--fixture" "2"] (vec args))
+        (println :durable-woven-failure-stage
+                 (case @failure-stage
+                   :startup "startup" :init "init" :fixture "fixture"
+                   :history "history" :telemetry "telemetry"
+                   :reader "reader" :shutdown "shutdown"
+                   :receipt "receipt" "startup")))
       (println :durable-woven-failed)
       (flush)
       (System/exit 1))))

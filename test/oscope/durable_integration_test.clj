@@ -167,12 +167,22 @@
               :lease-ttl-ms 30000
               :force? force?})})
 
-(defn- startup-error-type [options]
-  (error-type
-   #(let [lifecycle (server/start! options)]
+(defn- startup-error-evidence [options]
+  (try
+    (let [lifecycle (server/start! options)]
       ;; An unexpectedly successful startup must not leak a native handle into
       ;; later tests, even though returning nil will still fail the assertion.
-      (server/stop! lifecycle))))
+      (server/stop! lifecycle)
+      nil)
+    (catch Throwable error
+      (loop [current error remaining 8]
+        (when (and current (pos? remaining))
+          (let [data (ex-data current)]
+            (if (= :jdbc.chdb.durable/startup-failed (:type data))
+              [(:type data)
+               (:jdbc.chdb.durable/startup-stage data)
+               (some-> current ex-cause ex-data :type)]
+              (recur (ex-cause current) (dec remaining)))))))))
 
 (deftest startup-rejects-live-owner-and-forced-takeover-fences-it
   (let [root (Files/createTempDirectory
@@ -189,8 +199,9 @@
                      :backup-format 1
                      :min-reader "26.7.2-rc.2"
                      :now now :expires-at (+ now 60000)}))]
-        (is (= ::control/lease-held
-               (startup-error-type
+        (is (= [:jdbc.chdb.durable/startup-failed
+                :acquire-lease ::control/lease-held]
+               (startup-error-evidence
                 (durable-server-options store "competing" false))))
         (let [lifecycle
               (server/start! (durable-server-options store "takeover" true))]
@@ -216,8 +227,9 @@
              store control/head-key corrupt-bytes)]
         (is (= :created
                (:status create-result)))
-        (is (= ::head/corrupt
-               (startup-error-type
+        (is (= [:jdbc.chdb.durable/startup-failed
+                :read-head ::head/corrupt]
+               (startup-error-evidence
                 (durable-server-options store "corrupt" false)))))
       (finally
         (delete-tree! root)))))

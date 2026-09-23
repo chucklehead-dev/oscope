@@ -79,31 +79,74 @@
     :message "the Durable object-store namespace is invalid"
     :action "repair the configured object prefix before retrying"}})
 
-(defn- causal-type [error]
+(defn- causal-known-failure [error]
   (loop [current error remaining 8]
     (when (and current (pos? remaining))
-      (or (:type (ex-data current))
-          (recur (ex-cause current) (dec remaining))))))
+      (let [type (:type (ex-data current))]
+        ;; chDB's public startup envelope intentionally replaces the outer
+        ;; type. Keep a known, closed diagnostic from its in-process cause;
+        ;; never render the cause's message or data. Unknown types cannot mask
+        ;; a known category farther down the bounded chain.
+        (or (when (keyword? type) (get failure-details type))
+            (recur (ex-cause current) (dec remaining)))))))
+
+(def ^:private durable-startup-stages
+  "The closed public stage vocabulary introduced by jolt-chdb Durable open.
+
+  Keep this list here rather than rendering arbitrary values from exception
+  data: an operator-facing failure line must not become a route for store
+  paths, credentials, backend text, or application payloads."
+  #{:capability :read-head :acquire-lease :create-scratch
+    :open-native :recover :renew-lease :start-writer})
+
+(defn- causal-startup-stage
+  "Return only a recognised Durable-open stage from a bounded cause chain.
+
+  Older jolt-chdb versions simply have no such envelope, so callers retain the
+  existing generic diagnostic. Do not derive a stage from a cause type or
+  arbitrary ex-data: the Durable envelope is the sole contract."
+  [error]
+  (loop [current error remaining 8]
+    (when (and current (pos? remaining))
+      (let [data (ex-data current)
+            stage (:jdbc.chdb.durable/startup-stage data)]
+        (if (and (= ::durable/startup-failed (:type data))
+                 (keyword? stage)
+                 (contains? durable-startup-stages stage))
+          stage
+          (recur (ex-cause current) (dec remaining)))))))
 
 (defn failure-diagnostic
   "Return a bounded operator diagnostic without echoing exception data.
 
   Driver adapters may wrap the control failure in a SQLException, so the
-  classifier follows a bounded cause chain. Paths, owner IDs, instance IDs,
-  backend responses, and arbitrary exception messages are never returned."
+  classifier follows a bounded cause chain to the first known category; a
+  public Durable startup envelope does not mask a known lease or store cause.
+  Paths, owner IDs, instance IDs, backend responses, and arbitrary exception
+  messages are never returned."
   [error]
-  (or (get failure-details (causal-type error))
-      {:category :server-failed
-       :message "the Durable server could not start or remain running"
-       :action "inspect the structured exception type and retained local logs"}))
+  (let [diagnostic
+        (or (causal-known-failure error)
+            {:category :server-failed
+             :message "the Durable server could not start or remain running"
+             :action "inspect the structured exception type and retained local logs"})]
+    ;; This is deliberately optional. It is additional closed context for the
+    ;; current Durable dependency, never a replacement for the generic
+    ;; diagnostic used with older or non-Durable startup failures.
+    (if-let [stage (causal-startup-stage error)]
+      (assoc diagnostic :stage stage)
+      diagnostic)))
 
 (defn- report-failure! [error]
-  (let [{:keys [category message action]} (failure-diagnostic error)]
+  (let [{:keys [category message action stage]} (failure-diagnostic error)]
     (binding [*out* *err*]
       (println (str "oscope Durable server failed [" (name category) "]: "
                     message))
+      (when stage
+        (println (str "Durable startup stage: " (name stage))))
       (println (str "operator action: " action)))
-    {:category category :message message}))
+    (cond-> {:category category :message message}
+      stage (assoc :stage stage))))
 
 (defn- positive-long [raw name default]
   (if (str/blank? raw)
@@ -570,9 +613,10 @@
     (let [environment (system-environment)]
       (execute! (resolve-config arguments environment) environment))
     (catch Throwable error
-      (let [{:keys [category message]} (report-failure! error)]
+      (let [{:keys [category message stage]} (report-failure! error)]
         ;; Do not attach the original cause: an uncaught-exception printer may
         ;; render its message or ex-data after the bounded diagnostic.
         (throw (ex-info message
-                        {:oscope.durable-server/error true
-                         :category category}))))))
+                        (cond-> {:oscope.durable-server/error true
+                                 :category category}
+                          stage (assoc :stage stage))))))))

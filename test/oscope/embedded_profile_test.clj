@@ -182,8 +182,8 @@
            "io.github.casselc/otel/e876d2ebba211b4831993e1fb7fb480ea547cc71/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/adaa779e1af3e58f1d7a552d79d074630bfbf815/"
-           "io.github.chucklehead-dev/jolt-chdb/adaa779e1af3e58f1d7a552d79d074630bfbf815/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/6b982d5487a8fffcb763306e098bb7b55ace9888/"
+           "io.github.chucklehead-dev/jolt-chdb/6b982d5487a8fffcb763306e098bb7b55ace9888/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
