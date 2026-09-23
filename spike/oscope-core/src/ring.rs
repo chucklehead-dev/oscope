@@ -17,6 +17,9 @@ pub struct Ring {
     tail: Padded<AtomicUsize>, // written by consumer
     pub dropped: AtomicU64,
     pub thread_gone: std::sync::atomic::AtomicBool,
+    /// Set by the producer when it has unparked the drain thread for this ring
+    /// (ring past half full); cleared by the drain thread after draining it.
+    pub wake_sent: std::sync::atomic::AtomicBool,
 }
 
 unsafe impl Sync for Ring {}
@@ -37,6 +40,7 @@ impl Ring {
             tail: Padded(AtomicUsize::new(0)),
             dropped: AtomicU64::new(0),
             thread_gone: std::sync::atomic::AtomicBool::new(false),
+            wake_sent: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -88,6 +92,11 @@ impl Ring {
         fill(&mut w);
         debug_assert_eq!(w.pos, w.end, "record length mismatch");
         self.head.0.store(head + total, Ordering::Release);
+        // Past half full: wake the drain thread once, rather than have it poll often.
+        if (head + total - tail) > (self.mask + 1) / 2 && !self.wake_sent.load(Ordering::Relaxed) {
+            self.wake_sent.store(true, Ordering::Relaxed);
+            crate::recorder::wake_drain();
+        }
         true
     }
 

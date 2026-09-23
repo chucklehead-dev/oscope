@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr/dbsql
+  description: CLIENT spans for database/sql, woven into the standard library.
+
+aspects:
+  - id: oscope-database-sql-db
+    join-point:
+      all-of:
+        - import-path: database/sql
+        - one-of:
+            - function-body:
+                function:
+                  - receiver: '*database/sql.DB'
+                  - name: QueryContext
+            - function-body:
+                function:
+                  - receiver: '*database/sql.DB'
+                  - name: ExecContext
+    advice:
+      - prepend-statements:
+          imports:
+            oscopedbsql: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr/dbsql
+          template: |-
+            var __oscopeEnd func(error)
+            {{ .Function.Argument 0 }}, __oscopeEnd = oscopedbsql.Start({{ .Function.Argument 0 }}, {{ printf "%q" .Function.Name }}, {{ .Function.Receiver }}.Driver(), false, {{ .Function.Argument 1 }})
+            defer func() { __oscopeEnd({{ .Function.Result 1 }}) }()
+
+  - id: oscope-database-sql-tx
+    join-point:
+      all-of:
+        - import-path: database/sql
+        - one-of:
+            - function-body:
+                function:
+                  - receiver: '*database/sql.Tx'
+                  - name: QueryContext
+            - function-body:
+                function:
+                  - receiver: '*database/sql.Tx'
+                  - name: ExecContext
+    advice:
+      - prepend-statements:
+          imports:
+            oscopedbsql: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr/dbsql
+          template: |-
+            var __oscopeEnd func(error)
+            {{ .Function.Argument 0 }}, __oscopeEnd = oscopedbsql.Start({{ .Function.Argument 0 }}, {{ printf "%q" .Function.Name }}, {{ .Function.Receiver }}.db.Driver(), true, {{ .Function.Argument 1 }})
+            defer func() { __oscopeEnd({{ .Function.Result 1 }}) }()

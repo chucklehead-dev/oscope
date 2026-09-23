@@ -42,6 +42,37 @@ ORDER BY (ServiceName, toDateTime(Timestamp))";
 
 pub const LOGS_INSERT: &str = "INSERT INTO otel_logs (Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body, ResourceAttributes, ScopeName, LogAttributes)";
 
+/// Spike-only storage experiment: OSCOPE_CODEC=lz4 strips the explicit
+/// ZSTD codecs so every column uses ClickHouse's default (LZ4).
+pub fn ddl(base: &str) -> String {
+    if std::env::var("OSCOPE_CODEC").as_deref() != Ok("lz4") {
+        return base.to_string();
+    }
+    let mut out = String::with_capacity(base.len());
+    let mut rest = base;
+    while let Some(i) = rest.find(" CODEC(") {
+        out.push_str(&rest[..i]);
+        let mut depth = 0;
+        let mut end = i + 1;
+        for (j, c) in rest[i + 1..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1 + j + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 pub fn kind_str(k: u8) -> &'static str {
     match k {
         1 => "Internal",

@@ -481,6 +481,61 @@ fn bench_otlp(args: &[String]) {
     );
 }
 
+// ------------------------------------------------ drain: assembler cost per record, isolated
+
+fn bench_drain(args: &[String]) {
+    use oscope_core::assemble::Assembler;
+    let n: usize = arg(args, "--records").unwrap_or("1000000").parse().unwrap();
+    let names = [recorder::intern(b"GET /orders/{id}"), recorder::intern(b"load-order"), recorder::intern(b"priceOrder"), recorder::intern(b"db.query")];
+    let (k1, k2, k3) = (recorder::intern(b"code.function"), recorder::intern(b"order.id"), recorder::intern(b"user.tier"));
+    // Go-shaped K_FULL records (what osc_submit carries), 4 spans : 1 log
+    let mut recs: Vec<Vec<u8>> = Vec::new();
+    let base = recorder::now_ns();
+    for i in 0..4096u64 {
+        let mut r = vec![4u8];
+        r.extend_from_slice(&(i as u128 * 0x9E37_79B9_7F4A_7C15).to_be_bytes());
+        r.extend_from_slice(&(i * 7 + 1).to_le_bytes());
+        r.extend_from_slice(&(if i % 4 == 0 { 0 } else { i * 7 - 6 }).to_le_bytes());
+        r.extend_from_slice(&names[(i % 4) as usize].to_le_bytes());
+        r.push(if i % 4 == 0 { 2 } else { 1 });
+        r.push(0);
+        r.extend_from_slice(&(base + i * 1000).to_le_bytes());
+        r.extend_from_slice(&(base + i * 1000 + 1500).to_le_bytes());
+        r.extend_from_slice(&3u32.to_le_bytes());
+        r.push(1); r.extend_from_slice(&k1.to_le_bytes()); r.extend_from_slice(&10u32.to_le_bytes()); r.extend_from_slice(b"load-order");
+        r.push(2); r.extend_from_slice(&k2.to_le_bytes()); r.extend_from_slice(&(i as i64).to_le_bytes());
+        r.push(1); r.extend_from_slice(&k3.to_le_bytes()); r.extend_from_slice(&4u32.to_le_bytes()); r.extend_from_slice(b"gold");
+        assert!(oscope_core::assemble::validate_submitted(&r));
+        recs.push(r);
+        if i % 4 == 3 {
+            let mut l = vec![5u8];
+            l.extend_from_slice(&(base + i * 1000).to_le_bytes());
+            l.extend_from_slice(&(i as u128).to_be_bytes());
+            l.extend_from_slice(&(i * 7 + 1).to_le_bytes());
+            l.push(9);
+            l.extend_from_slice(&12u32.to_le_bytes()); l.extend_from_slice(b"order served");
+            l.extend_from_slice(&2u32.to_le_bytes());
+            l.push(2); l.extend_from_slice(&k2.to_le_bytes()); l.extend_from_slice(&(i as i64).to_le_bytes());
+            l.push(1); l.extend_from_slice(&k3.to_le_bytes()); l.extend_from_slice(&4u32.to_le_bytes()); l.extend_from_slice(b"gold");
+            recs.push(l);
+        }
+    }
+    let mut asm = Assembler::new(&resource());
+    for r in &recs { asm.feed(r); } // warm
+    let t0 = Instant::now();
+    let mut done = 0;
+    while done < n {
+        for r in &recs {
+            asm.feed(r);
+        }
+        done += recs.len();
+        if asm.traces.buf.len() > 8 << 20 { asm.traces.clear(); }
+        if asm.logs.buf.len() > 8 << 20 { asm.logs.clear(); }
+    }
+    let el = t0.elapsed();
+    println!("drain: {done} records (4 spans : 1 log, 3 attrs each) -> RowBinary: {:.0} ns/record, {:.2} M records/s", el.as_nanos() as f64 / done as f64, done as f64 / el.as_secs_f64() / 1e6);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(|s| s.as_str()) {
@@ -489,6 +544,7 @@ fn main() {
         Some("e2e") => bench_e2e(&args),
         Some("recover") => bench_recover(&args),
         Some("otlp") => bench_otlp(&args),
+        Some("drain") => bench_drain(&args),
         _ => eprintln!("usage: bench hot|insert|e2e|recover|otlp [flags]"),
     }
 }

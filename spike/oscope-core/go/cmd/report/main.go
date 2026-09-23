@@ -59,4 +59,25 @@ SELECT repeat('  ', toUInt8(SpanKind = 'Server') + 2 * toUInt8(SpanKind = 'Inter
 FROM otel_traces
 WHERE TraceId = failed.1 AND (SpanId IN (client_span, failed.2) OR ParentSpanId = failed.2)
 ORDER BY Timestamp`)
+
+	q("Spans from code outside the app module (a third-party library and the standard library)", `
+SELECT SpanName, SpanKind,
+       if(SpanAttributes['code.namespace'] != '', 'example.com/inventory', 'database/sql') AS woven_into,
+       SpanAttributes['db.system.name'] AS db, SpanAttributes['db.in_transaction'] AS in_tx,
+       count() AS spans, round(quantile(0.5)(Duration) / 1e3) AS p50_us
+FROM otel_traces
+WHERE SpanAttributes['code.namespace'] != '' OR SpanAttributes['db.operation.name'] != ''
+GROUP BY ALL ORDER BY spans DESC, SpanName`)
+
+	q("One successful order, from the client call down into SQLite", `
+WITH (SELECT (TraceId, SpanId, ParentSpanId) FROM otel_traces
+      WHERE SpanName = 'inventory.Store.Reserve' AND StatusCode != 'Error' LIMIT 1) AS r,
+     (SELECT ParentSpanId FROM otel_traces WHERE SpanId = r.3 LIMIT 1) AS client_span
+SELECT repeat('  ', multiIf(SpanKind = 'Client' AND SpanId = client_span, 0, SpanKind = 'Server', 1,
+                            ParentSpanId = r.3, 2, 3)) || SpanName AS span,
+       SpanKind, StatusCode, round(Duration / 1e3) AS us,
+       SpanAttributes['db.query.text'] AS query
+FROM otel_traces
+WHERE TraceId = r.1 AND (SpanId IN (client_span, r.3) OR ParentSpanId IN (r.3, r.2))
+ORDER BY Timestamp`)
 }

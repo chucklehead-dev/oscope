@@ -9,6 +9,9 @@ the following into an embedded chDB store through `liboscope_core`:
 - client spans, with `traceparent` propagated
 - function spans
 - correlated logs
+- spans from code the app does not own:
+  - a third-party library module, `example.com/inventory`;
+  - the standard library's `database/sql`, driving the `modernc.org/sqlite` driver.
 
 It pulls in no dd-trace-go, no OTel SDK, and no collector process.
 
@@ -24,6 +27,9 @@ CHDB_DIR=/path/to/libchdb ./run-demo.sh
 | `orchestrion.tool.go` | Opts the module in to Orchestrion. It lists only `instr`, not dd-trace-go's integrations. |
 | `instr/orchestrion.yml` | The aspects: what gets rewritten, and where. |
 | `instr/` | What the rewritten code calls: server and client wrappers, span helpers, slog wrappers, and start/stop. |
+| `instr/dbsql/` | Aspects woven into the standard library's `database/sql`, plus the hook they call. |
+| `instr/lib/` | Aspects woven into a third-party module (`example.com/inventory`), plus the hook they call. |
+| `thirdparty/inventory/` | A separate module standing in for a third-party library. It has no telemetry and is not modified. |
 | `oscope/` | The cgo binding to `liboscope_core`. Each span builds its attributes in a pooled Go byte buffer and crosses cgo once, at `End`, through `osc_submit`. |
 | `cmd/shop` | The demo app. |
 | `cmd/report` | Opens the store the app wrote and prints what was recorded. |
@@ -45,6 +51,63 @@ Orchestrion also weaves the standard library. Without that scope, `net/http`'s o
 
 The engine is configured from the environment: `OSCOPE_DB` (default `./oscope-data`),
 `OSCOPE_WAL`, `OSCOPE_WAL_FSYNC=1`, and `OSCOPE_SERVICE`.
+
+## Instrumenting code outside the app module
+
+The app-level aspects are scoped to the root module (`package-filter: {root: true}`).
+The two packages below deliberately reach further.
+
+**A third-party module (`instr/lib`).** Every method on `*inventory.Store` that takes a
+`context.Context` gets a span. The join point is an import path plus a receiver type,
+so the same four lines work for any dependency:
+
+```yaml
+join-point:
+  all-of:
+    - import-path: example.com/inventory
+    - function-body:
+        function:
+          - receiver: '*example.com/inventory.Store'
+```
+
+**The standard library (`instr/dbsql`).** `(*sql.DB)` and `(*sql.Tx)` `QueryContext`
+and `ExecContext` get CLIENT spans carrying the SQL text, the operation, whether the
+query ran in a transaction, and the driver's system name. Every other query method
+(`Query`, `QueryRow`, `Exec`, `QueryRowContext`, ...) funnels into these four, so the
+whole API is covered without double counting. The driver doesn't matter; the demo
+uses the third-party `modernc.org/sqlite`.
+
+Two rules make standard-library weaving work:
+
+1. **The hook must not lead back to what it's woven into.** `database/sql` ends up
+   importing `instr/dbsql`, so that package and its imports (`context`, `reflect`,
+   `strings`, `sync`, and the `oscope` binding) must not import `database/sql`.
+   The `net/http` aspects in `instr/` can't be woven into `net/http` itself for this
+   reason, since `instr` uses `net/http`. dd-trace-go works around the same problem
+   with `//go:linkname` plus `links:`.
+2. **Woven code runs inside the package, with its privileges.** `*sql.Tx` has no
+   `Driver()` method, so the Tx aspect reads the unexported `tx.db` field, which it
+   can do because the woven code is compiled into package `sql`. That's powerful, and
+   it ties the aspect to the standard library's internals, so pin the Go version the
+   aspect was written against.
+
+A successful order, from the load generator's call down into SQLite (from `cmd/report`):
+
+```
+GET                              Client     2680 us
+  GET /orders/{id}               Server     1892 us
+    load-order                   Internal   1295 us
+    inventory.Store.Reserve      Internal    416 us   <- third-party module
+      SELECT                     Client       86 us   <- database/sql, in the Tx
+      UPDATE                     Client       83 us
+      INSERT                     Client       23 us
+    priceOrder                   Internal    158 us
+```
+
+For 2,000 requests, the store records 1,801 `inventory.Store.Reserve` spans and
+1,801 `SELECT`/`UPDATE`/`INSERT` spans each, all with `db.system.name = sqlite` and
+`db.in_transaction = true`. It also records the 52 setup statements outside any
+transaction, with 0 orphans. The orchestrion build with SQLite takes 38 s from cold.
 
 ## What the woven code looks like
 

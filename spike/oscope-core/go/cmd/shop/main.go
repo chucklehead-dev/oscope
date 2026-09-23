@@ -1,11 +1,14 @@
 // shop is an ordinary Go HTTP service with no telemetry code: no tracing
 // imports, no middleware, no span calls. Built with plain `go build` it
 // records nothing. Built with `orchestrion go build` it records server,
-// client and function spans plus correlated logs into in-process chDB.
+// client and function spans plus correlated logs into in-process chDB, and
+// also spans from code outside this module: the example.com/inventory library
+// and the standard library's database/sql (with the modernc.org/sqlite driver).
 package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,9 +18,15 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
+
+	"example.com/inventory"
+	_ "modernc.org/sqlite"
 )
+
+var store *inventory.Store
 
 type order struct {
 	ID    string   `json:"id"`
@@ -49,6 +58,12 @@ func handleOrder(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.ErrorContext(ctx, "order lookup failed", "order.id", id, "error", err)
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	n, _ := strconv.Atoi(id)
+	if err := store.Reserve(ctx, id, fmt.Sprintf("sku-%d", n%50), 1); err != nil {
+		slog.ErrorContext(ctx, "reservation failed", "order.id", id, "error", err)
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 	o.Total = priceOrder(ctx, o)
@@ -100,6 +115,15 @@ func main() {
 	flag.Parse()
 	if *quiet {
 		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}
+
+	db, err := sql.Open("sqlite", "file:shop?mode=memory&cache=shared")
+	if err != nil {
+		panic(err)
+	}
+	db.SetMaxOpenConns(1) // one writer: SQLite serialises writes anyway
+	if store, err = inventory.Open(context.Background(), db, 50, 1000); err != nil {
+		panic(err)
 	}
 
 	mux := http.NewServeMux()

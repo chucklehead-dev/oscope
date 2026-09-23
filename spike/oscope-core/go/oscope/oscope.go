@@ -62,6 +62,9 @@ type Config struct {
 	// KeepEngineSignalHandlers leaves chDB's signal handlers installed. Only
 	// for demonstrating why they are off by default in Go hosts.
 	KeepEngineSignalHandlers bool
+	// DirectSubmit makes every End/Log cross into C immediately instead of
+	// batching (lower latency to the ring, ~95 ns more per record).
+	DirectSubmit bool
 }
 
 // Start boots the embedded engine. It first turns off chDB's own signal
@@ -98,10 +101,15 @@ func Start(c Config) error {
 	if C.osc_start(&cfg) != 0 {
 		return errors.New("oscope: osc_start failed")
 	}
+	directMode = c.DirectSubmit
+	if !directMode {
+		startTicker()
+	}
 	return nil
 }
 
 func Flush(timeout time.Duration) error {
+	submitAll()
 	if C.osc_flush(C.uint32_t(timeout.Milliseconds())) != 0 {
 		return errors.New("oscope: flush timed out")
 	}
@@ -109,6 +117,12 @@ func Flush(timeout time.Duration) error {
 }
 
 func Stop() error {
+	if tickerStop != nil {
+		close(tickerStop)
+		<-tickerDone
+		tickerStop = nil
+	}
+	submitAll()
 	if C.osc_stop() != 0 {
 		return errors.New("oscope: not started")
 	}
@@ -166,14 +180,39 @@ func (sc SpanContext) Valid() bool { return sc.SpanID != 0 }
 
 type ctxKey struct{}
 
+// spanCtx carries a SpanContext with one allocation per span;
+// context.WithValue would also box the value, making two.
+type spanCtx struct {
+	context.Context
+	sc SpanContext
+}
+
+func (c *spanCtx) Value(key any) any {
+	if key == (ctxKey{}) {
+		return c
+	}
+	return c.Context.Value(key)
+}
+
 func ContextWithSpanContext(ctx context.Context, sc SpanContext) context.Context {
-	return context.WithValue(ctx, ctxKey{}, sc)
+	return &spanCtx{Context: ctx, sc: sc}
 }
 
 func SpanContextFrom(ctx context.Context) SpanContext {
-	sc, _ := ctx.Value(ctxKey{}).(SpanContext)
-	return sc
+	if c, ok := ctx.(*spanCtx); ok {
+		return c.sc
+	}
+	if c, ok := ctx.Value(ctxKey{}).(*spanCtx); ok {
+		return c.sc
+	}
+	return SpanContext{}
 }
+
+// Key is a pre-interned span name or attribute key. Declare keys once at
+// package level; using one skips the per-call intern lookup.
+type Key struct{ id uint32 }
+
+func NewKey(s string) Key { return Key{Intern(s)} }
 
 const (
 	tagStr  = 1
@@ -187,14 +226,15 @@ const (
 
 // Span is not safe for concurrent use and must not be used after End.
 type Span struct {
-	sc     SpanContext
-	parent uint64
-	name   string
-	kind   Kind
-	status Status
-	start  int64
-	nattrs uint32
-	buf    []byte // header space + encoded attributes
+	sc      SpanContext
+	parent  uint64
+	name    uint32
+	kind    Kind
+	status  Status
+	startNs int64     // wall clock, unix ns
+	t0      time.Time // carries the monotonic reading End measures from
+	nattrs  uint32
+	buf     []byte // header space + encoded attributes
 }
 
 var spanPool = sync.Pool{New: func() any { return &Span{buf: make([]byte, hdrLen, 512)} }}
@@ -208,6 +248,11 @@ func newTraceID() (t [16]byte) {
 // StartSpan starts a child of the span in ctx (or a new trace) and returns a
 // context carrying the new span.
 func StartSpan(ctx context.Context, name string, kind Kind) (context.Context, *Span) {
+	return StartSpanK(ctx, Key{Intern(name)}, kind)
+}
+
+// StartSpanK is StartSpan with a pre-interned name.
+func StartSpanK(ctx context.Context, name Key, kind Kind) (context.Context, *Span) {
 	parent := SpanContextFrom(ctx)
 	s := spanPool.Get().(*Span)
 	s.parent = parent.SpanID
@@ -217,41 +262,43 @@ func StartSpan(ctx context.Context, name string, kind Kind) (context.Context, *S
 		s.sc.TraceID = newTraceID()
 	}
 	s.sc.SpanID = rand.Uint64() | 1
-	s.name, s.kind, s.status, s.nattrs = name, kind, StatusUnset, 0
+	s.name, s.kind, s.status, s.nattrs = name.id, kind, StatusUnset, 0
 	s.buf = s.buf[:hdrLen]
-	s.start = time.Now().UnixNano()
+	s.t0 = time.Now()
+	s.startNs = s.t0.UnixNano()
 	return ContextWithSpanContext(ctx, s.sc), s
 }
 
 func (s *Span) Context() SpanContext { return s.sc }
 
 // SetName renames the span before End (e.g. once an HTTP route is known).
-func (s *Span) SetName(name string) { s.name = name }
+func (s *Span) SetName(name string) { s.name = Intern(name) }
+func (s *Span) SetNameK(name Key)   { s.name = name.id }
 
-func (s *Span) key(tag byte, k string) {
+func (s *Span) key(tag byte, id uint32) {
 	s.buf = append(s.buf, tag)
-	s.buf = binary.LittleEndian.AppendUint32(s.buf, Intern(k))
+	s.buf = binary.LittleEndian.AppendUint32(s.buf, id)
 	s.nattrs++
 }
 
-func (s *Span) SetString(k, v string) {
-	s.key(tagStr, k)
+func (s *Span) SetStringK(k Key, v string) {
+	s.key(tagStr, k.id)
 	s.buf = binary.LittleEndian.AppendUint32(s.buf, uint32(len(v)))
 	s.buf = append(s.buf, v...)
 }
 
-func (s *Span) SetInt(k string, v int64) {
-	s.key(tagI64, k)
+func (s *Span) SetIntK(k Key, v int64) {
+	s.key(tagI64, k.id)
 	s.buf = binary.LittleEndian.AppendUint64(s.buf, uint64(v))
 }
 
-func (s *Span) SetFloat(k string, v float64) {
-	s.key(tagF64, k)
+func (s *Span) SetFloatK(k Key, v float64) {
+	s.key(tagF64, k.id)
 	s.buf = binary.LittleEndian.AppendUint64(s.buf, math.Float64bits(v))
 }
 
-func (s *Span) SetBool(k string, v bool) {
-	s.key(tagBool, k)
+func (s *Span) SetBoolK(k Key, v bool) {
+	s.key(tagBool, k.id)
 	b := byte(0)
 	if v {
 		b = 1
@@ -259,13 +306,23 @@ func (s *Span) SetBool(k string, v bool) {
 	s.buf = append(s.buf, b)
 }
 
+func (s *Span) SetString(k, v string)        { s.SetStringK(Key{Intern(k)}, v) }
+func (s *Span) SetInt(k string, v int64)     { s.SetIntK(Key{Intern(k)}, v) }
+func (s *Span) SetFloat(k string, v float64) { s.SetFloatK(Key{Intern(k)}, v) }
+func (s *Span) SetBool(k string, v bool)     { s.SetBoolK(Key{Intern(k)}, v) }
+
+var keyExceptionMessage = Key{} // interned lazily: Intern needs the library loaded
+
 // SetError marks the span failed and records the error text.
 func (s *Span) SetError(err error) {
 	if err == nil {
 		return
 	}
 	s.status = StatusError
-	s.SetString("exception.message", err.Error())
+	if keyExceptionMessage.id == 0 {
+		keyExceptionMessage = NewKey("exception.message")
+	}
+	s.SetStringK(keyExceptionMessage, err.Error())
 }
 
 func (s *Span) SetStatus(st Status) { s.status = st }
@@ -273,28 +330,99 @@ func (s *Span) SetStatus(st Status) { s.status = st }
 // End encodes the span header in front of its attributes and hands the whole
 // record to the recorder in one cgo call.
 func (s *Span) End() {
-	b := s.encode()
-	C.osc_submit((*C.uint8_t)(unsafe.Pointer(&b[0])), C.size_t(len(b)))
+	submit(s.encode())
 	if cap(s.buf) <= 64<<10 { // don't pool pathological spans
 		spanPool.Put(s)
 	}
 }
 
 func (s *Span) encode() []byte {
-	end := time.Now().UnixNano()
+	end := s.startNs + int64(time.Since(s.t0)) // one monotonic read
 	b := s.buf
 	binary.LittleEndian.PutUint32(b[0:], uint32(len(b)-4))
 	b[4] = kFull
 	copy(b[5:21], s.sc.TraceID[:])
 	binary.LittleEndian.PutUint64(b[21:], s.sc.SpanID)
 	binary.LittleEndian.PutUint64(b[29:], s.parent)
-	binary.LittleEndian.PutUint32(b[37:], Intern(s.name))
+	binary.LittleEndian.PutUint32(b[37:], s.name)
 	b[41] = byte(s.kind)
 	b[42] = byte(s.status)
-	binary.LittleEndian.PutUint64(b[43:], uint64(s.start))
+	binary.LittleEndian.PutUint64(b[43:], uint64(s.startNs))
 	binary.LittleEndian.PutUint64(b[51:], uint64(end))
 	binary.LittleEndian.PutUint32(b[59:], s.nattrs)
 	return b
+}
+
+// ---------------------------------------------------------------- batching
+
+// Finished records are appended to one of a few mutex-striped buffers and
+// handed to the recorder in one osc_submit call per ~32 KiB, instead of one
+// cgo call (~95 ns here) per record. A background goroutine submits partial
+// buffers every 20 ms; Flush and Stop submit everything first.
+const (
+	nStripes         = 16
+	stripeFlushBytes = 32 << 10
+)
+
+type stripe struct {
+	mu  sync.Mutex
+	buf []byte
+	_   [32]byte // keep stripes on separate cache lines
+}
+
+var (
+	stripes    [nStripes]stripe
+	directMode bool // Config.DirectSubmit
+	tickerStop chan struct{}
+	tickerDone chan struct{}
+)
+
+func submit(rec []byte) {
+	if directMode {
+		C.osc_submit((*C.uint8_t)(unsafe.Pointer(&rec[0])), C.size_t(len(rec)))
+		return
+	}
+	st := &stripes[rand.Uint32()%nStripes]
+	st.mu.Lock()
+	st.buf = append(st.buf, rec...)
+	if len(st.buf) >= stripeFlushBytes {
+		submitLocked(st)
+	}
+	st.mu.Unlock()
+}
+
+func submitLocked(st *stripe) {
+	if len(st.buf) == 0 {
+		return
+	}
+	C.osc_submit((*C.uint8_t)(unsafe.Pointer(&st.buf[0])), C.size_t(len(st.buf)))
+	st.buf = st.buf[:0]
+}
+
+func submitAll() {
+	for i := range stripes {
+		st := &stripes[i]
+		st.mu.Lock()
+		submitLocked(st)
+		st.mu.Unlock()
+	}
+}
+
+func startTicker() {
+	tickerStop, tickerDone = make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(tickerDone)
+		t := time.NewTicker(20 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				submitAll()
+			case <-tickerStop:
+				return
+			}
+		}
+	}()
 }
 
 // ---------------------------------------------------------------- logs
@@ -333,7 +461,7 @@ func Log(ctx context.Context, severity uint8, body string, attrs ...Attr) {
 		}
 	}
 	binary.LittleEndian.PutUint32(b, uint32(len(b)-4))
-	C.osc_submit((*C.uint8_t)(unsafe.Pointer(&b[0])), C.size_t(len(b)))
+	submit(b)
 	*bp = b
 	logBufs.Put(bp)
 }

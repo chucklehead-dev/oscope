@@ -2,6 +2,7 @@ package oscope
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"os"
 	"strings"
@@ -28,14 +29,17 @@ func TestRoundTrip(t *testing.T) {
 	child.SetError(errors.New("boom"))
 	child.End()
 	Log(ctx, SevInfo, "hello", Attr{Key: "order.id", Int: 42, IsInt: true})
+	rootSC := root.Context() // capture before End: the span returns to a pool
 	root.End()
 	if err := Flush(5 * time.Second); err != nil {
 		t.Fatal(err)
 	}
+	// the store is shared by every test run in this process: scope to this trace
+	tid := hex.EncodeToString(rootSC.TraceID[:])
 	out, err := Query(`SELECT c.SpanName, c.StatusCode, c.SpanAttributes['db.rows'], c.SpanAttributes['ratio'],
 	  c.SpanAttributes['cached'], c.SpanAttributes['exception.message'], p.SpanName
 	  FROM otel_traces c JOIN otel_traces p ON c.ParentSpanId = p.SpanId AND c.TraceId = p.TraceId
-	  WHERE c.SpanName = 'go-child'`, "TSV")
+	  WHERE c.SpanName = 'go-child' AND c.TraceId = '`+tid+`'`, "TSV")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +47,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 	out, _ = Query(`SELECT l.Body, l.LogAttributes['order.id'], t.SpanName FROM otel_logs l
-	  JOIN otel_traces t ON l.SpanId = t.SpanId WHERE l.Body = 'hello'`, "TSV")
+	  JOIN otel_traces t ON l.SpanId = t.SpanId WHERE l.Body = 'hello' AND l.TraceId = '`+tid+`'`, "TSV")
 	if got, want := strings.TrimSpace(out), "hello\t42\tgo-root"; got != want {
 		t.Fatalf("log: got %q want %q", got, want)
 	}
@@ -83,4 +87,54 @@ func BenchmarkLog(b *testing.B) {
 	for b.Loop() {
 		Log(ctx, SevInfo, "order served", Attr{Key: "order.id", Int: 42, IsInt: true})
 	}
+}
+
+var (
+	bkName   = NewKey("bench.span")
+	bkRoute  = NewKey("http.route")
+	bkStatus = NewKey("http.response.status_code")
+	bkTier   = NewKey("user.tier")
+)
+
+// Same shape with pre-interned keys: what generated instrumentation uses.
+func BenchmarkSpanKeys(b *testing.B) {
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, s := StartSpanK(ctx, bkName, KindInternal)
+		s.SetStringK(bkRoute, "/orders/{id}")
+		s.SetIntK(bkStatus, 200)
+		s.SetStringK(bkTier, "gold")
+		s.End()
+	}
+}
+
+// Keys, but one cgo crossing per span (batching off).
+func BenchmarkSpanKeysDirect(b *testing.B) {
+	ctx := context.Background()
+	submitAll()
+	directMode = true
+	defer func() { directMode = false }()
+	b.ReportAllocs()
+	for b.Loop() {
+		_, s := StartSpanK(ctx, bkName, KindInternal)
+		s.SetStringK(bkRoute, "/orders/{id}")
+		s.SetIntK(bkStatus, 200)
+		s.SetStringK(bkTier, "gold")
+		s.End()
+	}
+}
+
+func BenchmarkSpanKeysParallel(b *testing.B) {
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, s := StartSpanK(ctx, bkName, KindInternal)
+			s.SetStringK(bkRoute, "/orders/{id}")
+			s.SetIntK(bkStatus, 200)
+			s.SetStringK(bkTier, "gold")
+			s.End()
+		}
+	})
 }

@@ -63,8 +63,44 @@ pub struct Pipeline {
     reader: Mutex<Option<Conn>>,
 }
 
+/// A Buffer table (otel_traces_buf / otel_logs_buf) sits in front of each
+/// MergeTree table. Inserts land in memory and are queryable at once through
+/// the _buf table; the Buffer writes N-to-3N-second chunks to MergeTree, so
+/// parts are large and merges rare. Measured at 5k req/s: chDB CPU roughly
+/// halved and on-disk size halved versus 8k-row direct inserts. The WAL covers
+/// the Buffer's crash window; flush barriers force the Buffer out.
+/// OSCOPE_BUFFER_SECS=N sets N (default 10); 0 disables the Buffer.
+fn buffer_secs() -> Option<u32> {
+    match std::env::var("OSCOPE_BUFFER_SECS") {
+        Ok(v) => v.parse().ok().filter(|&n| n > 0),
+        Err(_) => Some(10),
+    }
+}
+
+fn buffer_ddl(conn: &Conn, secs: u32) -> Result<(), String> {
+    for t in ["otel_traces", "otel_logs"] {
+        conn.exec(&format!(
+            "CREATE TABLE IF NOT EXISTS {t}_buf AS {t} ENGINE = Buffer(currentDatabase(), {t}, 1, {secs}, {}, 1000000, 10000000, 100000000, 1000000000)",
+            secs * 3
+        ))?;
+    }
+    Ok(())
+}
+
+fn buffer_flush(conn: &Conn) -> Result<(), String> {
+    conn.exec("OPTIMIZE TABLE otel_traces_buf")?;
+    conn.exec("OPTIMIZE TABLE otel_logs_buf")
+}
+
 pub fn insert(conn: &Conn, mode: InsertMode, table: u8, buf: &[u8]) -> Result<u64, String> {
     let ins = if table == T_TRACES { encode::TRACES_INSERT } else { encode::LOGS_INSERT };
+    let buffered;
+    let ins = if buffer_secs().is_some() {
+        buffered = ins.replacen("INSERT INTO otel_traces ", "INSERT INTO otel_traces_buf ", 1).replacen("INSERT INTO otel_logs ", "INSERT INTO otel_logs_buf ", 1);
+        buffered.as_str()
+    } else {
+        ins
+    };
     match mode {
         InsertMode::StreamRowBinary => conn.stream_insert(ins, "RowBinary", &[buf]),
         InsertMode::QueryRowBinary => {
@@ -80,8 +116,12 @@ pub fn insert(conn: &Conn, mode: InsertMode, table: u8, buf: &[u8]) -> Result<u6
 impl Pipeline {
     pub fn start(cfg: Config) -> Result<Pipeline, String> {
         let conn = Conn::open(cfg.path.as_deref())?;
-        conn.exec(encode::TRACES_DDL)?;
-        conn.exec(encode::LOGS_DDL)?;
+        conn.exec(&encode::ddl(encode::TRACES_DDL))?;
+        conn.exec(&encode::ddl(encode::LOGS_DDL))?;
+        let buffered = buffer_secs();
+        if let Some(secs) = buffered {
+            buffer_ddl(&conn, secs)?;
+        }
         let mut wal = match &cfg.wal {
             Some((p, sync)) => {
                 // recovery: re-insert anything the WAL holds (the spike truncates after replay;
@@ -89,6 +129,11 @@ impl Pipeline {
                 if std::path::Path::new(p).exists() {
                     for (t, _, payload) in Wal::replay(p).map_err(|e| e.to_string())? {
                         insert(&conn, cfg.mode, t, &payload)?;
+                    }
+                    // replayed rows sit in the in-memory Buffer: force them into
+                    // MergeTree before the WAL that still covers them is removed
+                    if buffered.is_some() {
+                        buffer_flush(&conn)?;
                     }
                     std::fs::remove_file(p).map_err(|e| e.to_string())?;
                 }
@@ -138,6 +183,12 @@ impl Pipeline {
                         st.batches.fetch_add(1, Ordering::Relaxed);
                         st.batch_lat_us.lock().unwrap().push((t2 - t0).as_micros() as u64);
                     }
+                    if b.flush_seq > 0 && buffered.is_some() {
+                        if let Err(e) = buffer_flush(&conn) {
+                            eprintln!("buffer flush: {e}");
+                            st.errors.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
                     if b.flush_seq > 0 {
                         let (m, cv) = &*cm;
                         *m.lock().unwrap() = b.flush_seq;
@@ -165,9 +216,14 @@ impl Pipeline {
                 let mut scratch = Vec::with_capacity(4096);
                 let mut last_ship = Instant::now();
                 let mut handled_flush = 0u64;
-                // idle backoff: 200us doubling to 5ms, reset when records arrive.
-                // Polling every 200us regardless costs a noticeable slice of a
-                // core at low record rates.
+                // Wake-up policy. A timed wake-up costs tens of microseconds of
+                // CPU (far more on a VM, where each is a guest exit), while
+                // assembling a record costs ~120 ns. So the drain thread parks
+                // for long stretches: busy passes loop at once, light passes
+                // park 10 ms, empty passes back off to 50 ms. It is unparked
+                // early by flush() and by any producer whose ring passes half
+                // full, so neither flush latency nor ring capacity suffers.
+                recorder::set_drain_thread(Some(std::thread::current()));
                 let mut idle_shift = 0u32;
                 let ship = |asm: &mut Assembler, table: u8, flush_seq: u64| {
                     let spare = empty_rx.recv().unwrap_or_default();
@@ -225,11 +281,17 @@ impl Pipeline {
                         let mut g = recorder::global().rings.lock().unwrap();
                         g.retain(|r| !(r.thread_gone.load(Ordering::Acquire) && r.is_empty()));
                     }
+                    for r in &rings {
+                        r.wake_sent.store(false, Ordering::Relaxed);
+                    }
                     if all_empty {
-                        std::thread::sleep(Duration::from_micros((200u64 << idle_shift).min(5_000)));
-                        idle_shift = (idle_shift + 1).min(5);
+                        std::thread::park_timeout(Duration::from_millis((10u64 << idle_shift).min(50)));
+                        idle_shift = (idle_shift + 1).min(3);
                     } else {
                         idle_shift = 0;
+                        if n < 4096 {
+                            std::thread::park_timeout(Duration::from_millis(10));
+                        }
                     }
                 }
                 drop(full_tx);
@@ -251,6 +313,7 @@ impl Pipeline {
     /// WAL, persisted) when it returns true.
     pub fn flush(&self, timeout: Duration) -> bool {
         let seq = self.flush_req.fetch_add(1, Ordering::AcqRel) + 1;
+        recorder::wake_drain();
         let (m, cv) = &*self.committed;
         let g = m.lock().unwrap();
         let (g, _) = cv.wait_timeout_while(g, timeout, |c| *c < seq).unwrap();
@@ -263,7 +326,9 @@ impl Pipeline {
 
     pub fn stop(mut self) -> Conn {
         self.stop.store(true, Ordering::Release);
+        recorder::wake_drain();
         self.drain.take().unwrap().join().unwrap();
+        recorder::set_drain_thread(None);
         drop(self.reader.lock().unwrap().take());
         self.writer.take().unwrap().join().unwrap()
     }

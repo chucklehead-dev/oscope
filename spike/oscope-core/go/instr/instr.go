@@ -28,6 +28,18 @@ var (
 	started   bool
 )
 
+// Keys are interned once; hot paths then skip the per-call lookup.
+var (
+	kCodeFunction = oscope.NewKey("code.function")
+	kRoute        = oscope.NewKey("http.route")
+	kMethod       = oscope.NewKey("http.request.method")
+	kPath         = oscope.NewKey("url.path")
+	kStatus       = oscope.NewKey("http.response.status_code")
+	kException    = oscope.NewKey("exception.message")
+	kURL          = oscope.NewKey("url.full")
+	kServer       = oscope.NewKey("server.address")
+)
+
 func ensureStarted() bool {
 	startOnce.Do(func() {
 		cfg := oscope.Config{
@@ -81,7 +93,7 @@ func StartSpan(ctx context.Context, name string, extra ...string) (context.Conte
 		return ctx, func(error) {}
 	}
 	ctx, s := oscope.StartSpan(ctx, name, oscope.KindInternal)
-	s.SetString("code.function", name)
+	s.SetStringK(kCodeFunction, name)
 	for i := 0; i+1 < len(extra); i += 2 {
 		s.SetString(extra[i], extra[i+1])
 	}
@@ -124,15 +136,15 @@ func WrapHandler(h http.Handler) http.Handler {
 			rec := recover()
 			if rec != nil {
 				sw.code = 500
-				s.SetString("exception.message", fmt.Sprint(rec))
+				s.SetStringK(kException, fmt.Sprint(rec))
 			}
 			if r.Pattern != "" {
 				s.SetName(r.Pattern)
-				s.SetString("http.route", r.Pattern)
+				s.SetStringK(kRoute, r.Pattern)
 			}
-			s.SetString("http.request.method", r.Method)
-			s.SetString("url.path", r.URL.Path)
-			s.SetInt("http.response.status_code", int64(sw.code))
+			s.SetStringK(kMethod, r.Method)
+			s.SetStringK(kPath, r.URL.Path)
+			s.SetIntK(kStatus, int64(sw.code))
 			if sw.code >= 500 {
 				s.SetStatus(oscope.StatusError)
 			}
@@ -162,14 +174,14 @@ func Do(c *http.Client, req *http.Request) (*http.Response, error) {
 	sc := s.Context()
 	req = req.Clone(ctx)
 	req.Header.Set("traceparent", "00-"+hex.EncodeToString(sc.TraceID[:])+"-"+fmt.Sprintf("%016x", sc.SpanID)+"-01")
-	s.SetString("http.request.method", req.Method)
-	s.SetString("url.full", req.URL.String())
-	s.SetString("server.address", req.URL.Host)
+	s.SetStringK(kMethod, req.Method)
+	s.SetStringK(kURL, req.URL.String())
+	s.SetStringK(kServer, req.URL.Host)
 	resp, err := c.Do(req)
 	if err != nil {
 		s.SetError(err)
 	} else {
-		s.SetInt("http.response.status_code", int64(resp.StatusCode))
+		s.SetIntK(kStatus, int64(resp.StatusCode))
 		if resp.StatusCode >= 500 {
 			s.SetStatus(oscope.StatusError)
 		}

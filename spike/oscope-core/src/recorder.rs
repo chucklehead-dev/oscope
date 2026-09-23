@@ -323,6 +323,20 @@ pub fn submit_raw(rec: &[u8]) -> bool {
     with_local(|l| l.ring.push_with(rec.len(), END_RESERVE * l.depth, |w| w.bytes(rec)))
 }
 
+static DRAIN_THREAD: Mutex<Option<std::thread::Thread>> = Mutex::new(None);
+
+/// Register the drain thread so producers and flush() can unpark it.
+pub fn set_drain_thread(t: Option<std::thread::Thread>) {
+    *DRAIN_THREAD.lock().unwrap() = t;
+}
+
+#[cold]
+pub fn wake_drain() {
+    if let Some(t) = DRAIN_THREAD.lock().unwrap().as_ref() {
+        t.unpark();
+    }
+}
+
 pub fn dropped_total() -> u64 {
     DROPPED.load(Ordering::Relaxed)
 }

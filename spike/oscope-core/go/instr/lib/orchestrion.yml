@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr/lib
+  description: Spans for methods of a third-party library that has no telemetry of its own.
+
+aspects:
+  # Every exported method on *inventory.Store that takes a context gets a span.
+  # The library lives in its own module (example.com/inventory); nothing in it
+  # changes. The same shape works for any dependency: pick an import path and
+  # a receiver type.
+  - id: oscope-inventory-store
+    join-point:
+      all-of:
+        - import-path: example.com/inventory
+        - function-body:
+            function:
+              - receiver: '*example.com/inventory.Store'
+    advice:
+      - prepend-statements:
+          imports:
+            oscopelib: github.com/chucklehead-dev/oscope/spike/oscope-core/go/instr/lib
+          template: |-
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- if $ctx -}}
+            var __oscopeEnd func(error)
+            {{ $ctx }}, __oscopeEnd = oscopelib.Start({{ $ctx }}, "inventory.Store", {{ printf "%q" .Function.Name }})
+            {{ with .Function.ResultOfType "error" -}}
+            defer func() { __oscopeEnd({{ . }}) }()
+            {{- else -}}
+            defer __oscopeEnd(nil)
+            {{- end }}
+            {{- end -}}
