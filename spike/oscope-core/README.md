@@ -7,6 +7,10 @@ recording into the same in-process store through the C ABI.
 web UI and JSON API out) and `oscope-tui`, with Playwright tests, screenshots and GIFs.
 [jolt/](jolt/README.md) is a Jolt binding written directly against the C ABI with
 stock Jolt v0.8.6, and a simulated LLM agent that records Langfuse-shaped traces.
+[../otel-chdb/](../otel-chdb/README.md) is an OpenTelemetry Collector exporter
+that writes the same schema into in-process chDB through chdb-go, with a chdb-go
+fork that adds a binary-safe streaming insert, and benchmarks against the contrib
+clickhouse exporter on a real ClickHouse server.
 
 A throwaway Rust spike that measures the proposed design against chDB 26.7.3. It covers:
 
