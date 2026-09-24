@@ -1,0 +1,13 @@
+{
+  "name": "oscope-server-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --project=e2e",
+    "docs": "playwright test --project=docs && node scripts/make-gif.js && node scripts/make-gif.js test-results/gif-frames-tui ../docs/oscope-tui.gif"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "gifenc": "1.0.3",
+    "pngjs": "7.0.0"
+  }
+}

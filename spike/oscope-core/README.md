@@ -3,6 +3,8 @@
 The design this spike measures is in [design.html](design.html). This directory is standalone Rust; nothing in the Jolt build or tests uses it.
 [go/](go/README.md) is a Go app instrumented at compile time with Orchestrion,
 recording into the same in-process store through the C ABI.
+[server/](server/README.md) is the `oscope` binary (OTLP/HTTP JSON in, HyperDX-style
+web UI and JSON API out) and `oscope-tui`, with Playwright tests, screenshots and GIFs.
 [jolt/](jolt/README.md) is a Jolt binding written directly against the C ABI with
 stock Jolt v0.8.6, and a simulated LLM agent that records Langfuse-shaped traces.
 

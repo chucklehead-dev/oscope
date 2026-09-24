@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "server"]
+
 [package]
 name = "oscope-core"
 version = "0.0.1"

@@ -170,3 +170,96 @@ pub fn decode_traces(body: &[u8], out: &mut Vec<u8>, scratch: &mut Vec<u8>) -> R
     }
     Ok(rows)
 }
+
+// ---------------------------------------------------------------- logs
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogsReq<'a> {
+    #[serde(borrow, default)]
+    resource_logs: Vec<ResourceLogs<'a>>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceLogs<'a> {
+    #[serde(borrow, default)]
+    resource: Option<Resource<'a>>,
+    #[serde(borrow, default)]
+    scope_logs: Vec<ScopeLogs<'a>>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScopeLogs<'a> {
+    #[serde(borrow, default)]
+    scope: Option<Scope<'a>>,
+    #[serde(borrow, default)]
+    log_records: Vec<LogRecord<'a>>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LogRecord<'a> {
+    #[serde(borrow, default)]
+    time_unix_nano: Option<NumOrStr<'a>>,
+    #[serde(borrow, default)]
+    observed_time_unix_nano: Option<NumOrStr<'a>>,
+    #[serde(default)]
+    severity_number: u8,
+    #[serde(borrow, default)]
+    severity_text: Cow<'a, str>,
+    #[serde(borrow, default)]
+    body: Option<AnyValue<'a>>,
+    #[serde(borrow, default)]
+    attributes: Vec<KeyValue<'a>>,
+    #[serde(borrow, default)]
+    trace_id: Cow<'a, str>,
+    #[serde(borrow, default)]
+    span_id: Cow<'a, str>,
+    #[serde(default)]
+    flags: u32,
+}
+
+/// Decode one OTLP/HTTP JSON ExportLogsServiceRequest, append otel_logs
+/// RowBinary rows (LOGS_INSERT column order) to `out`. Returns rows appended.
+pub fn decode_logs(body: &[u8], out: &mut Vec<u8>, scratch: &mut Vec<u8>) -> Result<usize, String> {
+    let req: LogsReq = serde_json::from_slice(body).map_err(|e| e.to_string())?;
+    let mut rows = 0;
+    for rl in &req.resource_logs {
+        let rattrs: &[KeyValue] = rl.resource.as_ref().map(|r| r.attributes.as_slice()).unwrap_or(&[]);
+        let service = rattrs
+            .iter()
+            .find(|kv| kv.key == "service.name")
+            .and_then(|kv| kv.value.string_value.as_deref())
+            .unwrap_or("unknown_service");
+        scratch.clear();
+        rb_map(scratch, rattrs);
+        for sl in &rl.scope_logs {
+            let scope = sl.scope.as_ref().map(|s| s.name.as_ref()).unwrap_or("");
+            for r in &sl.log_records {
+                let ts = r
+                    .time_unix_nano
+                    .as_ref()
+                    .map(|t| t.as_u64())
+                    .filter(|&t| t != 0)
+                    .or_else(|| r.observed_time_unix_nano.as_ref().map(|t| t.as_u64()))
+                    .unwrap_or(0);
+                out.extend_from_slice(&(ts as i64).to_le_bytes());
+                rb_str(out, r.trace_id.as_bytes());
+                rb_str(out, r.span_id.as_bytes());
+                out.push((r.flags & 0xff) as u8);
+                let text: &str = if r.severity_text.is_empty() { crate::encode::severity_str(r.severity_number) } else { &r.severity_text };
+                rb_str(out, text.as_bytes());
+                out.push(r.severity_number);
+                rb_str(out, service.as_bytes());
+                match &r.body {
+                    Some(b) => rb_any(out, b),
+                    None => out.push(0),
+                }
+                out.extend_from_slice(scratch);
+                rb_str(out, scope.as_bytes());
+                rb_map(out, &r.attributes);
+                rows += 1;
+            }
+        }
+    }
+    Ok(rows)
+}
