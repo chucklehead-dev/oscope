@@ -245,6 +245,21 @@ pub fn span_end(span: SpanId, status: u8) {
     })
 }
 
+/// End `span` as Error if it is still this thread's innermost open span; a
+/// no-op once span_end has run. Lets a host guard a span with a cheap
+/// `finally` instead of a catch: normal completion calls span_end, the
+/// finally calls span_abort, and only an escaping exception reaches it open.
+pub fn span_abort(span: SpanId) {
+    if span == 0 {
+        return;
+    }
+    let open = with_local(|l| l.depth > 0 && l.stack[l.depth - 1].1 == span);
+    if open {
+        span_attr(span, intern(b"exception.escaped"), AttrVal::Bool(true));
+        span_end(span, 2);
+    }
+}
+
 /// One-shot record of a finished span: one ring reservation, one FFI crossing.
 pub struct SpanRec<'a> {
     pub trace_id: [u8; 16],

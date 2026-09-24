@@ -116,6 +116,96 @@ pub unsafe extern "C" fn osc_intern(s: osc_str) -> u32 {
     recorder::intern(s.bytes())
 }
 
+// (ptr, len) variants of every entry point that takes osc_str by value, for
+// FFIs that cannot pass structs by value.
+
+#[no_mangle]
+pub unsafe extern "C" fn osc_intern_n(ptr: *const u8, len: usize) -> u32 {
+    osc_intern(osc_str { ptr, len })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn osc_span_attr_str_n(span: u64, key: u32, ptr: *const u8, len: usize) {
+    osc_span_attr_str(span, key, osc_str { ptr, len })
+}
+
+// NUL-terminated variants: hosts whose FFI converts strings natively (Chez,
+// and so Jolt, via :string) pay less than building (ptr, len) by hand.
+
+#[no_mangle]
+pub unsafe extern "C" fn osc_intern_cstr(s: *const c_char) -> u32 {
+    let b = if s.is_null() { &[][..] } else { CStr::from_ptr(s).to_bytes() };
+    recorder::intern(b)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn osc_span_attr_cstr(span: u64, key: u32, s: *const c_char) {
+    let b = if s.is_null() { &[][..] } else { CStr::from_ptr(s).to_bytes() };
+    recorder::span_attr(span, key, AttrVal::Str(b))
+}
+
+unsafe fn cstr_bytes<'a>(s: *const c_char) -> &'a [u8] {
+    if s.is_null() { &[] } else { CStr::from_ptr(s).to_bytes() }
+}
+
+/// osc_start without a struct: "" means unset for the string arguments and 0
+/// means default for the numbers.
+#[no_mangle]
+pub unsafe extern "C" fn osc_start_cstr(db_path: *const c_char, wal_path: *const c_char, wal_fsync: u8, service_name: *const c_char, batch_rows: u32, flush_interval_ms: u32, ring_bytes: u32) -> i32 {
+    let none_if_empty = |p: *const c_char| if p.is_null() || *p == 0 { std::ptr::null() } else { p };
+    osc_start(&osc_config {
+        db_path: none_if_empty(db_path),
+        wal_path: none_if_empty(wal_path),
+        wal_fsync,
+        service_name: none_if_empty(service_name),
+        batch_rows,
+        flush_interval_ms,
+        ring_bytes,
+    })
+}
+
+/// A log correlated with this thread's innermost open span, with up to three
+/// string attributes (key 0 = absent). For FFIs without struct arrays.
+#[no_mangle]
+pub unsafe extern "C" fn osc_log_cstr3(severity: u8, body: *const c_char, k1: u32, v1: *const c_char, k2: u32, v2: *const c_char, k3: u32, v3: *const c_char) -> i32 {
+    let mut attrs: [(u32, AttrVal); 3] = [(0, AttrVal::Bool(false)); 3];
+    let mut n = 0;
+    for (k, v) in [(k1, v1), (k2, v2), (k3, v3)] {
+        if k != 0 {
+            attrs[n] = (k, AttrVal::Str(cstr_bytes(v)));
+            n += 1;
+        }
+    }
+    if recorder::log(severity, cstr_bytes(body), &attrs[..n]) { 0 } else { -1 }
+}
+
+/// Run a read query; answers a NUL-terminated result (free with
+/// osc_free_text) or NULL on error.
+#[no_mangle]
+pub unsafe extern "C" fn osc_query_text(sql: *const c_char, format: *const c_char) -> *mut c_char {
+    let b = cstr_bytes(sql);
+    let mut out: *mut u8 = std::ptr::null_mut();
+    let mut len = 0usize;
+    if osc_query(osc_str { ptr: b.as_ptr(), len: b.len() }, format, &mut out, &mut len) != 0 {
+        return std::ptr::null_mut();
+    }
+    let v = std::slice::from_raw_parts(out, len).to_vec();
+    osc_free(out, len);
+    std::ffi::CString::new(v.into_iter().filter(|&c| c != 0).collect::<Vec<u8>>()).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn osc_free_text(p: *mut c_char) {
+    if !p.is_null() {
+        drop(std::ffi::CString::from_raw(p));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn osc_query_n(sql: *const u8, sql_len: usize, format: *const c_char, out: *mut *mut u8, out_len: *mut usize) -> i32 {
+    osc_query(osc_str { ptr: sql, len: sql_len }, format, out, out_len)
+}
+
 #[no_mangle]
 pub extern "C" fn osc_now_ns() -> u64 {
     recorder::now_ns()
@@ -145,6 +235,12 @@ pub extern "C" fn osc_span_attr_bool(span: u64, key: u32, v: u8) {
 #[no_mangle]
 pub extern "C" fn osc_span_end(span: u64, status: u8) {
     recorder::span_end(span, status)
+}
+
+/// End the span as Error if it is still open on this thread (see recorder::span_abort).
+#[no_mangle]
+pub extern "C" fn osc_span_abort(span: u64) {
+    recorder::span_abort(span)
 }
 
 /// One crossing per finished span. For hosts where FFI calls are expensive.

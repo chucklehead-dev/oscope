@@ -50,6 +50,9 @@ void     osc_span_attr_i64(uint64_t span, uint32_t key, int64_t v);
 void     osc_span_attr_f64(uint64_t span, uint32_t key, double v);
 void     osc_span_attr_bool(uint64_t span, uint32_t key, uint8_t v);
 void     osc_span_end(uint64_t span, uint8_t status);
+/* ends the span as Error if still this thread's innermost open span, else a
+   no-op: call from a finally so an escaping exception still closes it */
+void     osc_span_abort(uint64_t span);
 
 /* one-shot API: one crossing per finished span */
 int32_t  osc_span_record(const osc_span_rec *rec);
@@ -66,6 +69,24 @@ int32_t  osc_log(uint8_t severity, osc_str body, const osc_attr *attrs, uint32_t
 int64_t  osc_submit(const uint8_t *buf, size_t len);
 /* call before osc_start in hosts with their own signal handling (Go, JVM) */
 void     osc_set_engine_signal_handlers(uint8_t enabled);
+
+/* (ptr, len) variants for FFIs that cannot pass structs by value */
+uint32_t osc_intern_n(const uint8_t *p, size_t n);
+void     osc_span_attr_str_n(uint64_t span, uint32_t key, const uint8_t *p, size_t n);
+int32_t  osc_query_n(const uint8_t *sql, size_t n, const char *format, uint8_t **out, size_t *out_len);
+
+/* NUL-terminated variants for FFIs that convert strings natively */
+uint32_t osc_intern_cstr(const char *s);
+void     osc_span_attr_cstr(uint64_t span, uint32_t key, const char *s);
+
+/* struct-free conveniences: "" = unset, 0 = default, key 0 = absent attribute */
+int32_t  osc_start_cstr(const char *db_path, const char *wal_path, uint8_t wal_fsync,
+                        const char *service_name, uint32_t batch_rows, uint32_t flush_interval_ms,
+                        uint32_t ring_bytes);
+int32_t  osc_log_cstr3(uint8_t severity, const char *body, uint32_t k1, const char *v1,
+                       uint32_t k2, const char *v2, uint32_t k3, const char *v3);
+char    *osc_query_text(const char *sql, const char *format);  /* NULL on error */
+void     osc_free_text(char *p);
 
 /* read side, for an embedded UI in any language */
 int32_t  osc_query(osc_str sql, const char *format, uint8_t **out, size_t *out_len);

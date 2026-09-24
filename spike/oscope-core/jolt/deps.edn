@@ -1,0 +1,5 @@
+{:paths ["src"]
+ :jolt/min-version "0.8.6"
+ :aliases {:demo  {:main-opts ["-m" "agent.demo"]}
+           :bench {:main-opts ["-m" "agent.bench"]}
+           :check {:main-opts ["-m" "oscope.check"]}}}

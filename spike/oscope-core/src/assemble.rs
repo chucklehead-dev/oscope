@@ -20,6 +20,13 @@ struct OpenSpan {
     vals: Vec<u8>,
 }
 
+/// A key id the interner never issued (a host bug) must not take the process
+/// down: record it under "?" instead of indexing past the table.
+#[inline]
+fn key_name(names: &[Arc<str>], k: u32) -> &str {
+    names.get(k as usize).map(|a| a.as_ref()).unwrap_or("?")
+}
+
 pub struct Assembler {
     open: HashMap<u64, OpenSpan>,
     pool: Vec<OpenSpan>,
@@ -78,7 +85,7 @@ impl Assembler {
         }
         let names = &self.names;
         let mut it = s.attrs.iter().map(|&(k, off, len)| {
-            (names[k as usize].as_ref(), &s.vals[off as usize..(off + len) as usize])
+            (key_name(names, k), &s.vals[off as usize..(off + len) as usize])
         });
         self.traces.push(
             SpanRow {
@@ -184,7 +191,7 @@ impl Assembler {
                 let names = &self.names;
                 let vals = &self.tmp_vals;
                 let mut it = self.tmp_attrs.iter().map(|&(k, off, len)| {
-                    (names[k as usize].as_ref(), &vals[off as usize..(off + len) as usize])
+                    (key_name(names, k), &vals[off as usize..(off + len) as usize])
                 });
                 self.logs.push(
                     LogRow { ts_ns: ts, trace_id: &trace, span_id: span, severity: sev, body, attrs: &mut it },
