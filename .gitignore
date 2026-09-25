@@ -24,3 +24,4 @@
 *.chdb
 *.parquet
 *.arrow
+__pycache__/
