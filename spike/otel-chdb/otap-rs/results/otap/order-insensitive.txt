@@ -1,4 +1,0 @@
-traces rows in otapgrpc not in direct (maps sorted, row order ignored): 0
-traces rows in direct not in otapgrpc (maps sorted, row order ignored): 0
-logs rows in otapgrpc not in direct (maps sorted, row order ignored): 0
-logs rows in direct not in otapgrpc (maps sorted, row order ignored): 0

@@ -1,4 +1,0 @@
-.upstream
-target/
-*.parquet
-*.arrow
