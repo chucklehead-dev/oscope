@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Align the embedded native workflow's compiler assertion with the immutable
+  chDB installer it actually runs. Reject independently mismatched source and
+  version declarations; this does not upgrade the compiler or qualify throughput.
+
 - Update standalone and embedded chDB/exporter pins and their direct DB
   provider together, selecting the [reviewed DB callback-domain provider](https://github.com/casselc/db/pull/8)
   in both application graphs. Its scalar-classification benefit requires a

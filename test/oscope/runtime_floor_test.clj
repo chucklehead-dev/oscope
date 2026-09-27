@@ -42,6 +42,25 @@
                    (= 1 (count values))))
       (first values))))
 
+(defn- embedded-compiler-selection? [workflow]
+  ;; Independently checked against chDB 7ae5116's immutable installer, not
+  ;; inferred from this workflow's own declarations or the local executable.
+  (and (= "57e591d4d6481c5536858575ffc006cf5a41adbf"
+          (workflow-pin workflow "PINNED_JOLT_SOURCE_SHA"))
+       (= "jolt v0.8.6-37-g57e591d4"
+          (workflow-pin workflow "PINNED_JOLT_VERSION"))))
+
+(deftest embedded-compiler-selection-matches-the-qualified-installer
+  (let [workflow (slurp ".github/workflows/embedded-native-profile.yml")]
+    (is (embedded-compiler-selection? workflow))
+    (is (not (embedded-compiler-selection?
+              (str/replace workflow
+                           "57e591d4d6481c5536858575ffc006cf5a41adbf"
+                           "bf8a5dde7bebb5658d218e9757ab1df0aa9c3b95"))))
+    (is (not (embedded-compiler-selection?
+              (str/replace workflow "jolt v0.8.6-37-g57e591d4"
+                           "jolt v0.8.6-599-gbf8a5dde"))))))
+
 (def ^:private runtime-pin-names
   ["QUALIFIED_RUNTIME_RUN_ID" "QUALIFIED_RUNTIME_RUN_ATTEMPT"
    "QUALIFIED_RUNTIME_ARTIFACT_ID" "QUALIFIED_RUNTIME_WORKFLOW_SHA"
