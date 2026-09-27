@@ -11,6 +11,10 @@
   The data.json selection is retained. This is not a throughput or remote-delivery
   qualification claim.
 
+- Keep typed-schema observation tests aligned with the exporter's five supported
+  physical tables, including sums and histograms. The independent expected table
+  set still rejects missing, extra and repeated observations.
+
 - Add the separate Oscope #119 Durable time-provider qualification fixture:
   independently resolved producer and reader roots pin both logical time
   coordinates to one source, assert the physical `.clj`/`.cljc` union before
