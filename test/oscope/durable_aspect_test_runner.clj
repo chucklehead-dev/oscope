@@ -16,6 +16,16 @@
    (var oscope.durable-integration-test/corrupt-head-fails-before-ingress)
    (var oscope.durable-integration-test/standalone-server-flushes-through-durable-jdbc-adapter)])
 
+(defn- checked-woven-phase [output]
+  ;; Child output may contain native diagnostics or synthetic payloads. Only
+  ;; these literal milestones may cross into the public CI log.
+  (or (last (keep #(second
+                    (re-matches
+                     #":durable-woven-phase (fixture-start|fixture-pass|history-pass|telemetry-pass|privacy-pass|reader-pass)"
+                     %))
+                  (str/split-lines output)))
+      "none"))
+
 (defn prepare-fixture! [index]
   (let [v (get woven-fixtures index)
         actual (set (for [[name v] (ns-publics 'oscope.durable-integration-test)
@@ -74,13 +84,14 @@
                                    {:timeout-ms 60000 :settlement-ms 5000})
                 terminal? (and (integer? (:exit result))
                                (not= false (:child/terminal? result)))
-                receipt (checked-woven-receipt
-                         result (if (and terminal? (.exists out)) (slurp out) "") index)
+                output (if (and terminal? (.exists out)) (slurp out) "")
+                receipt (checked-woven-receipt result output index)
                 totals (if (:valid? receipt)
                          (merge-with + totals (:counts receipt)) totals)]
             (println :durable-woven-child index :exit (:exit result)
                      :valid (:valid? receipt) :settled (:settled? receipt)
-                     :qualified (:ok? receipt))
+                     :qualified (:ok? receipt)
+                     :phase (checked-woven-phase output))
             (flush)
             (if (:settled? receipt)
               (recur (inc index) totals (and qualified? (:ok? receipt)))
@@ -119,15 +130,21 @@
           :expected-publication-kinds
           [:checkpoint :checkpoint :wal :wal :wal :wal :wal]
           :require-renewal? true})
+        _ (do (println :durable-woven-phase "history-pass") (flush))
         [spans durations] (telemetry/validate! exporter handle private-values)
+        _ (do (println :durable-woven-phase "telemetry-pass") (flush))
         printed (pr-str [events spans durations])]
     (doseq [private-value private-values]
       (when (.contains printed private-value)
         (throw (ex-info "oscope Durable diagnostics retained private data"
                         {:secret-class :durable-private-data}))))
+    (println :durable-woven-phase "privacy-pass")
+    (flush)
     (println :durable-woven-history "fixture" 2 (count commands) (count spans))
     (flush)
-    (validate-reader-receipt!)))
+    (validate-reader-receipt!)
+    (println :durable-woven-phase "reader-pass")
+    (flush)))
 
 (defn- run-fixture! [index]
   (let [v (prepare-fixture! index)
@@ -142,11 +159,15 @@
     (try
       (println :durable-native-executed "fixture" index)
       (flush)
+      (println :durable-woven-phase "fixture-start")
+      (flush)
       (binding [history/*journal* journal
                 history/*context-id* :oscope-durable-integration]
         (test/test-vars [v]))
       (let [{:keys [test pass fail error]} @test/counters]
         (when (and (= index 2) (= test 1) (pos? pass) (zero? (+ fail error)))
+          (println :durable-woven-phase "fixture-pass")
+          (flush)
           (validate-standalone! journal exporter handle private-values)))
       (finally (sdk/shutdown! handle)))
     (let [{:keys [test pass fail error]} @test/counters
