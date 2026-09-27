@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Keep the pure application-to-Durable correspondence aligned with the
+  exporter's atomic per-physical-insert writer requests. A metric request now
+  observes gauge/sum/histogram confirmations separately, but still has only
+  one logical response after all three and the server's cadence barrier.
+  Preserve early-response, per-insert-completion, failed-publication,
+  wrong-cadence and fresh-reader-receipt mutants. The Durable CI path filter
+  now includes both correspondence files so those changes cannot skip its gate.
+  This is a categorical fixture, not an S3/native grouped-transaction claim
+  (Ref #136).
+
 - Align the embedded native workflow's compiler assertion with the immutable
   chDB installer it actually runs. Reject independently mismatched source and
   version declarations; this does not upgrade the compiler or qualify throughput.

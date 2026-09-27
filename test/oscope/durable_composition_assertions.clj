@@ -1,13 +1,17 @@
 (ns oscope.durable-composition-assertions
   "Pure application-to-publication correspondence; not a Durable CAS model.")
 
+(defn- physical-tables [batch]
+  (case batch :traces [:traces] :logs [:logs]
+        :metrics [:gauge :sum :histogram]))
+
 (defn publication-projection
   "Derive publications from startup owners and logical requests, never from
   the publication transcript. Each fixture request carries nonempty input."
   [{:keys [startup-owners logical-batches checkpoint-every]}]
   (into (vec (repeat (count startup-owners) :checkpoint))
-        (mapcat (fn [[index _]]
-                  (cond-> [:wal]
+        (mapcat (fn [[index batch]]
+                  (cond-> (vec (repeat (count (physical-tables batch)) :wal))
                     (zero? (mod (inc index) checkpoint-every))
                     (conj :checkpoint)))
                 (map-indexed vector logical-batches))))
@@ -47,7 +51,10 @@
                    (or (not (contains? observation :outcome))
                        (contains? #{:success :failure} outcome))
                    (case event
-                     (:barrier-start :barrier-end) (contains? #{:checkpoint :flush} kind)
+                     (:barrier-start :barrier-end)
+                     (contains? (if (= owner :exporter)
+                                  #{:checkpoint :flush :atomic}
+                                  #{:checkpoint :flush}) kind)
                      :publication (contains? #{:checkpoint :wal} kind)
                      (:exporter-start :schema :ingress) (= :startup batch)
                      :application (and (contains? #{:traces :logs :metrics} batch)
@@ -112,25 +119,31 @@
                      (select :publication batch))
             checkpoint? (zero? (mod (inc ordinal) checkpoint-every))
             responses (select :response batch)
-            expected-tables (case batch :traces [:traces] :logs [:logs]
-                                  :metrics [:gauge :sum :histogram])]
+            expected-tables (physical-tables batch)
+            physical-count (count expected-tables)]
         (when-not (and (= (frequencies expected-tables)
                          (frequencies (map #(get-in % [1 :table]) inserts)))
                        (= 1 (count applications)) (= 1 (count requests))
-                       (= 1 (count exporter-start)) (= 1 (count exporter))
-                       ;; Exporter flush always publishes this logical request.
-                       ;; The server then publishes an additional checkpoint on
-                       ;; cadence; treating both as one publication was an
-                       ;; impossible constraint for a scheduled checkpoint.
-                       (= 1 (count exporter-publications))
-                       (= :wal (get-in exporter-publications [0 1 :kind]))
+                       (= physical-count (count exporter-start))
+                       (= physical-count (count exporter))
+                       ;; Each physical insert has its own atomic writer ACK.
+                       ;; The logical request completes once, after all of them.
+                       (= physical-count (count exporter-publications))
                        (= 1 (count server-start)) (= 1 (count server))
                        (< (ffirst applications) (ffirst requests))
-                       (< (ffirst requests) (ffirst inserts))
-                       (< (first (last inserts)) (ffirst exporter-start))
-                       (< (ffirst exporter-start) (ffirst exporter-publications))
-                       (< (ffirst exporter-publications) (ffirst exporter))
-                       (< (ffirst exporter) (ffirst server-start))
+                       (< (ffirst requests) (ffirst exporter-start))
+                       (every? true?
+                               (map (fn [start insert publication end]
+                                      (and (= :atomic (get-in start [1 :kind]))
+                                           (= :atomic (get-in end [1 :kind]))
+                                           (= :wal (get-in publication [1 :kind]))
+                                           (< (first start) (first insert)
+                                              (first publication) (first end))))
+                                    exporter-start inserts exporter-publications exporter))
+                       (every? true?
+                               (map (fn [end start] (< (first end) (first start)))
+                                    (butlast exporter) (rest exporter-start)))
+                       (< (first (last exporter)) (ffirst server-start))
                        (< (ffirst server-start) (ffirst server)))
           (reject! :logical-batch-boundaries))
         (when-not (and (= 1 (count responses))

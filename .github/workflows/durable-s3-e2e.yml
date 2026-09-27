@@ -36,6 +36,8 @@ on:
       - test/oscope/durable_aspect_report_test.clj
       - test/oscope/durable_history_assertions.clj
       - test/oscope/durable_history_assertions_test.clj
+      - test/oscope/durable_composition_assertions.clj
+      - test/oscope/durable_composition_assertions_test.clj
       - test/oscope/durable_integration_test.clj
       - test/oscope/durable_s3_aspect_test_runner.clj
       - test/oscope/durable_telemetry_assertions.clj
@@ -74,6 +76,8 @@ on:
       - test/oscope/durable_aspect_report_test.clj
       - test/oscope/durable_history_assertions.clj
       - test/oscope/durable_history_assertions_test.clj
+      - test/oscope/durable_composition_assertions.clj
+      - test/oscope/durable_composition_assertions_test.clj
       - test/oscope/durable_integration_test.clj
       - test/oscope/durable_s3_aspect_test_runner.clj
       - test/oscope/durable_telemetry_assertions.clj
