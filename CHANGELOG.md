@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Update standalone and embedded chDB/exporter pins and their direct DB
+  provider together, carrying the host-table callback-domain optimization into
+  both application graphs. Exact-source and independent time-provider fixtures
+  follow the same pins; historical duplicate-provider controls remain in place.
+  Align OTel with the exporter's descendant revision, retaining prior SDK work
+  plus its scalar-normalization fast path and encodable-gauge admission fix.
+  The data.json selection is retained. This is not a throughput or remote-delivery
+  qualification claim.
+
 - Add the separate Oscope #119 Durable time-provider qualification fixture:
   independently resolved producer and reader roots pin both logical time
   coordinates to one source, assert the physical `.clj`/`.cljc` union before

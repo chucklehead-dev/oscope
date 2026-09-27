@@ -23,8 +23,8 @@ precedence; this profile is not an override mechanism.
 ## Qualification boundary
 
 The checked-in profile is the dependency authority. At this revision it pins
-`casselc/otel` `e876d2eb`, `jolt-chdb` `adaa779e`,
-`jolt-otel-clickhouse` `04b1618f`, `casselc/db` `9e8c82a5`, and
+`casselc/otel` `8110c12f`, `jolt-chdb` `7ae51162`,
+`jolt-otel-clickhouse` `1da116d2`, `casselc/db` `cb06349c`, and
 `casselc/data.json` `97298fd8`; the fixture asserts that resolved graph. Do
 not copy older pin values from issue history or from an application's distinct
 resolved graph.
@@ -87,7 +87,7 @@ does not establish constructor acquisition or face-transfer correctness.
 
 The checked-in `test/fixtures/minimal-embedded-app` fixture resolves the
 profile and asserts the exact dependency revisions. Its application coordinate
-selects merged `casselc/db` `9e8c82a5` under the canonical `jolt-lang/db`
+selects merged `casselc/db` `cb06349c` under the canonical `jolt-lang/db`
 key and optimized `casselc/data.json` `97298fd8`. Root and embedded-profile
 dependencies explicitly select the same pair, so the old transitive database
 cannot select a second time provider by resolution order. Historical DB `96324713`
@@ -163,9 +163,9 @@ it is not the as-pinned `22be90d` graph. The runnable minimal application uses
 the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
-`e876d2ebba211b4831993e1fb7fb480ea547cc71`, jolt-chDB
-`adaa779e1af3e58f1d7a552d79d074630bfbf815`, and jolt-otel-clickhouse
-`04b1618fda22372f5698e0baf7c8277dcf8451ff`. OTel's provider-convergence merge
+`8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2`, jolt-chDB
+`7ae5116269ec94e6458e4a9dc0d447461d0a5dfb`, and jolt-otel-clickhouse
+`1da116d24172e7c91120e60b279098b9b40c6c6d`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration
