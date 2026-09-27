@@ -5,6 +5,7 @@
 (def ^:private expected
   {:durable/acquire 'jdbc.chdb.durable.control/acquire!
    :durable/publish-wal 'jdbc.chdb.durable.control/publish-wal-bytes!
+   :durable/publish-wal-file 'jdbc.chdb.durable.control/publish-wal-file!
    :durable/publish-checkpoint
    'jdbc.chdb.durable.control/publish-checkpoint-file!
    :durable/commit-reference 'jdbc.chdb.durable.control/commit-reference!
@@ -34,4 +35,4 @@
                      (= :control-v1 (:contract consumer)))
         (throw (ex-info "Durable fault join point was not woven exactly once"
                         {:oscope.durable-fault/error true :aspect id}))))
-    (println "PASS: Durable fault control advice woven at six exact join points")))
+    (println "PASS: Durable fault control advice woven at seven exact join points")))

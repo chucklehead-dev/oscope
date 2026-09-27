@@ -46,6 +46,7 @@
     (fn [exporter handle]
       (let [cases [[:durable/acquire {:status :acquired} "acquire"]
                    [:durable/publish-wal {:status :published} "publish"]
+                   [:durable/publish-wal-file {:status :published} "publish"]
                    [:durable/publish-checkpoint {:status :reconciled}
                     "checkpoint-publish"]
                    [:durable/commit-reference {:status :committed}
@@ -54,7 +55,8 @@
                    [:durable/release {:status :committed} "release-attempt"]]
             private-args [{:secret-key "private-credential"}
                           {:owner "private-owner"}
-                          (.getBytes "private-payload" "UTF-8")]]
+                          (.getBytes "private-payload" "UTF-8")
+                          "/nonexistent/private-wal-path"]]
         (doseq [[operation result _] cases]
           (is (identical?
                result
@@ -72,6 +74,9 @@
           (is (every? bounded-attributes? spans))
           (is (= 1 (count durations)))
           (is (= 6 (count points)))
+          (is (= 2 (:count (first (filter #(= "publish"
+                                              (attribute % :jolt.durable.operation.name))
+                                        points)))))
           (is (every? bounded-attributes? points))
           (is (= #{"success" "reconciled"}
                  (set (map #(attribute % :jolt.durable.operation.outcome)
@@ -81,7 +86,8 @@
                                               (attribute % :jolt.durable.operation.outcome))
                                           points))
                             :jolt.durable.failure.category)))
-          (doseq [secret ["private-credential" "private-owner" "private-payload"]]
+          (doseq [secret ["private-credential" "private-owner" "private-payload"
+                          "private-wal-path"]]
             (is (not (.contains serialized secret)))))))))
 
 (deftest fenced-and-ambiguous-errors-use-closed-categories

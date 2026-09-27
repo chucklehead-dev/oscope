@@ -126,7 +126,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: chucklehead-dev/jolt-aspect-packs
-          ref: 3773a67801bdcbd63c6484f95fa07a4b8afddb72
+          ref: d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c
           path: .qualification/jolt-aspect-packs
           persist-credentials: false
       - name: Checkout aspect-capable Jolt compiler

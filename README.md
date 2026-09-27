@@ -1100,7 +1100,7 @@ env JOLT_CHDB_LIB=/path/to/libchdb.so \
 - `chucklehead-dev/jolt-otel-clickhouse` `14a2998a27f64a9bff329811461be9157a00c849`
 - `chucklehead-dev/jolt-otel-viewer` `5723a7c28c3bb3ae7cb27f9856b90463e77df523`
 - `chucklehead-dev/jolt-chdb` `dbc2db22130c7e783739c79bc24691dcbba21906`
-- `chucklehead-dev/jolt-aspect-packs` `3773a67801bdcbd63c6484f95fa07a4b8afddb72`
+- `chucklehead-dev/jolt-aspect-packs` `d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c`
 - `casselc/jolt` `f00bc93bdd8274b14087b74272aadeffb60e0447`
   (woven Durable compiler, `jolt v0.8.6-5-gf00bc93b`)
 - `casselc/jolt-http` `35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8`

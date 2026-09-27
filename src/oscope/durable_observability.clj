@@ -23,6 +23,7 @@
 (def ^:private operation-names
   {:durable/acquire "acquire"
    :durable/publish-wal "publish"
+   :durable/publish-wal-file "publish"
    :durable/publish-checkpoint "checkpoint-publish"
    :durable/commit-reference "commit-attempt"
    :durable/renew "renew-attempt"

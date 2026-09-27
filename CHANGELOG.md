@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Observe the current Durable writer's staged-file WAL publications as
+  `publish` spans and duration points, alongside byte publications. Woven
+  fixtures select chDB's target-owned seven-operation manifest, and report
+  checks require both routes. Advice never reads or logs the spool path;
+  stored WAL and captured telemetry are unchanged.
+
 - Keep the S3, AWS, and Langfuse native qualification checkouts on the same
   chDB revision selected by Oscope. The woven local-history fixture now
   expects five confirmed physical inserts after its two startup checkpoints,

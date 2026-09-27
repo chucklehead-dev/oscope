@@ -11,7 +11,7 @@
 (def ^:private woven-qualification-driver-sha
   "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private aspect-sha
-  "3773a67801bdcbd63c6484f95fa07a4b8afddb72")
+  "d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c")
 (def ^:private aspect-compiler-sha
   "f00bc93bdd8274b14087b74272aadeffb60e0447")
 

@@ -103,7 +103,7 @@
    :extra-deps
    {io.github.chucklehead-dev/jolt-aspect-packs
     {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
-     :git/sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"}}
+     :git/sha "d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c"}}
    :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :test-durable-dev
@@ -116,7 +116,7 @@
    :extra-deps
    {io.github.chucklehead-dev/jolt-aspect-packs
     {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
-     :git/sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"}}
+     :git/sha "d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c"}}
    :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :durable-server-dev
