@@ -49,7 +49,7 @@
         ;; README retains the historical qualification receipt; live CI uses
         ;; the current driver/native qualification coordinate independently.
         historical-durable-sha "dbc2db22130c7e783739c79bc24691dcbba21906"
-        live-driver-sha "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774"
+        live-driver-sha "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04"
         aspect-sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"
         compiler-sha "f00bc93bdd8274b14087b74272aadeffb60e0447"
         compiler-version "jolt v0.8.6-5-gf00bc93b"

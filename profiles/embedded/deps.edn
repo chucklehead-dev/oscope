@@ -9,14 +9,14 @@
          :git/sha "8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "7ae5116269ec94e6458e4a9dc0d447461d0a5dfb"}
+         :git/sha "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04"}
         ;; A direct pin prevents the old transitive DB time provider winning.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
          :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "1da116d24172e7c91120e60b279098b9b40c6c6d"}
+         :git/sha "dfbc9ea64962b25c2f38912daa1c5a7b7339deaf"}
         metosin/malli {:mvn/version "0.20.1"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"

@@ -14,7 +14,7 @@ event_count=$(awk '
 [[ $event_count -eq 1 ]]
 grep -Fxq '    environment: langfuse-interop' "$workflow"
 [[ $(grep -Fc '          persist-credentials: false' "$workflow") -eq 2 ]]
-grep -Fxq '          ref: 19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774' "$workflow"
+grep -Fxq '          ref: 3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04' "$workflow"
 grep -Fxq '          echo "JOLT_BIN=$QUALIFIED_RUNTIME_BIN" >> "$GITHUB_ENV"' "$workflow"
 grep -Fxq '          dirname "$QUALIFIED_RUNTIME_BIN" >> "$GITHUB_PATH"' "$workflow"
 grep -Fxq '            https://raw.githubusercontent.com/jolt-lang/jolt/f3041a0e32ba0db1b92bd69b8ecb7b40f8b2e115/install \' "$workflow"

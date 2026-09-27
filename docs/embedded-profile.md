@@ -23,8 +23,8 @@ precedence; this profile is not an override mechanism.
 ## Qualification boundary
 
 The checked-in profile is the dependency authority. At this revision it pins
-`casselc/otel` `8110c12f`, `jolt-chdb` `7ae51162`,
-`jolt-otel-clickhouse` `1da116d2`, `casselc/db` `cb06349c`, and
+`casselc/otel` `8110c12f`, `jolt-chdb` `3e3141fd`,
+`jolt-otel-clickhouse` `dfbc9ea6`, `casselc/db` `cb06349c`, and
 `casselc/data.json` `97298fd8`; the fixture asserts that resolved graph. Do
 not copy older pin values from issue history or from an application's distinct
 resolved graph.
@@ -164,8 +164,8 @@ the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
 `8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2`, jolt-chDB
-`7ae5116269ec94e6458e4a9dc0d447461d0a5dfb`, and jolt-otel-clickhouse
-`1da116d24172e7c91120e60b279098b9b40c6c6d`. OTel's provider-convergence merge
+`3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04`, and jolt-otel-clickhouse
+`dfbc9ea64962b25c2f38912daa1c5a7b7339deaf`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration

@@ -7,7 +7,7 @@
 (def ^:private canonical-url "https://github.com/chucklehead-dev/time.git")
 (def ^:private canonical-sha "2494b21b25cd959573c3e6050cd475e4bf302fdb")
 (def ^:private chdb-url "https://github.com/chucklehead-dev/jolt-chdb.git")
-(def ^:private chdb-sha "7ae5116269ec94e6458e4a9dc0d447461d0a5dfb")
+(def ^:private chdb-sha "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 
 (defn- deps [fixture]
   (edn/read-string (slurp (str fixture-root "/" fixture "/deps.edn"))))

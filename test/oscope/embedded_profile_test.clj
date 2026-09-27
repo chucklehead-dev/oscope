@@ -182,16 +182,16 @@
            "io.github.casselc/otel/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/7ae5116269ec94e6458e4a9dc0d447461d0a5dfb/"
-           "io.github.chucklehead-dev/jolt-chdb/7ae5116269ec94e6458e4a9dc0d447461d0a5dfb/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"
+           "io.github.chucklehead-dev/jolt-chdb/3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
                       "io.github.chucklehead-dev/jolt-chdb/dbc2db22130c7e783739c79bc24691dcbba21906/"]]
    :clickhouse [["jolt-otel-clickhouse"
                  "io.github.chucklehead-dev/jolt-otel-clickhouse"]
-                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/1da116d24172e7c91120e60b279098b9b40c6c6d/"
-                 "io.github.chucklehead-dev/jolt-otel-clickhouse/1da116d24172e7c91120e60b279098b9b40c6c6d/"]]
+                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/"
+                 "io.github.chucklehead-dev/jolt-otel-clickhouse/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/"]]
    :data-json [["casselc_data.json.git" "org.clojure/data.json"]
                ["https___github.com_casselc_data.json.git/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"
                 "org.clojure/data.json/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"]]

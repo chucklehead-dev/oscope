@@ -5,11 +5,11 @@
 
 (def ^:private runtime-floor "0.8.6")
 (def ^:private root-driver-sha
-  "7ae5116269ec94e6458e4a9dc0d447461d0a5dfb")
+  "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private ordinary-driver-sha
-  "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
+  "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private woven-qualification-driver-sha
-  "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
+  "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private aspect-sha
   "3773a67801bdcbd63c6484f95fa07a4b8afddb72")
 (def ^:private aspect-compiler-sha
@@ -43,7 +43,7 @@
       (first values))))
 
 (defn- embedded-compiler-selection? [workflow]
-  ;; Independently checked against chDB 7ae5116's immutable installer, not
+  ;; Independently checked against chDB 3e3141f's immutable installer, not
   ;; inferred from this workflow's own declarations or the local executable.
   (and (= "57e591d4d6481c5536858575ffc006cf5a41adbf"
           (workflow-pin workflow "PINNED_JOLT_SOURCE_SHA"))

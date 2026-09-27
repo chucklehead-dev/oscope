@@ -114,8 +114,10 @@
           :context-id :oscope-durable-integration
           :private-values private-values
           ;; Exporter schema checkpoint, then server ingress checkpoint;
-          ;; both precede the three confirmed logical ingest batches.
-          :expected-publication-kinds [:checkpoint :checkpoint :wal :wal :wal]
+          ;; both precede five confirmed physical inserts across three
+          ;; logical OTLP requests (spans, logs, gauge, sum, histogram).
+          :expected-publication-kinds
+          [:checkpoint :checkpoint :wal :wal :wal :wal :wal]
           :require-renewal? true})
         [spans durations] (telemetry/validate! exporter handle private-values)
         printed (pr-str [events spans durations])]

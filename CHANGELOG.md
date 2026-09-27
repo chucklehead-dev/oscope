@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Keep the S3, AWS, and Langfuse native qualification checkouts on the same
+  chDB revision selected by Oscope. The woven local-history fixture now
+  expects five confirmed physical inserts after its two startup checkpoints,
+  matching the actual gauge/sum/histogram export split. This is a test and
+  qualification alignment, not a grouped metric transaction or throughput
+  claim.
+
 - Keep the pure application-to-Durable correspondence aligned with the
   exporter's atomic per-physical-insert writer requests. A metric request now
   observes gauge/sum/histogram confirmations separately, but still has only
@@ -18,6 +25,7 @@
 
 - Update standalone and embedded chDB/exporter pins and their direct DB
   provider together, selecting the [reviewed DB callback-domain provider](https://github.com/casselc/db/pull/8)
+  and chDB's merged plain-key head decoding optimization
   in both application graphs. Its scalar-classification benefit requires a
   domain-capable runtime; older runtimes retain legacy registration.
   Exact-source and independent time-provider fixtures
