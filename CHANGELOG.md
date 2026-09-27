@@ -3,8 +3,10 @@
 ## Unreleased
 
 - Update standalone and embedded chDB/exporter pins and their direct DB
-  provider together, carrying the host-table callback-domain optimization into
-  both application graphs. Exact-source and independent time-provider fixtures
+  provider together, selecting the [reviewed DB callback-domain provider](https://github.com/casselc/db/pull/8)
+  in both application graphs. Its scalar-classification benefit requires a
+  domain-capable runtime; older runtimes retain legacy registration.
+  Exact-source and independent time-provider fixtures
   follow the same pins; historical duplicate-provider controls remain in place.
   Align OTel with the exporter's descendant revision, retaining prior SDK work
   plus its scalar-normalization fast path and encodable-gauge admission fix.
