@@ -67,6 +67,25 @@
                  (assertions/assert-publication-order!
                   periodic [:checkpoint :wal :wal :checkpoint])))))
 
+(deftest s3-multisignal-cadence-requires-every-physical-metric-insert
+  (let [expected [:checkpoint :checkpoint :wal :wal :checkpoint :wal :wal :wal]
+        commands (vec (mapcat (fn [i kind]
+                               (let [reference {:kind kind :object (str "opaque-" i)}]
+                                 [(publication (if (= kind :checkpoint)
+                                                 :checkpoint-publish :publish)
+                                               reference)
+                                  (commit kind reference)]))
+                             (range) expected))]
+    (is (= commands (assertions/select-ingest-commands! commands expected)))
+    (is (= expected (mapv :kind (assertions/assert-publication-order! commands expected))))
+    ;; The old three-logical-request oracle omits sum and histogram WALs.
+    (is (thrown? Exception (assertions/select-ingest-commands!
+                            commands [:checkpoint :checkpoint :wal :wal :checkpoint :wal])))
+    (is (thrown? Exception (assertions/assert-publication-order!
+                            (vec (drop-last 2 commands)) expected)))
+    (is (thrown? Exception (assertions/assert-publication-order!
+                            (into commands (take-last 2 commands)) expected)))))
+
 (deftest ingest-lifecycle-is-selected-by-durable-object
   (let [ingest (valid-commands)
         other-object

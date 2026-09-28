@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Check all five physical inserts in the woven S3 history oracle, including
+  separate gauge, sum, and histogram WALs. Keep exact publication/commit order
+  and missing/extra-insert rejection; no storage or telemetry changes (Ref #137).
+
 - Keep the S3 writer and independent reader seals aligned with the exporter's
   three physical metric inserts: sequence 8 and three trailing WALs after the
   second logical request's checkpoint. Reject the old sequence-6/one-WAL shape
