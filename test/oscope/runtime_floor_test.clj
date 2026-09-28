@@ -5,19 +5,47 @@
 
 (def ^:private runtime-floor "0.8.6")
 (def ^:private root-driver-sha
-  "adaa779e1af3e58f1d7a552d79d074630bfbf815")
+  "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private ordinary-driver-sha
-  "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
+  "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private woven-qualification-driver-sha
-  "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774")
+  "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private aspect-sha
-  "3773a67801bdcbd63c6484f95fa07a4b8afddb72")
+  "d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c")
 (def ^:private aspect-compiler-sha
   "f00bc93bdd8274b14087b74272aadeffb60e0447")
 
 (defn- executable-declarations [workflow]
   (str/join "\n" (remove #(re-find #"^\s*#" %)
                          (str/split-lines workflow))))
+
+(defn- minio-source-policy? [workflow builder]
+  (and (boolean (re-find #"repository: minio/minio\s+ref: 07c3a429bfed433e49018cb0f78a52145d4bedeb\s+path: \.qualification/minio\s+persist-credentials: false"
+                        (executable-declarations workflow)))
+       (str/includes? workflow "go-version: '1.24.6'")
+       (str/includes? workflow "run: bash test/build_minio_fixture.sh .qualification/minio")
+       (not (str/includes? (executable-declarations workflow) "MINIO_IMAGE:"))
+       (str/includes? builder "expected_source=07c3a429bfed433e49018cb0f78a52145d4bedeb")
+       (str/includes? builder "= go1.24.6")
+       (str/includes? builder "GOTOOLCHAIN=local CGO_ENABLED=0 GOMAXPROCS=2")
+       (str/includes? builder "-mod=readonly")
+       (str/includes? builder "vcs.modified=false")
+       (str/includes? builder "--kill-after=5s 600s")))
+
+(deftest minio-fixture-source-and-toolchain-are-independent-pins
+  (let [workflow (slurp ".github/workflows/durable-s3-e2e.yml")
+        builder (slurp "test/build_minio_fixture.sh")]
+    (is (minio-source-policy? workflow builder))
+    (is (not (minio-source-policy?
+              (str/replace workflow "07c3a429bfed433e49018cb0f78a52145d4bedeb" "main")
+              builder)))
+    (is (not (minio-source-policy? workflow
+              (str/replace builder "-mod=readonly" "-mod=mod"))))
+    (is (not (minio-source-policy?
+              (str/replace workflow "go-version: '1.24.6'" "go-version: 'stable'")
+              builder)))
+    (is (not (minio-source-policy? (str workflow "\nMINIO_IMAGE: minio/minio:latest\n")
+                                 builder)))))
 
 (defn- workflow-pin [workflow name]
   (let [prefix (str name ":")
@@ -41,6 +69,25 @@
                (or (not (str/starts-with? name "QUALIFIED_RUNTIME_"))
                    (= 1 (count values))))
       (first values))))
+
+(defn- embedded-compiler-selection? [workflow]
+  ;; Independently checked against chDB 3e3141f's immutable installer, not
+  ;; inferred from this workflow's own declarations or the local executable.
+  (and (= "57e591d4d6481c5536858575ffc006cf5a41adbf"
+          (workflow-pin workflow "PINNED_JOLT_SOURCE_SHA"))
+       (= "jolt v0.8.6-37-g57e591d4"
+          (workflow-pin workflow "PINNED_JOLT_VERSION"))))
+
+(deftest embedded-compiler-selection-matches-the-qualified-installer
+  (let [workflow (slurp ".github/workflows/embedded-native-profile.yml")]
+    (is (embedded-compiler-selection? workflow))
+    (is (not (embedded-compiler-selection?
+              (str/replace workflow
+                           "57e591d4d6481c5536858575ffc006cf5a41adbf"
+                           "bf8a5dde7bebb5658d218e9757ab1df0aa9c3b95"))))
+    (is (not (embedded-compiler-selection?
+              (str/replace workflow "jolt v0.8.6-37-g57e591d4"
+                           "jolt v0.8.6-599-gbf8a5dde"))))))
 
 (def ^:private runtime-pin-names
   ["QUALIFIED_RUNTIME_RUN_ID" "QUALIFIED_RUNTIME_RUN_ATTEMPT"

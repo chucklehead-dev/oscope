@@ -17,6 +17,13 @@
 (deftest woven-final-receipts-require-real-history-and-nonzero-counts
   (let [check #(runner/checked-woven-receipt {:exit 0} % 2)
         good (receipt 2 36)]
+    (is (= "none" (#'runner/checked-woven-phase "private diagnostic\n")))
+    (is (= "history-pass"
+           (#'runner/checked-woven-phase
+            ":durable-woven-phase fixture-pass\n:durable-woven-phase history-pass\n")))
+    (is (= "none"
+           (#'runner/checked-woven-phase
+            ":durable-woven-phase history-pass private-value\n")))
     (is (:ok? (check good)))
     (is (= {:test 1 :pass 36 :fail 0 :error 0} (:counts (check good))))
     (doseq [bad ["" (str good good)

@@ -6,11 +6,11 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "04b1618fda22372f5698e0baf7c8277dcf8451ff")
+  "dfbc9ea64962b25c2f38912daa1c5a7b7339deaf")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "adaa779e1af3e58f1d7a552d79d074630bfbf815/"))
+       "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -18,7 +18,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "e876d2ebba211b4831993e1fb7fb480ea547cc71/"))
+       "8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"))
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"

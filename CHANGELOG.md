@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+- Check all five physical inserts in the woven S3 history oracle, including
+  separate gauge, sum, and histogram WALs. Keep exact publication/commit order
+  and missing/extra-insert rejection; no storage or telemetry changes (Ref #137).
+
+- Keep the S3 writer and independent reader seals aligned with the exporter's
+  three physical metric inserts: sequence 8 and three trailing WALs after the
+  second logical request's checkpoint. Reject the old sequence-6/one-WAL shape
+  and independently wrong sequence/counts; retain complete-head digest and
+  fresh-process per-table readback checks. This corrects a fixture, not the
+  persistence contract (Ref #137).
+
+- Build the hosted synthetic S3 fixture from exact historical MinIO source
+  with a pinned Go toolchain, rather than pulling an unavailable registry
+  image. Use its content-addressed local image ID; retain real recovery,
+  crash/reopen and woven fault/history gates. This loopback-only test image
+  is not a production storage recommendation (Ref #137).
+
+- Observe the current Durable writer's staged-file WAL publications as
+  `publish` spans and duration points, alongside byte publications. Woven
+  fixtures select chDB's target-owned seven-operation manifest, and report
+  checks require both routes. Advice never reads or logs the spool path;
+  stored WAL and captured telemetry are unchanged.
+
+- Keep the S3, AWS, and Langfuse native qualification checkouts on the same
+  chDB revision selected by Oscope. The woven local-history fixture now
+  expects five confirmed physical inserts after its two startup checkpoints,
+  matching the actual gauge/sum/histogram export split. This is a test and
+  qualification alignment, not a grouped metric transaction or throughput
+  claim.
+
+- Keep the pure application-to-Durable correspondence aligned with the
+  exporter's atomic per-physical-insert writer requests. A metric request now
+  observes gauge/sum/histogram confirmations separately, but still has only
+  one logical response after all three and the server's cadence barrier.
+  Preserve early-response, per-insert-completion, failed-publication,
+  wrong-cadence and fresh-reader-receipt mutants. The Durable CI path filter
+  now includes both correspondence files so those changes cannot skip its gate.
+  This is a categorical fixture, not an S3/native grouped-transaction claim
+  (Ref #136).
+
+- Align the embedded native workflow's compiler assertion with the immutable
+  chDB installer it actually runs. Reject independently mismatched source and
+  version declarations; this does not upgrade the compiler or qualify throughput.
+
+- Update standalone and embedded chDB/exporter pins and their direct DB
+  provider together, selecting the [reviewed DB callback-domain provider](https://github.com/casselc/db/pull/8)
+  and chDB's merged plain-key head decoding optimization
+  in both application graphs. Its scalar-classification benefit requires a
+  domain-capable runtime; older runtimes retain legacy registration.
+  Exact-source and independent time-provider fixtures
+  follow the same pins; historical duplicate-provider controls remain in place.
+  Align OTel with the exporter's descendant revision, retaining prior SDK work
+  plus its scalar-normalization fast path and encodable-gauge admission fix.
+  The data.json selection is retained. This is not a throughput or remote-delivery
+  qualification claim.
+
+- Keep typed-schema observation tests aligned with the exporter's five supported
+  physical tables, including sums and histograms. The independent expected table
+  set still rejects missing, extra and repeated observations.
+
 - Add the separate Oscope #119 Durable time-provider qualification fixture:
   independently resolved producer and reader roots pin both logical time
   coordinates to one source, assert the physical `.clj`/`.cljc` union before

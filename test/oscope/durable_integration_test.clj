@@ -167,12 +167,14 @@
               :lease-ttl-ms 30000
               :force? force?})})
 
-(defn- startup-error-type [options]
-  (error-type
-   #(let [lifecycle (server/start! options)]
+(defn- startup-error [options]
+  (try
+    (let [lifecycle (server/start! options)]
       ;; An unexpectedly successful startup must not leak a native handle into
       ;; later tests, even though returning nil will still fail the assertion.
-      (server/stop! lifecycle))))
+      (server/stop! lifecycle)
+      nil)
+    (catch Throwable error error)))
 
 (deftest startup-rejects-live-owner-and-forced-takeover-fences-it
   (let [root (Files/createTempDirectory
@@ -189,9 +191,13 @@
                      :backup-format 1
                      :min-reader "26.7.2-rc.2"
                      :now now :expires-at (+ now 60000)}))]
-        (is (= ::control/lease-held
-               (startup-error-type
-                (durable-server-options store "competing" false))))
+        (let [error (startup-error
+                     (durable-server-options store "competing" false))]
+          (is (= {:type :jdbc.chdb.durable/startup-failed
+                  :jdbc.chdb.durable/startup-stage :acquire-lease}
+                 (ex-data error)))
+          (is (= ::control/lease-held
+                 (:type (some-> error ex-cause ex-data)))))
         (let [lifecycle
               (server/start! (durable-server-options store "takeover" true))]
           (try
@@ -216,9 +222,13 @@
              store control/head-key corrupt-bytes)]
         (is (= :created
                (:status create-result)))
-        (is (= ::head/corrupt
-               (startup-error-type
-                (durable-server-options store "corrupt" false)))))
+        (let [error (startup-error
+                     (durable-server-options store "corrupt" false))]
+          (is (= {:type :jdbc.chdb.durable/startup-failed
+                  :jdbc.chdb.durable/startup-stage :read-head}
+                 (ex-data error)))
+          (is (= ::head/corrupt
+                 (:type (some-> error ex-cause ex-data))))))
       (finally
         (delete-tree! root)))))
 
@@ -322,9 +332,11 @@
             (server/stop! lifecycle)))
         (let [head (:head (control/read-head! store))]
           (is (nil? (get-in head ["lease" "owner"])))
-          (is (= 5 (get-in head ["manifest" "seq"])))
+          ;; Spans, logs, gauge, sum, and histogram are five independently
+          ;; committed physical inserts, not three logical OTLP requests.
+          (is (= 7 (get-in head ["manifest" "seq"])))
           (is (some? (get-in head ["manifest" "base"])))
-          (is (= 3 (count (get-in head ["manifest" "wal"]))))
+          (is (= 5 (count (get-in head ["manifest" "wal"]))))
           ;; Schema migration history contains now64 and is intentionally
           ;; nondeterministic under statement replay. It must be folded into
           ;; the startup checkpoint, never retained in the ingest WAL.

@@ -4,20 +4,20 @@
 
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"
-         :git/sha "e876d2ebba211b4831993e1fb7fb480ea547cc71"}
+         :git/sha "8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2"}
         io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "adaa779e1af3e58f1d7a552d79d074630bfbf815"}
+         :git/sha "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04"}
         ;; Select the canonical time provider independently of transitive order.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
-         :git/sha "9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165"}
+         :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "04b1618fda22372f5698e0baf7c8277dcf8451ff"}
+         :git/sha "dfbc9ea64962b25c2f38912daa1c5a7b7339deaf"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
@@ -103,7 +103,7 @@
    :extra-deps
    {io.github.chucklehead-dev/jolt-aspect-packs
     {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
-     :git/sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"}}
+     :git/sha "d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c"}}
    :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :test-durable-dev
@@ -116,7 +116,7 @@
    :extra-deps
    {io.github.chucklehead-dev/jolt-aspect-packs
     {:git/url "https://github.com/chucklehead-dev/jolt-aspect-packs.git"
-     :git/sha "3773a67801bdcbd63c6484f95fa07a4b8afddb72"}}
+     :git/sha "d5f42a309ac52ccd8dfa54d256fa2fa502d1fd7c"}}
    :main-opts ["-m" "oscope.durable-test-runner"]}
 
   :durable-server-dev

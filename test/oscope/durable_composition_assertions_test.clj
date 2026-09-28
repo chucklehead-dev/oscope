@@ -68,8 +68,8 @@
          ["insert into otel_metrics_histogram" :histogram]]))
 
 (defn- run-composition [mutation]
-  ;; Actual exporter/server/OTLP implementations; only native/JDBC and unrelated
-  ;; listener/executor/viewer resources are fake. Not native or socket evidence.
+  ;; Actual exporter/server/OTLP implementations; the physical atomic writer
+  ;; request and unrelated resources are fake. Not native or socket evidence.
   (let [inputs (checked-inputs! 3000000)
         events (atom [])
         batch (atom :startup)
@@ -126,6 +126,19 @@
                                                (= @batch :metrics))
                                       (@callback))
                                     {:count 1}))
+                  durable/execute-and-flush!
+                  (fn [connection sql]
+                    (emit! {:event :barrier-start :batch @batch
+                            :owner :exporter :kind :atomic})
+                    ;; One public writer request wraps execution, publication
+                    ;; and its terminal result; not separate queue requests.
+                    (jdbc/execute! connection sql)
+                    (let [result (if (= mutation :atomic-unconfirmed)
+                                   {:status :empty}
+                                   (publish! :wal :exporter))]
+                      (emit! {:event :barrier-end :batch @batch
+                              :owner :exporter :kind :atomic})
+                      result))
                   chdb-export/exporter
                   (fn [options]
                     (emit! {:event :exporter-start :batch :startup})
@@ -241,19 +254,20 @@
   (let [{:keys [events]} (run-composition nil)
         derived (correspondence/publication-projection contract)]
     (is (= derived (correspondence/assert-correspondence! events contract)))
-    (is (= [:checkpoint :checkpoint :wal :wal :checkpoint :wal] derived))
+    (is (= [:checkpoint :checkpoint :wal :wal :checkpoint :wal :wal :wal] derived))
+    (is (not= [:checkpoint :checkpoint :wal :wal :checkpoint :wal] derived)
+        "old one-publication logical metric projection is rejected")
     (is (not= [:checkpoint :wal :checkpoint :wal] derived)
         "353b's stale S3 oracle omits observed startup/logical composition")
     (is (= 3 (count (filter #(and (= :insert (:event %))
                                  (= :metrics (:batch %))) events))))
-    ;; A logical batch has one exporter WAL publication, plus the server's
-    ;; checkpoint publication when cadence is due. Both must remain visible:
-    ;; collapsing them to one made a normal scheduled checkpoint impossible.
+    ;; Logs have one physical insert; metrics have three. The server still
+    ;; completes each logical request once and adds a checkpoint on cadence.
     (is (= [[:exporter :wal] [:server :checkpoint]]
            (mapv (juxt :owner :kind)
                  (filter #(and (= :publication (:event %))
                                (= :logs (:batch %))) events))))
-    (is (= 1 (count (filter #(and (= :barrier-end (:event %))
+    (is (= 3 (count (filter #(and (= :barrier-end (:event %))
                                  (= :exporter (:owner %))
                                  (= :metrics (:batch %))) events))))
     (is (every? keyword? (mapcat vals events))
@@ -281,6 +295,14 @@
 (deftest physical-metric-inserts-cannot-become-logical-completions
   (is (= :logical-batch-boundaries
          (rejected-obligation (:events (run-composition :per-insert-completion))))))
+
+(deftest unconfirmed-atomic-writer-result-cannot-become-success
+  (let [{:keys [events]} (run-composition :atomic-unconfirmed)]
+    (is (= :failure (:outcome (first (filter #(and (= :response (:event %))
+                                                  (= :traces (:batch %))) events)))))
+    (is (empty? (filter #(and (= :publication (:event %))
+                             (= :traces (:batch %))) events)))
+    (is (= :logical-batch-boundaries (rejected-obligation events)))))
 
 (deftest actual-handler-premature-response-is-observable
   (let [{:keys [events premature?]} (run-composition :premature-ack)]

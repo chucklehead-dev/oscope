@@ -178,26 +178,26 @@
 
 (def ^:private coordinates
   {:otel [["casselc_otel.git" "io.github.casselc/otel"]
-          ["https___github.com_casselc_otel.git/e876d2ebba211b4831993e1fb7fb480ea547cc71/"
-           "io.github.casselc/otel/e876d2ebba211b4831993e1fb7fb480ea547cc71/"]]
+          ["https___github.com_casselc_otel.git/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"
+           "io.github.casselc/otel/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/adaa779e1af3e58f1d7a552d79d074630bfbf815/"
-           "io.github.chucklehead-dev/jolt-chdb/adaa779e1af3e58f1d7a552d79d074630bfbf815/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"
+           "io.github.chucklehead-dev/jolt-chdb/3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
                       "io.github.chucklehead-dev/jolt-chdb/dbc2db22130c7e783739c79bc24691dcbba21906/"]]
    :clickhouse [["jolt-otel-clickhouse"
                  "io.github.chucklehead-dev/jolt-otel-clickhouse"]
-                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/04b1618fda22372f5698e0baf7c8277dcf8451ff/"
-                 "io.github.chucklehead-dev/jolt-otel-clickhouse/04b1618fda22372f5698e0baf7c8277dcf8451ff/"]]
+                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/"
+                 "io.github.chucklehead-dev/jolt-otel-clickhouse/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/"]]
    :data-json [["casselc_data.json.git" "org.clojure/data.json"]
                ["https___github.com_casselc_data.json.git/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"
                 "org.clojure/data.json/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"]]
    :current-db [["casselc_db.git" "jolt-lang/db"]
-                ["https___github.com_casselc_db.git/9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165/"
-                 "jolt-lang/db/9e8c82a59ec63a36e86a758ff39ca9c5a9c3d165/"]]
+                ["https___github.com_casselc_db.git/cb06349c7ffe55e423021e402d4f182f4a27bcf7/"
+                 "jolt-lang/db/cb06349c7ffe55e423021e402d4f182f4a27bcf7/"]]
    :reviewed-db [["casselc_db.git" "jolt-lang/db"]
                  ["https___github.com_casselc_db.git/6db791634e5a4c65c24646833b2e82d3a5d7a121/"
                   "jolt-lang/db/6db791634e5a4c65c24646833b2e82d3a5d7a121/"]]
