@@ -185,7 +185,7 @@
       (do
         (when (seq args) (throw (ex-info "unknown woven child arguments" {})))
         (let [result (test/run-tests 'oscope.durable-history-assertions-test)]
-          (when-not (and (= 6 (:test result)) (pos? (:pass result))
+          (when-not (and (= 7 (:test result)) (pos? (:pass result))
                          (zero? (+ (:fail result) (:error result))))
             (throw (ex-info "woven history controls did not qualify" {}))))
         (let [executable (System/getenv "OSCOPE_DURABLE_WOVEN_EXECUTABLE")
