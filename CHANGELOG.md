@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Update chDB for cheaper character dispatch with the same head-scanning
+  vocabulary, and operation-local reuse of identical decoded head bytes.
+  Keep fresh storage reads and persistence acknowledgements; this is not an
+  Oscope throughput qualification (chDB PRs #246 and #247).
+
 - Check all five physical inserts in the woven S3 history oracle, including
   separate gauge, sum, and histogram WALs. Keep exact publication/commit order
   and missing/extra-insert rejection; no storage or telemetry changes (Ref #137).
