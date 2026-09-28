@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Keep the S3 writer and independent reader seals aligned with the exporter's
+  three physical metric inserts: sequence 8 and three trailing WALs after the
+  second logical request's checkpoint. Reject the old sequence-6/one-WAL shape
+  and independently wrong sequence/counts; retain complete-head digest and
+  fresh-process per-table readback checks. This corrects a fixture, not the
+  persistence contract (Ref #137).
+
 - Build the hosted synthetic S3 fixture from exact historical MinIO source
   with a pinned Go toolchain, rather than pulling an unavailable registry
   image. Use its content-addressed local image ID; retain real recovery,

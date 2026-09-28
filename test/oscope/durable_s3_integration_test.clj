@@ -155,9 +155,9 @@
       (throw (ex-info "invalid public S3 reader seal" {})))
     (let [head (json/read-str wire)]
       (when-not (and (nil? (get-in head ["lease" "owner"]))
-                     (= 6 (get-in head ["manifest" "seq"]))
+                     (= 8 (get-in head ["manifest" "seq"]))
                      (some? (get-in head ["manifest" "base"]))
-                     (= 1 (count (get-in head ["manifest" "wal"]))))
+                     (= 3 (count (get-in head ["manifest" "wal"]))))
         (throw (ex-info "unexpected sealed S3 publication cadence" {})))
       head)))
 
@@ -172,9 +172,9 @@
     (when-not (= expected head)
       (throw (ex-info "S3 head changed before independent readback" {})))
     (is (nil? (get-in head ["lease" "owner"])))
-    (is (= 6 (get-in head ["manifest" "seq"])))
+    (is (= 8 (get-in head ["manifest" "seq"])))
     (is (some? (get-in head ["manifest" "base"])))
-    (is (= 1 (count (get-in head ["manifest" "wal"]))))
+    (is (= 3 (count (get-in head ["manifest" "wal"]))))
     (with-open [reader
                 (jdbc/connection
                  (jdbc.chdb.durable/snapshot-dbspec
@@ -219,7 +219,7 @@
           (doseq [[path payload expected-seq]
                   [["/v1/traces" (trace-wire now) 3]
                    ["/v1/logs" (log-wire now) 5]
-                   ["/v1/metrics" (metric-wire now) 6]]]
+                   ["/v1/metrics" (metric-wire now) 8]]]
             (is (= 200 (post-json! (:port lifecycle) path payload)))
             (is (= expected-seq
                    (get-in (control/read-head! store) [:head "manifest" "seq"])))))
@@ -231,9 +231,11 @@
           reader-settled (atom false)
           reader-qualified? (atom false)]
       (is (nil? (get-in head ["lease" "owner"])))
-      (is (= 6 (get-in head ["manifest" "seq"])))
+      ;; Two startup checkpoints, traces WAL, logs WAL plus cadence checkpoint,
+      ;; then one WAL for each nonempty gauge/sum/histogram physical insert.
+      (is (= 8 (get-in head ["manifest" "seq"])))
       (is (some? (get-in head ["manifest" "base"])))
-      (is (= 1 (count (get-in head ["manifest" "wal"]))))
+      (is (= 3 (count (get-in head ["manifest" "wal"]))))
       (spit seal-file (json/write-str {"version" 1 "endpoint" endpoint
                                       "head-json" wire "head-sha256" (sha256 wire)}))
       (try

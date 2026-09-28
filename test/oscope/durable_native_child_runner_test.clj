@@ -140,8 +140,10 @@
   (doseq [unknown [nil :other 's3 "s3" 2]]
     (is (try (runner/reader-index! unknown) false (catch Throwable _ true))))
   (let [head {"lease" {"owner" nil}
-              "manifest" {"seq" 6 "base" {"key" "checkpoint-public"}
-                          "wal" [{"key" "wal-public"}]}}
+              "manifest" {"seq" 8 "base" {"key" "checkpoint-public"}
+                          "wal" [{"key" "gauge-public"}
+                                 {"key" "sum-public"}
+                                 {"key" "histogram-public"}]}}
         hash! (ns-resolve 'oscope.durable-s3-integration-test 'sha256)
         seal (fn [value]
                (let [wire (json/write-str value)]
@@ -155,6 +157,11 @@
                  (assoc good "head-json" (str (get good "head-json") " "))
                  (assoc good "version" 2)
                  (assoc good "endpoint" nil)
+                 ;; Old one-publication metric shape is not current coverage.
+                 (seal (-> head (assoc-in ["manifest" "seq"] 6)
+                           (assoc-in ["manifest" "wal"] [{"key" "wal-public"}])))
+                 (seal (assoc-in head ["manifest" "seq"] 6))
+                 (seal (assoc-in head ["manifest" "wal"] [{"key" "wal-public"}]))
                  (seal (assoc-in head ["manifest" "seq"] 4))
                  (seal (assoc-in head ["lease" "owner"] "writer"))
                  (seal (assoc-in head ["manifest" "base"] nil))
