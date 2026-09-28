@@ -1022,7 +1022,7 @@ ABI. The test uses the POSIX Durable provider and reconstructs it from its
 filesystem root before read-only reopen, so recovery does not rely on the
 in-memory backend oracle.
 
-The opt-in S3 app gate starts a pinned MinIO container, launches the real oscope
+The opt-in S3 app gate starts an immutable MinIO container, launches the real oscope
 collector over the S3 namespace configuration above, crosses three HTTP
 200/WAL flush boundaries for a trace, correlated log, and gauge/sum/histogram
 batch, performs a clean release, and reconstructs the backend. A fresh native
@@ -1030,12 +1030,22 @@ connection proves exact per-table counts and valid Arrow/Parquet exports for
 every recovered signal shape:
 
 ```sh
-env JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+env MINIO_IMAGE=your-registry/minio@sha256:YOUR_MANIFEST_DIGEST \
+  JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
   test/durable_s3_minio.sh
 ```
 
 The `durable-s3-e2e` workflow runs the same script with the publishable
-`:test-durable-s3` alias. It qualifies the native library through jolt-chdb's
+`:test-durable-s3` alias. Its old Quay image is no longer publicly available.
+CI builds the historical MinIO source commit
+`07c3a429bfed433e49018cb0f78a52145d4bedeb` using Go 1.24.6 and read-only
+module resolution, and supplies the resulting local Docker image ID to all
+three S3 fixtures. That ID is content-addressed, not a registry manifest
+digest; both immutable forms are accepted by the woven fixture. This minimal
+image is only for loopback HTTP tests with synthetic credentials and data:
+it disables the browser and update checks, and is not a supported production
+or TLS deployment image. Local runs must supply an available immutable image.
+The workflow qualifies the native library through jolt-chdb's
 pinned asset and upstream ABI oracle, then exercises oscope only through exact
 Git dependency pins. The script defaults to `:test-durable-s3-dev` locally so
 coordinated sibling changes remain testable before publication.

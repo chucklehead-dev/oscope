@@ -19,6 +19,34 @@
   (str/join "\n" (remove #(re-find #"^\s*#" %)
                          (str/split-lines workflow))))
 
+(defn- minio-source-policy? [workflow builder]
+  (and (boolean (re-find #"repository: minio/minio\s+ref: 07c3a429bfed433e49018cb0f78a52145d4bedeb\s+path: \.qualification/minio\s+persist-credentials: false"
+                        (executable-declarations workflow)))
+       (str/includes? workflow "go-version: '1.24.6'")
+       (str/includes? workflow "run: bash test/build_minio_fixture.sh .qualification/minio")
+       (not (str/includes? (executable-declarations workflow) "MINIO_IMAGE:"))
+       (str/includes? builder "expected_source=07c3a429bfed433e49018cb0f78a52145d4bedeb")
+       (str/includes? builder "= go1.24.6")
+       (str/includes? builder "GOTOOLCHAIN=local CGO_ENABLED=0 GOMAXPROCS=2")
+       (str/includes? builder "-mod=readonly")
+       (str/includes? builder "vcs.modified=false")
+       (str/includes? builder "--kill-after=5s 600s")))
+
+(deftest minio-fixture-source-and-toolchain-are-independent-pins
+  (let [workflow (slurp ".github/workflows/durable-s3-e2e.yml")
+        builder (slurp "test/build_minio_fixture.sh")]
+    (is (minio-source-policy? workflow builder))
+    (is (not (minio-source-policy?
+              (str/replace workflow "07c3a429bfed433e49018cb0f78a52145d4bedeb" "main")
+              builder)))
+    (is (not (minio-source-policy? workflow
+              (str/replace builder "-mod=readonly" "-mod=mod"))))
+    (is (not (minio-source-policy?
+              (str/replace workflow "go-version: '1.24.6'" "go-version: 'stable'")
+              builder)))
+    (is (not (minio-source-policy? (str workflow "\nMINIO_IMAGE: minio/minio:latest\n")
+                                 builder)))))
+
 (defn- workflow-pin [workflow name]
   (let [prefix (str name ":")
         values (->> (str/split-lines workflow)

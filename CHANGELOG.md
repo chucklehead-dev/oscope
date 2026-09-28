@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Build the hosted synthetic S3 fixture from exact historical MinIO source
+  with a pinned Go toolchain, rather than pulling an unavailable registry
+  image. Use its content-addressed local image ID; retain real recovery,
+  crash/reopen and woven fault/history gates. This loopback-only test image
+  is not a production storage recommendation (Ref #137).
+
 - Observe the current Durable writer's staged-file WAL publications as
   `publish` spans and duration points, alongside byte publications. Woven
   fixtures select chDB's target-owned seven-operation manifest, and report

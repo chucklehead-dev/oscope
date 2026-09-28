@@ -82,7 +82,7 @@ fi
 evidence_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/oscope-durable-evidence-XXXXXXXX")
 test "$(realpath "$evidence_root")" = "$evidence_root"
 mkdir "$evidence_root/backend" "$evidence_root/reports"
-[[ "$image" =~ ^[A-Za-z0-9./:-]+@sha256:[0-9a-f]{64}$ ]]
+[[ "$image" =~ ^[A-Za-z0-9./:-]+@sha256:[0-9a-f]{64}$ || "$image" =~ ^sha256:[0-9a-f]{64}$ ]]
 printf 'oscope-synthetic-s3-v1\n' > "$evidence_root/scope"
 if [ "${GITHUB_ACTIONS:-}" = true ]; then
   printf 'OSCOPE_DURABLE_FAILED_EVIDENCE=%s\n' "$evidence_root" >> "$GITHUB_ENV"

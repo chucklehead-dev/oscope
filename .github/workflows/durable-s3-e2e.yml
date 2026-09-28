@@ -19,6 +19,8 @@ on:
       - src/oscope/otlp.clj
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
+      - test/build_minio_fixture.sh
+      - test/fixtures/minio-source/Dockerfile
       - test/durable_crash_reopen.sh
       - test/durable_s3_crash_reopen.sh
       - test/durable_fault_acceptance.sh
@@ -59,6 +61,8 @@ on:
       - src/oscope/otlp.clj
       - src/oscope/server.clj
       - test/durable_s3_minio.sh
+      - test/build_minio_fixture.sh
+      - test/fixtures/minio-source/Dockerfile
       - test/durable_crash_reopen.sh
       - test/durable_s3_crash_reopen.sh
       - test/durable_fault_acceptance.sh
@@ -100,7 +104,6 @@ jobs:
     env:
       JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.6
       JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.6
-      MINIO_IMAGE: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
       # Authenticated producer83 tuple; rotate explicitly before artifact expiry.
       QUALIFIED_RUNTIME_REPOSITORY: casselc/jolt
       QUALIFIED_RUNTIME_COMPILER_SOURCE: aea91781bbab68bf174fef4a689bb00dcf834ded
@@ -197,6 +200,21 @@ jobs:
           JOLT_BIN: ${{ github.workspace }}/.qualification/jolt/bin/jolt
           OSCOPE_DURABLE_ASPECT_BUILD_ALIAS: published
         run: test/durable_aspect_smoke.sh
+      - name: Checkout historical MinIO fixture source
+        uses: actions/checkout@v4
+        with:
+          repository: minio/minio
+          ref: 07c3a429bfed433e49018cb0f78a52145d4bedeb
+          path: .qualification/minio
+          persist-credentials: false
+      - name: Install pinned fixture Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.6'
+          cache-dependency-path: .qualification/minio/go.sum
+      - name: Build immutable loopback MinIO fixture
+        timeout-minutes: 13
+        run: bash test/build_minio_fixture.sh .qualification/minio
       - name: Recover oscope through pinned MinIO
         env:
           JOLT_CHDB_LIB: ${{ runner.temp }}/chdb-durable/native/libchdb.so
