@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Align the ClickHouse exporter with Oscope's chDB head-scanning and
+  decoded-head reuse fixes. Captured telemetry and persistence acknowledgements
+  are unchanged; this is not an Oscope throughput qualification (exporter PR #99).
+
 - Update chDB for cheaper character dispatch with the same head-scanning
   vocabulary, and operation-local reuse of identical decoded head bytes.
   Keep fresh storage reads and persistence acknowledgements; this is not an

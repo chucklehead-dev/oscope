@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "dfbc9ea64962b25c2f38912daa1c5a7b7339deaf")
+  "423dd8e522c0d598fd5ecb22271776bb7936d770")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -41,12 +41,12 @@
        ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
 (def ^:private prior-exporter-sha
-  "96e68eddbe897e566ec3a7564609c49b0794e59d")
+  "dfbc9ea64962b25c2f38912daa1c5a7b7339deaf")
 
 (def ^:private prior-exporter-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
-       ":git/sha \"96e68eddbe897e566ec3a7564609c49b0794e59d\"}}}"))
+       ":git/sha \"dfbc9ea64962b25c2f38912daa1c5a7b7339deaf\"}}}"))
 
 (def ^:private prior-chdb-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-chdb "
