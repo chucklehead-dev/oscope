@@ -10,11 +10,11 @@
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"))
+       "ed6efde5eac1bef76d4a588d41aa44dead7f47c3/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774/"))
+       "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"))
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -51,7 +51,7 @@
 (def ^:private prior-chdb-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-chdb "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-chdb.git\" "
-       ":git/sha \"19e0ecf9e9f5e2c3f24ac8758f5d6953fd021774\"}}}"))
+       ":git/sha \"3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04\"}}}"))
 
 (defn- dependency-roots [classpath dependency]
   (->> (str/split (str classpath) #":")
