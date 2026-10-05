@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Align the explicit chDB, ClickHouse exporter and data.json pins with the
+  public guarded-native JSON encoder candidate and owned WAL/recovery work.
+  Avoid overriding newer JSON improvements with the application-level pin.
+  Existing specialized exporters and persistence acknowledgments remain;
+  native general-fallback selection is not enabled by this pin update.
+  Application runtime and performance qualification are pending.
+
 - Align the ClickHouse exporter with Oscope's chDB head-scanning and
   decoded-head reuse fixes. Captured telemetry and persistence acknowledgements
   are unchanged; this is not an Oscope throughput qualification (exporter PR #99).

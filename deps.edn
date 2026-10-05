@@ -10,21 +10,21 @@
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "ed6efde5eac1bef76d4a588d41aa44dead7f47c3"}
+         :git/sha "02c759ca1d769f3dd4bcacc40db74bf4344e6c26"}
         ;; Select the canonical time provider independently of transitive order.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
          :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "423dd8e522c0d598fd5ecb22271776bb7936d770"}
+         :git/sha "2c2bef56b4902fc2af9ade9c62ccab8a2e2d95b8"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
         metosin/malli {:mvn/version "0.20.1"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "97298fd8a67a6d4ee3eb1346d5e184beb9565b90"}}
+         :git/sha "56db146d5b3d4edcb8db59ccee05db1945ea39fd"}}
 
  :aliases
  {:test-embedded-profile
