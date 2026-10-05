@@ -137,7 +137,7 @@ response. OTLP, Plotje, and export-specific admission limits still apply after
 this connection-level bound.
 
 Oscope enforces this limit with a small admission wrapper around its owned
-`ThreadPoolExecutor`. At Oscope's Jolt 0.8.6 runtime floor, the modeled
+`ThreadPoolExecutor`. In the previously supported Jolt 0.8.6 runtime, the modeled
 `ArrayBlockingQueue` constructor still treats its capacity as advisory and
 otherwise queues tasks without a bound. The wrapper rejects before submission,
 while the ordinary shutdown path first stops jolt-http ingress and drains
@@ -1087,17 +1087,18 @@ binary reads the same ABI descriptor used during compilation. The woven lane
 uses a release-mode build and the same real loopback transport as the unwoven
 integration.
 
-Oscope requires Jolt v0.8.6 or newer for source execution and ordinary
-standalone builds. The separately pinned aspect-capable compiler and Durable
-libraries remain at their currently qualified revisions until the next
-protocol/model qualification stack advances them together. Older app builders
+Oscope requires Jolt v0.8.17 or newer for source execution and ordinary
+standalone builds. The aspect-capable compiler remains separately pinned;
+raising this floor does not qualify a new woven compiler or enable native JSON
+by default. Native JSON still requires the qualified source-run compiler.
+Older app builders
 may incorrectly inherit `jolt.ffi` from the compiler image and produce a binary
 with an unbound `jolt.ffi/errno`. The standalone smoke builds and starts the
 real receiver long enough to reject that artifact class:
 
 ```sh
 env JOLT_CHDB_LIB=/path/to/libchdb.so \
-    JOLT_BIN=/path/to/jolt-v0.8.6-or-newer \
+    JOLT_BIN=/path/to/jolt-v0.8.17-or-newer \
     JOLT_TOOLCHAIN=/path/to/jolt-with-chez-10.4.1 \
     test/standalone_build_smoke.sh
 ```

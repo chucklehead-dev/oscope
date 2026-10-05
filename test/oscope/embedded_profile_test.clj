@@ -178,23 +178,23 @@
 
 (def ^:private coordinates
   {:otel [["casselc_otel.git" "io.github.casselc/otel"]
-          ["https___github.com_casselc_otel.git/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"
-           "io.github.casselc/otel/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"]]
+          ["https___github.com_casselc_otel.git/19fc49d20b3a75906f0ccbb8b50c7e48b03e4813/"
+           "io.github.casselc/otel/19fc49d20b3a75906f0ccbb8b50c7e48b03e4813/"]]
    :chdb [["chucklehead-dev_jolt-chdb.git"
            "io.github.chucklehead-dev/jolt-chdb"]
-          ["https___github.com_chucklehead-dev_jolt-chdb.git/3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"
-           "io.github.chucklehead-dev/jolt-chdb/3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04/"]]
+          ["https___github.com_chucklehead-dev_jolt-chdb.git/7dcaec0be8259b670223dc9fa738ac2b2c2b3f4f/"
+           "io.github.chucklehead-dev/jolt-chdb/7dcaec0be8259b670223dc9fa738ac2b2c2b3f4f/"]]
    :historical-chdb [["chucklehead-dev_jolt-chdb.git"
                       "io.github.chucklehead-dev/jolt-chdb"]
                      ["https___github.com_chucklehead-dev_jolt-chdb.git/dbc2db22130c7e783739c79bc24691dcbba21906/"
                       "io.github.chucklehead-dev/jolt-chdb/dbc2db22130c7e783739c79bc24691dcbba21906/"]]
    :clickhouse [["jolt-otel-clickhouse"
                  "io.github.chucklehead-dev/jolt-otel-clickhouse"]
-                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/"
-                 "io.github.chucklehead-dev/jolt-otel-clickhouse/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/"]]
+                ["https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/1af91f3a90bed4e84aec7aad54859cd58412171b/"
+                 "io.github.chucklehead-dev/jolt-otel-clickhouse/1af91f3a90bed4e84aec7aad54859cd58412171b/"]]
    :data-json [["casselc_data.json.git" "org.clojure/data.json"]
-               ["https___github.com_casselc_data.json.git/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"
-                "org.clojure/data.json/97298fd8a67a6d4ee3eb1346d5e184beb9565b90/"]]
+               ["https___github.com_casselc_data.json.git/f48a80fb0810a85fa78edcedbb368ee833389c95/"
+                "org.clojure/data.json/f48a80fb0810a85fa78edcedbb368ee833389c95/"]]
    :current-db [["casselc_db.git" "jolt-lang/db"]
                 ["https___github.com_casselc_db.git/cb06349c7ffe55e423021e402d4f182f4a27bcf7/"
                  "jolt-lang/db/cb06349c7ffe55e423021e402d4f182f4a27bcf7/"]]
@@ -341,7 +341,7 @@
 (deftest embedded-profile-is-minimal-and-pinned
   (let [profile (edn/read-string
                  (slurp (str embedded-profile-dir "/deps.edn")))]
-    (is (= "0.8.6" (:jolt/min-version profile)))
+    (is (= "0.8.17" (:jolt/min-version profile)))
     (is (= ["../../src"] (:paths profile)))
     (is (= expected-profile-deps (set (keys (:deps profile)))))
     (is (= "0.20.1" (get-in profile [:deps 'metosin/malli :mvn/version])))

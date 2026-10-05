@@ -6,11 +6,11 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "4bad1ab46d85f8790cdb34a3841e59238108c7cf")
+  "1af91f3a90bed4e84aec7aad54859cd58412171b")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "d568b5e6c92e38229fc53f3b45f9e386513ff42a/"))
+       "7dcaec0be8259b670223dc9fa738ac2b2c2b3f4f/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -18,11 +18,24 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"))
+       "19fc49d20b3a75906f0ccbb8b50c7e48b03e4813/"))
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"
        "87d3ac1a9b26ec6c0bf0c44d3b5aff4c66ccb5a0/"))
+
+(def ^:private data-json-root
+  (str "https___github.com_casselc_data.json.git/"
+       "f48a80fb0810a85fa78edcedbb368ee833389c95/"))
+
+(def ^:private prior-data-json-root
+  (str "https___github.com_casselc_data.json.git/"
+       "56db146d5b3d4edcb8db59ccee05db1945ea39fd/"))
+
+(def ^:private prior-data-json-coordinate
+  (str "{:deps {org.clojure/data.json "
+       "{:git/url \"https://github.com/casselc/data.json.git\" "
+       ":git/sha \"56db146d5b3d4edcb8db59ccee05db1945ea39fd\"}}}"))
 
 (def ^:private http-provider-root
   (str "https___github.com_casselc_http-client.git/"
@@ -106,7 +119,7 @@
     (is (false? (exact-exporter-resolution?
                  (str coordinate ":" url-root) exporter-sha)))))
 
-(deftest reviewed-exporter-and-otel-revisions-are-the-resolved-roots
+(deftest candidate-exporter-and-otel-revisions-are-the-resolved-roots
   (let [result (dependency-report [])]
     (is (successful-report? result))
     (when (map? result)
@@ -130,6 +143,16 @@
       (testing "the current chDB source-root receipt rejects the mutation"
         (is (false? (exact-coordinate? (:out prior)
                                        "chucklehead-dev_jolt-chdb.git" chdb-root)))))))
+
+(deftest codec-root-is-exact-and-prior-pin-is-a-causal-red-control
+  (let [current (dependency-report [])
+        prior (dependency-report ["-Sdeps" prior-data-json-coordinate])]
+    (is (successful-report? current))
+    (is (successful-report? prior))
+    (when (and (map? current) (map? prior))
+      (is (exact-coordinate? (:out current) "casselc_data.json.git" data-json-root))
+      (is (exact-coordinate? (:out prior) "casselc_data.json.git" prior-data-json-root))
+      (is (false? (exact-coordinate? (:out prior) "casselc_data.json.git" data-json-root))))))
 
 (deftest prior-exporter-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-exporter-coordinate])]

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Stage the measured OTel/exporter/chDB/data.json stack consistently in root
+  and embedded profiles, and raise the source runtime floor to Jolt 0.8.17.
+  Native JSON remains explicit opt-in; this pin update does not change
+  persistence acknowledgements or claim S3/Rust/tail qualification.
+
 - Add explicit `:json-backend :native-guarded` startup selection for embedded
   and standalone exporters, including version-2 file config under `:ingest`.
   Default and specialized codecs remain unchanged. Invalid/unavailable

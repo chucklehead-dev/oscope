@@ -23,11 +23,32 @@ precedence; this profile is not an override mechanism.
 ## Qualification boundary
 
 The checked-in profile is the dependency authority. At this revision it pins
-`casselc/otel` `8110c12f`, `jolt-chdb` `3e3141fd`,
-`jolt-otel-clickhouse` `dfbc9ea6`, `casselc/db` `cb06349c`, and
-`casselc/data.json` `97298fd8`; the fixture asserts that resolved graph. Do
+`casselc/otel` `19fc49d2`, `jolt-chdb` `7dcaec0b`,
+`jolt-otel-clickhouse` `1af91f3a`, `casselc/db` `cb06349c`, and
+`casselc/data.json` `f48a80fb`; the fixture asserts that resolved graph. Do
 not copy older pin values from issue history or from an application's distinct
 resolved graph.
+
+This branch stages the measured telemetry stack on Jolt 0.8.17 or newer.
+Native JSON is still explicit source-run opt-in; ordinary standalone builds
+do not gain native/AOT qualification merely from these pins. Independent review
+of this updated profile is still pending. Core local throughput screens are
+not Oscope, S3 or Rust performance guarantees.
+
+The updated Git-pinned stack passed these Linux source-run checks with the
+Jolt 0.8.17-based candidate `97d93c8f`, Chez 10.4.1 and chDB 26.7.3:
+
+- Dependency resolution: six tests / 27 assertions, including actual prior-pin
+  overrides for chDB, exporter, OTel and JSON which the current-root checks reject.
+- Embedded profile: 20 tests / 532 assertions, including the minimal application's
+  real native stalled-remote stack and one physical time provider per profile.
+- Native JSON controls: four tests / 19 assertions; embedded approved-manifest
+  SDK/live query: two tests / eight assertions; standalone typed socket/restart:
+  two tests / 100 assertions. Each native slice ran in its own process.
+
+These checks do not establish full aggregate CI, built standalone native JSON,
+Playwright coverage or S3 performance. Earlier fixture evidence below remains
+historical rather than being silently attributed to this new stack.
 
 The resolved profile tree has been checked for these exact source selections:
 one direct chDB/DB/OTel/exporter root wins each older transitive declaration.
@@ -163,9 +184,9 @@ it is not the as-pinned `22be90d` graph. The runnable minimal application uses
 the same canonical-key repoint for its real SQLite-plus-Durable process.
 
 The current embedded profile selects OTel
-`8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2`, jolt-chDB
-`3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04`, and jolt-otel-clickhouse
-`dfbc9ea64962b25c2f38912daa1c5a7b7339deaf`. OTel's provider-convergence merge
+`19fc49d20b3a75906f0ccbb8b50c7e48b03e4813`, jolt-chDB
+`7dcaec0be8259b670223dc9fa738ac2b2c2b3f4f`, and jolt-otel-clickhouse
+`1af91f3a90bed4e84aec7aad54859cd58412171b`. OTel's provider-convergence merge
 contains the interruptible upstream HTTP behavior in the integrated
 `casselc/http-client` revision
 `eab6b78d5957f88690faf6768360572a3f185341`. Its documented consumer migration
