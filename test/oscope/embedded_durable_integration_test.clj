@@ -72,6 +72,8 @@
         :key typed-attribute-key
         :type :boolean}]}]}))
 
+(def ^:dynamic *json-backend* :configured)
+
 (deftest approved-manifest-drives-embedded-sdk-ingestion-and-live-query
   (let [telemetry-store (backend/memory-backend)
         registry-store (backend/memory-backend)
@@ -84,6 +86,7 @@
         lifecycle
         (embedded/start!
          {:db-spec db-spec
+          :json-backend *json-backend*
           :sdk-options {:service-name "oscope-embedded-typed-test"
                         :processor :simple
                         :metrics? false

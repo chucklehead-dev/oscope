@@ -312,6 +312,8 @@
   (doseq [file (reverse (file-seq root))]
     (java.nio.file.Files/deleteIfExists (.toPath file))))
 
+(def ^:dynamic *json-backend* :configured)
+
 (deftest file-configured-typed-standalone-restarts-read-only
   (let [directory (java.nio.file.Files/createTempDirectory
                    "oscope-typed-restart-"
@@ -322,6 +324,9 @@
         config-path (str (.resolve directory "oscope.edn"))
         rendered (manifest/render (approved-manifest))
         base (assoc config/defaults
+                    :ingest (cond-> (:ingest config/defaults)
+                              (= :native-guarded *json-backend*)
+                              (assoc :json-backend :native-guarded))
                     :server (assoc (:server config/defaults) :port 0)
                     :storage {:type :local-path :path database-path})
         install (assoc base :typed-attributes

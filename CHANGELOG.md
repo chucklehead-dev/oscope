@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add explicit `:json-backend :native-guarded` startup selection for embedded
+  and standalone exporters, including version-2 file config under `:ingest`.
+  Default and specialized codecs remain unchanged. Invalid/unavailable
+  selections reject before database acquisition; native mode requires the
+  qualified source-run compiler. Preserve payload bounds and acknowledgements.
+
 - Align the explicit chDB, ClickHouse exporter and data.json pins with the
   public guarded-native JSON encoder candidate and owned WAL/recovery work.
   Avoid overriding newer JSON improvements with the application-level pin.

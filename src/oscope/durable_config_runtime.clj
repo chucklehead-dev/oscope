@@ -159,4 +159,6 @@
                     :checkpoint-every-batches
                     (or (:checkpoint-every-batches storage) 1000)}
        :db-spec db-spec}
+       (contains? (:ingest document) :json-backend)
+       (assoc :json-backend (get-in document [:ingest :json-backend]))
        typed (assoc :typed-schema typed)))))

@@ -22,7 +22,7 @@
 (def ^:private top-keys (conj legacy-top-keys :typed-attributes))
 (def ^:private server-keys
   #{:host :port :http-workers :http-queue-capacity})
-(def ^:private ingest-keys #{:type})
+(def ^:private ingest-keys #{:type :json-backend})
 (def ^:private durable-common-keys
   #{:owner :instance :database :scratch-parent :lease-ttl-ms
     :heartbeat-interval-ms :clock-skew-ms :force? :max-attempts
@@ -140,6 +140,8 @@
   (case (:version document)
     1 (do
         (closed! [] legacy-top-keys document)
+        (when (contains? document :ingest)
+          (closed! [:ingest] #{:type} (:ingest document)))
         (assoc document
                :version version
                :typed-attributes {:mode :disabled}))
@@ -266,6 +268,9 @@
         (positive-int! [:server key] (get server key)))
       (when-not (= :otlp-http-json (:type ingest))
         (config-error "unknown ingest type" {:path [:ingest :type]}))
+      (when (and (contains? ingest :json-backend)
+                 (not (#{:configured :native-guarded} (:json-backend ingest))))
+        (config-error "unknown JSON backend" {:path [:ingest :json-backend]}))
       (validate-storage! (:storage document))
       (validate-typed-attributes (:typed-attributes document))
       document)))

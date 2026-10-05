@@ -8,6 +8,7 @@
             [oscope.http-app :as http-app]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
+            [oscope.json-backend :as json-backend]
             [oscope.otlp :as otlp]
             [oscope.readiness :as readiness]
             [oscope.typed-schema :as typed-schema]
@@ -159,7 +160,9 @@
 
   `:port` may be zero for an ephemeral test port. jolt-http currently binds
   loopback at the transport layer, so `:host` deliberately accepts only
-  127.0.0.1. Optional `:typed-schema` is a closed operator-supplied approved
+  127.0.0.1. Optional `:json-backend :native-guarded` selects the general exporter
+  fallback on the qualified source runtime, checked before storage acquisition.
+  Optional `:typed-schema` is a closed operator-supplied approved
   manifest, registry backend, and optional event sink. A canonical Durable
   dbspec requires explicit valid `:durability` callbacks and a writer role;
   reader dbspecs are rejected before acquisition. Oscope binds all
@@ -174,7 +177,7 @@
   default and no internal CAS phase is inferred."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema readiness durability-diagnostic!]
+            typed-schema readiness durability-diagnostic! json-backend]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
           http-queue-capacity default-http-queue-capacity}}]
@@ -184,6 +187,7 @@
    (when-not (and (integer? port) (<= 0 port 65535))
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
+   (json-backend/validate! (if (nil? json-backend) :configured json-backend))
    (validate-http-executor-options! http-workers http-queue-capacity)
    (when (and (some? durability-diagnostic!) (not (fn? durability-diagnostic!)))
      (throw (ex-info "oscope durability diagnostic sink must be a function"
@@ -237,6 +241,7 @@
                ;; opened connection is a writer before schema/data effects.
                ;; Persistence callbacks alone must not classify ordinary JDBC.
                (cond-> {:connection conn :signals #{:spans :logs :metrics}}
+                 (some? json-backend) (assoc :json-backend json-backend)
                  (durable-dbspec? db-spec)
                  (assoc :durable? true))
                schema-context))

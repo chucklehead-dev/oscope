@@ -1,6 +1,20 @@
 # Configuration
 
 Oscope's standalone server accepts one versioned EDN configuration document.
+
+Version 2 optionally accepts `:json-backend :native-guarded` inside `:ingest`
+to select the general exporter's guarded native JSON fallback. Omitting it
+keeps `:configured`; specialized span/log encoders are unaffected. Native mode
+requires the qualified compiler-bearing source runtime and fails before
+database acquisition when unavailable. It does not change the 8 MiB payload
+bound or Durable acknowledgements. Standalone/AOT support is not qualified.
+Embedded callers select the same option directly in `oscope.embedded/start!`.
+Version 1 cannot select this new backend option.
+
+On that qualified runtime, run `jolt -M:test-native-json`,
+`jolt -M:test-native-json-standalone` and `jolt -M:test-native-json-embedded`
+as separate commands. The socket and Durable SDK fixtures must own separate
+native process lifetimes; closing one is not a reset of chDB's process anchor.
 The same options apply to the `-M:native-server` launcher.
 Configuration precedence is, from strongest to weakest:
 

@@ -10,14 +10,14 @@
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "02c759ca1d769f3dd4bcacc40db74bf4344e6c26"}
+         :git/sha "d568b5e6c92e38229fc53f3b45f9e386513ff42a"}
         ;; Select the canonical time provider independently of transitive order.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
          :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "2c2bef56b4902fc2af9ade9c62ccab8a2e2d95b8"}
+         :git/sha "4bad1ab46d85f8790cdb34a3841e59238108c7cf"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
@@ -27,7 +27,19 @@
          :git/sha "56db146d5b3d4edcb8db59ccee05db1945ea39fd"}}
 
  :aliases
- {:test-embedded-profile
+ {:test-native-json
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.json-backend-test"]}
+
+  :test-native-json-standalone
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.json-backend-test" "standalone"]}
+
+  :test-native-json-embedded
+  {:extra-paths ["test"]
+   :main-opts ["-m" "oscope.json-backend-test" "embedded"]}
+
+  :test-embedded-profile
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.embedded-profile-test-runner"]}
 
