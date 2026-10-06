@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Advance matching optional profiles to direct compact span/metric candidate
+  pins. Extend real embedded SDK capture with an untyped span and nonempty
+  event, checking stored Unicode attributes and event columns. Defaults and
+  typed paths stay unchanged; no app-throughput/S3 qualification is implied.
+
 - Advance both optional `:native-string-cache` profiles to the direct compact
   metric exporter candidate. Untyped Durable compact metrics avoid temporary
   physical maps; typed and default paths retain their behavior. This does not

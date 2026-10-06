@@ -6,6 +6,7 @@
             [jdbc.chdb.durable :as durable]
             [otel.sdk :as sdk]
             [otel.metrics :as metrics]
+            [otel.trace :as trace]
             [otel.exporter.chdb :as clickhouse]
             [oscope.config :as config]
             [oscope.config-cli :as cli]
@@ -123,12 +124,24 @@
                                    :metric-interval-ms 300000}})]
     (try
       (is (#'clickhouse/direct-metric-layout? @(:state (:exporter lifecycle))))
+      (is (#'clickhouse/direct-span-layout? @(:state (:exporter lifecycle))))
       (let [meter (sdk/meter "oscope.compact.metric-test")
             attrs {"scenario" "direct compact/é😀"}]
         (metrics/set-value! (metrics/gauge meter "oscope.test.gauge") 42 attrs)
         (metrics/add! (metrics/counter meter "oscope.test.counter") 3 attrs)
         (metrics/record! (metrics/histogram meter "oscope.test.histogram") 7 attrs)
+        (trace/with-span [span (sdk/tracer "oscope.compact.span-test") "oscope.test.span"
+                          {:attributes attrs}]
+          (trace/add-event! span "captured event" {"stage" "span-capture"}))
         (is (true? (embedded/force-flush! lifecycle)))
+        (let [row (jdbc/fetch-one (:connection lifecycle)
+                    ["SELECT ServiceName AS service, ScopeName AS scope, SpanAttributes['scenario'] AS scenario, `Events.Name` AS events, `Events.Attributes` AS event_attrs FROM otel_traces WHERE SpanName=? LIMIT 1"
+                     "oscope.test.span"])]
+          (is (= "oscope-compact-metric-test" (:service row)))
+          (is (= "oscope.compact.span-test" (:scope row)))
+          (is (= "direct compact/é😀" (:scenario row)))
+          (is (= ["captured event"] (:events row)))
+          (is (= [{"stage" "span-capture"}] (:event_attrs row))))
         (doseq [[table name field expected]
                 [["otel_metrics_gauge" "oscope.test.gauge" "Value" 42.0]
                  ["otel_metrics_sum" "oscope.test.counter" "Value" 3.0]
