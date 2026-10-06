@@ -5,6 +5,7 @@
             [jdbc.chdb.json-each-row :as encoder]
             [jdbc.chdb.durable.backend :as durable-backend]
             [jdbc.chdb.durable :as durable]
+            [jdbc.chdb.durable.control :as durable-control]
             [otel.sdk :as sdk]
             [otel.metrics :as metrics]
             [otel.trace :as trace]
@@ -118,7 +119,8 @@
                     {:db-spec (durable/writer-dbspec
                                 {:backend store :owner "oscope-compact-metric-test"
                                  :instance "oscope-compact-metric-test-instance"
-                                 :database "default" :lease-ttl-ms 30000})
+                                 :database "default" :lease-ttl-ms 30000
+                                 :checkpoint-wal-reference-threshold 2})
                      :json-backend :native-guarded-string-cache
                      :insert-format :json-compact-each-row
                      :sdk-options {:service-name "oscope-compact-metric-test"
@@ -144,6 +146,9 @@
             (logs/emit! logger {:body "" :severity :info
                                 :event-name "oscope.test.empty-log" :attributes attrs})))
         (is (true? (embedded/force-flush! lifecycle)))
+        (let [head (:head (durable-control/read-head-read-only! store))]
+          (is (< (count (get-in head ["manifest" "wal"])) 2))
+          (is (some? (get-in head ["manifest" "base"]))))
         (let [row (jdbc/fetch-one (:connection lifecycle)
                     ["SELECT ServiceName AS service, ScopeName AS scope, TraceId AS trace_id, SpanId AS span_id, SpanAttributes['scenario'] AS scenario, `Events.Name` AS events, `Events.Attributes` AS event_attrs FROM otel_traces WHERE SpanName=? LIMIT 1"
                      "oscope.test.span"])]

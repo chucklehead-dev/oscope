@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Expose optional Durable `:checkpoint-wal-reference-threshold` in file config,
+  forwarding it to the writer independently of logical request checkpoint
+  cadence. Repin default and optional chDB dependencies to the JDBC forwarding
+  fix; encoding and policy defaults stay unchanged. Full checkpoints can add
+  latency, so this is not a tail guarantee.
+
 - Advance optional root/embedded profiles to direct compact log rows. Qualify
   actual SDK logs with structured/empty bodies, severity and trace correlation
   alongside span events and metrics. Defaults and typed paths remain unchanged.

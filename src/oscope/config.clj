@@ -27,7 +27,7 @@
   #{:owner :instance :database :scratch-parent :lease-ttl-ms
     :heartbeat-interval-ms :clock-skew-ms :force? :max-attempts
     :retry-deadline-ms :retry-initial-backoff-ms :retry-max-backoff-ms
-    :checkpoint-every-batches})
+    :checkpoint-every-batches :checkpoint-wal-reference-threshold})
 (def ^:private s3-keys
   #{:endpoint :bucket :prefix :region :object-id :credentials
     :max-attempts :connect-timeout-ms :timeout-ms :retry-deadline-ms
@@ -163,7 +163,8 @@
                   {:path [:storage :database]}))
   (doseq [key [:lease-ttl-ms :heartbeat-interval-ms :max-attempts
                :retry-deadline-ms :retry-initial-backoff-ms
-               :retry-max-backoff-ms :checkpoint-every-batches]]
+               :retry-max-backoff-ms :checkpoint-every-batches
+               :checkpoint-wal-reference-threshold]]
     (optional-positive! storage key))
   (when (contains? storage :clock-skew-ms)
     (nonnegative-int! [:storage :clock-skew-ms] (:clock-skew-ms storage)))

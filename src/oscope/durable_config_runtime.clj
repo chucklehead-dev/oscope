@@ -55,7 +55,7 @@
   (str (.getCanonicalPath (File. root)) ".oscope-registry"))
 
 (defn- common-writer-options [storage instance-fn]
-  {:owner (or (:owner storage) "oscope")
+  (cond-> {:owner (or (:owner storage) "oscope")
    :instance (or (:instance storage) (instance-fn))
    :database (or (:database storage) "default")
    :scratch-parent (or (:scratch-parent storage)
@@ -67,7 +67,10 @@
    :retry-deadline-ms (or (:retry-deadline-ms storage) 5000)
    :retry-initial-backoff-ms (or (:retry-initial-backoff-ms storage) 10)
    :retry-max-backoff-ms (or (:retry-max-backoff-ms storage) 250)
-   :force? (boolean (:force? storage))})
+   :force? (boolean (:force? storage))}
+    (contains? storage :checkpoint-wal-reference-threshold)
+    (assoc :checkpoint-wal-reference-threshold
+           (:checkpoint-wal-reference-threshold storage))))
 
 (defn server-options
   "Construct Durable server ownership only after config validation/check mode.

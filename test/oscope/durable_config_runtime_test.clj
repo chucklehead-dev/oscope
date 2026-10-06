@@ -1,5 +1,7 @@
 (ns oscope.durable-config-runtime-test
   (:require [clojure.test :refer [deftest is testing]]
+            [db.driver :as driver]
+            [jdbc.chdb.durable.backend :as backend]
             [jdbc.chdb.durable :as durable]
             [oscope.config :as config]
             [oscope.durable-config-runtime :as runtime]
@@ -17,6 +19,32 @@
         :credentials {:type :environment
                       :access-key-env "ACCESS_REF"
                       :secret-key-env "SECRET_REF"}}})
+
+(deftest checkpoint-reference-policy-is-validated-and-reaches-the-writer
+  (doseq [storage [{:type :durable-local :root "/unused"}
+                   (s3-storage)]
+          threshold [nil 1 128]]
+    (let [storage (cond-> storage threshold (assoc :checkpoint-wal-reference-threshold threshold))
+          resolved (resolved storage)
+          namespace (backend/memory-backend)
+          options (runtime/server-options
+                    resolved {"ACCESS_REF" "test-access" "SECRET_REF" "test-secret"}
+                    {:local-backend-fn (constantly namespace)
+                     :s3-backend-fn (constantly namespace)
+                     :instance-fn (constantly "threshold-test")})
+          opened (with-redefs [durable/open-writer! identity]
+                   (driver/open-handle durable/durable-driver (:db-spec options)))]
+      (is (= (:config resolved) (config/parse (config/encode (:config resolved)))))
+      (is (= threshold (:checkpoint-wal-reference-threshold opened)))
+      (is (= (some? threshold) (contains? opened :checkpoint-wal-reference-threshold)))
+      (is (= 1000 (get-in options [:durability :checkpoint-every-batches])))))
+  (doseq [value [nil false 0 -1 1.5 "128"]]
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (resolved {:type :durable-local :root "/unused"
+                            :checkpoint-wal-reference-threshold value}))))
+  (doseq [storage [{:type :memory} {:type :local-path :path "/unused"}]]
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (resolved (assoc storage :checkpoint-wal-reference-threshold 128))))))
 
 (deftest check-config-does-not-resolve-credentials-or-create-runtime-owners
   (let [resolved (assoc (resolved (s3-storage)) :check-config? true)

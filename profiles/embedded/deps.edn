@@ -9,7 +9,7 @@
          :git/sha "19fc49d20b3a75906f0ccbb8b50c7e48b03e4813"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "7dcaec0be8259b670223dc9fa738ac2b2c2b3f4f"}
+         :git/sha "d4acb76d761fd51a0b793cabb22b355f9740147c"}
         ;; A direct pin prevents the old transitive DB time provider winning.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
@@ -26,7 +26,7 @@
   {:extra-deps
    {io.github.chucklehead-dev/jolt-chdb
     {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-     :git/sha "c66261b25e74906a1e85c00a5bc4f2ae73fab7b1"}
+     :git/sha "d4acb76d761fd51a0b793cabb22b355f9740147c"}
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
      :git/sha "0ab5ca1dbd7ad6c2c795bc4d44adb2b163fa243b"}

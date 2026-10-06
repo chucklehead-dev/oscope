@@ -30,10 +30,21 @@ changes captured values, the serial UTF-8 limit or Durable acknowledgement.
 Omitting both preserves existing named input and configured encoding.
 
 Embedded callers pass `:json-backend` and `:insert-format` directly to `start!`.
+
 Both root and embedded development profiles offer the alias; dependency aliases
 do not propagate to applications, so consumers must explicitly select matching
-pins. This candidate is not a default repin or standalone/AOT qualification.
-Version 1 cannot select either new option.
+pins. Encoder choices remain opt-in; no standalone/AOT qualification is implied.
+Version 1 cannot select either new encoder option.
+
+Durable storage can optionally set `:checkpoint-wal-reference-threshold` to a
+positive integer, for example `128`. The writer publishes a full checkpoint
+when another WAL publication would reach that limit. This counts physical WAL
+references, not rows or logical OTLP requests; it is separate from Oscope's
+`:checkpoint-every-batches` cadence. Omitting it preserves the existing policy.
+A smaller reference list can reduce head-processing and recovery work, but
+full backups may increase tail latency. It is not a throughput/latency guarantee.
+The default and optional chDB pins include the JDBC forwarding fix. Embedded
+callers set the same option on their Durable `writer-dbspec`.
 
 Run cached source gates in separate processes from the repository root:
 
