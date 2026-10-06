@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Advance optional native string-cache chDB pins to the allocation-light
+  manifest traversal. Default pins and persistence/checkpoint behavior stay
+  unchanged; this is not throughput-target or S3 qualification.
+
 - Advance optional exporter pins to the direct attribute-map reducer, preserving
   normalized values, collisions and callback order without another codec/cache.
   Default exporter pins stay unchanged; this is not app-throughput qualification.

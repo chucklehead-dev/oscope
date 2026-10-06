@@ -26,7 +26,7 @@
   {:extra-deps
    {io.github.chucklehead-dev/jolt-chdb
     {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-     :git/sha "d4acb76d761fd51a0b793cabb22b355f9740147c"}
+     :git/sha "c9d033cd94ee5f488ff40121ea92155d5e53477e"}
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
      :git/sha "61968ffcc18868c41dc4078e198ae481322614f3"}
