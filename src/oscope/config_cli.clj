@@ -220,6 +220,8 @@
        :db-spec (config/storage->db-spec storage)}
        (contains? (:ingest document) :json-backend)
        (assoc :json-backend (get-in document [:ingest :json-backend]))
+       (contains? (:ingest document) :insert-format)
+       (assoc :insert-format (get-in document [:ingest :insert-format]))
        typed-schema (assoc :typed-schema typed-schema)))))
 
 (defn check-output

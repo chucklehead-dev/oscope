@@ -11,6 +11,45 @@ bound or Durable acknowledgements. Standalone/AOT support is not qualified.
 Embedded callers select the same option directly in `oscope.embedded/start!`.
 Version 1 cannot select this new backend option.
 
+On the qualified source runtime, the experimental `:native-string-cache` alias
+selects matching exact chDB, exporter and data.json candidate pins without
+changing the default dependencies. Version 2 can then select:
+
+```clojure
+:ingest {:type :otlp-http-json
+         :json-backend :native-guarded-string-cache
+         :insert-format :json-compact-each-row}
+```
+
+These are separate choices. Compact input sends schema-ordered arrays rather
+than repeating column names; the exporter confirms the live schema at startup
+and fails if it cannot confirm the plan. The string cache retains at most 128
+stock-string fragments and 65,536 input-plus-output characters in each payload
+or worker, then discards them. Custom writers still run normally. Neither
+changes captured values, the serial UTF-8 limit or Durable acknowledgement.
+Omitting both preserves existing named input and configured encoding.
+
+Embedded callers pass `:json-backend` and `:insert-format` directly to `start!`.
+Both root and embedded development profiles offer the alias; dependency aliases
+do not propagate to applications, so consumers must explicitly select matching
+pins. This candidate is not a default repin or standalone/AOT qualification.
+Version 1 cannot select either new option.
+
+Run cached source gates in separate processes from the repository root:
+
+```sh
+jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-controls
+jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-embedded
+jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-standalone
+```
+
+Local workspace gates must also use the mandated Chez 10.4.1 command wrapper.
+For suites that launch child processes, set `JOLT_BIN` to that same qualified
+wrapper/executable; a newer parent command does not upgrade `jolt` on PATH.
+These tests cover startup, typed collection/readback and restart, not throughput,
+S3 or native bundled builds. Published exporter mean screens around 25k rows/s
+do not establish Oscope throughput or the requested span-tail targets.
+
 On that qualified runtime, run `jolt -M:test-native-json`,
 `jolt -M:test-native-json-standalone` and `jolt -M:test-native-json-embedded`
 as separate commands. The socket and Durable SDK fixtures must own separate

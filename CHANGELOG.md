@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Expose optional bounded stock-string encoding and compact telemetry input
+  through embedded/standalone startup and version-2 file config. Validate before
+  connection acquisition; defaults stay unchanged. Matching candidate pins are
+  isolated in `:native-string-cache` development aliases. Source integration
+  checks cover typed capture/readback and restart, not throughput or AOT builds.
+
 - Stage the measured OTel/exporter/chDB/data.json stack consistently in root
   and embedded profiles, and raise the source runtime floor to Jolt 0.8.17.
   Native JSON remains explicit opt-in; this pin update does not change

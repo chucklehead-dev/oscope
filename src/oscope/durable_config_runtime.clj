@@ -161,4 +161,6 @@
        :db-spec db-spec}
        (contains? (:ingest document) :json-backend)
        (assoc :json-backend (get-in document [:ingest :json-backend]))
+       (contains? (:ingest document) :insert-format)
+       (assoc :insert-format (get-in document [:ingest :insert-format]))
        typed (assoc :typed-schema typed)))))

@@ -20,4 +20,16 @@
         metosin/malli {:mvn/version "0.20.1"}
         org.clojure/data.json
         {:git/url "https://github.com/casselc/data.json.git"
-         :git/sha "f48a80fb0810a85fa78edcedbb368ee833389c95"}}}
+         :git/sha "f48a80fb0810a85fa78edcedbb368ee833389c95"}}
+ :aliases
+ {:native-string-cache
+  {:extra-deps
+   {io.github.chucklehead-dev/jolt-chdb
+    {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
+     :git/sha "c66261b25e74906a1e85c00a5bc4f2ae73fab7b1"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+     :git/sha "3afe152a78cf11f44814ac117a8c26631f4a8957"}
+    org.clojure/data.json
+    {:git/url "https://github.com/casselc/data.json.git"
+     :git/sha "6655d55008845013544fa3681c74cbe076cd5f32"}}}}}
