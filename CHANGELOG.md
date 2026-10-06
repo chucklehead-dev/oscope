@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Advance optional exporter pins to the direct attribute-map reducer, preserving
+  normalized values, collisions and callback order without another codec/cache.
+  Default exporter pins stay unchanged; this is not app-throughput qualification.
+
 - Expose optional Durable `:checkpoint-wal-reference-threshold` in file config,
   forwarding it to the writer independently of logical request checkpoint
   cadence. Repin default and optional chDB dependencies to the JDBC forwarding
