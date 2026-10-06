@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Advance both optional `:native-string-cache` profiles to the direct compact
+  metric exporter candidate. Untyped Durable compact metrics avoid temporary
+  physical maps; typed and default paths retain their behavior. This does not
+  change default pins or transfer library throughput results to the app. Add
+  real embedded SDK gauge/counter/histogram capture, value/attribute readback
+  and shutdown checks for this route.
+
 - Expose optional bounded stock-string encoding and compact telemetry input
   through embedded/standalone startup and version-2 file config. Validate before
   connection acquisition; defaults stay unchanged. Matching candidate pins are

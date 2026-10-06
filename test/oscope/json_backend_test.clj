@@ -3,6 +3,10 @@
             [jdbc.core :as jdbc]
             [jdbc.chdb.json-each-row :as encoder]
             [jdbc.chdb.durable.backend :as durable-backend]
+            [jdbc.chdb.durable :as durable]
+            [otel.sdk :as sdk]
+            [otel.metrics :as metrics]
+            [otel.exporter.chdb :as clickhouse]
             [oscope.config :as config]
             [oscope.config-cli :as cli]
             [oscope.embedded :as embedded]
@@ -105,6 +109,41 @@
             embedded-fixture/*insert-format* :json-compact-each-row]
     (embedded-fixture/approved-manifest-drives-embedded-sdk-ingestion-and-live-query)))
 
+(deftest compact-string-cache-sdk-metrics-are-stored
+  (let [store (durable-backend/memory-backend)
+        lifecycle (embedded/start!
+                    {:db-spec (durable/writer-dbspec
+                                {:backend store :owner "oscope-compact-metric-test"
+                                 :instance "oscope-compact-metric-test-instance"
+                                 :database "default" :lease-ttl-ms 30000})
+                     :json-backend :native-guarded-string-cache
+                     :insert-format :json-compact-each-row
+                     :sdk-options {:service-name "oscope-compact-metric-test"
+                                   :processor :simple :metrics? true :runtime-metrics? false
+                                   :metric-interval-ms 300000}})]
+    (try
+      (is (#'clickhouse/direct-metric-layout? @(:state (:exporter lifecycle))))
+      (let [meter (sdk/meter "oscope.compact.metric-test")
+            attrs {"scenario" "direct compact/é😀"}]
+        (metrics/set-value! (metrics/gauge meter "oscope.test.gauge") 42 attrs)
+        (metrics/add! (metrics/counter meter "oscope.test.counter") 3 attrs)
+        (metrics/record! (metrics/histogram meter "oscope.test.histogram") 7 attrs)
+        (is (true? (embedded/force-flush! lifecycle)))
+        (doseq [[table name field expected]
+                [["otel_metrics_gauge" "oscope.test.gauge" "Value" 42.0]
+                 ["otel_metrics_sum" "oscope.test.counter" "Value" 3.0]
+                 ["otel_metrics_histogram" "oscope.test.histogram" "Sum" 7.0]]]
+          (let [row (jdbc/fetch-one (:connection lifecycle)
+                      [(str "SELECT ServiceName AS service, ScopeName AS scope, " field
+                            " AS value, Attributes['scenario'] AS scenario FROM " table
+                            " WHERE MetricName=? ORDER BY TimeUnix DESC LIMIT 1") name])]
+            (is (= "oscope-compact-metric-test" (:service row)))
+            (is (= "oscope.compact.metric-test" (:scope row)))
+            (is (= "direct compact/é😀" (:scenario row)))
+            (is (= expected (double (:value row)))))))
+      (finally
+        (is (= {:status :closed :phase :closed} (embedded/stop! lifecycle)))))))
+
 (defn -main [& [slice]]
   ;; Native storage lifetimes are process-owned; do not combine ordinary socket
   ;; storage with an independent Durable writer in one process.
@@ -122,6 +161,7 @@
                                    #'explicit-string-cache-startup-probe-is-real]
                "cached-standalone" [#'compact-string-cache-typed-socket-and-restart]
                "cached-embedded" [#'compact-string-cache-embedded-approved-schema-and-live-query]
+               "cached-metrics" [#'compact-string-cache-sdk-metrics-are-stored]
                "standalone" [#'native-file-selected-typed-socket-and-restart]
                "embedded" [#'native-embedded-approved-schema-and-live-query]
                (throw (ex-info "Unknown native JSON test slice" {})))

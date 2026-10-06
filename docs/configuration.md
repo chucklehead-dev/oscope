@@ -40,6 +40,7 @@ Run cached source gates in separate processes from the repository root:
 ```sh
 jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-controls
 jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-embedded
+jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-metrics
 jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-backend-test cached-standalone
 ```
 
