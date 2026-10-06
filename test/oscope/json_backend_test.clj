@@ -1,5 +1,6 @@
 (ns oscope.json-backend-test
   (:require [clojure.test :as test :refer [deftest is]]
+            [clojure.data.json :as json]
             [jdbc.core :as jdbc]
             [jdbc.chdb.json-each-row :as encoder]
             [jdbc.chdb.durable.backend :as durable-backend]
@@ -7,6 +8,7 @@
             [otel.sdk :as sdk]
             [otel.metrics :as metrics]
             [otel.trace :as trace]
+            [otel.logs :as logs]
             [otel.exporter.chdb :as clickhouse]
             [oscope.config :as config]
             [oscope.config-cli :as cli]
@@ -120,11 +122,13 @@
                      :json-backend :native-guarded-string-cache
                      :insert-format :json-compact-each-row
                      :sdk-options {:service-name "oscope-compact-metric-test"
-                                   :processor :simple :metrics? true :runtime-metrics? false
+                                   :processor :simple :metrics? true :logs? true
+                                   :bridge-logging? false :runtime-metrics? false
                                    :metric-interval-ms 300000}})]
     (try
       (is (#'clickhouse/direct-metric-layout? @(:state (:exporter lifecycle))))
       (is (#'clickhouse/direct-span-layout? @(:state (:exporter lifecycle))))
+      (is (#'clickhouse/direct-log-layout? @(:state (:exporter lifecycle))))
       (let [meter (sdk/meter "oscope.compact.metric-test")
             attrs {"scenario" "direct compact/é😀"}]
         (metrics/set-value! (metrics/gauge meter "oscope.test.gauge") 42 attrs)
@@ -132,16 +136,38 @@
         (metrics/record! (metrics/histogram meter "oscope.test.histogram") 7 attrs)
         (trace/with-span [span (sdk/tracer "oscope.compact.span-test") "oscope.test.span"
                           {:attributes attrs}]
-          (trace/add-event! span "captured event" {"stage" "span-capture"}))
+          (trace/add-event! span "captured event" {"stage" "span-capture"})
+          (let [logger (sdk/logger "oscope.compact.log-test" {:version "v1"})]
+            (logs/emit! logger {:body {"answer" 42 "phase" ["é😀" true]}
+                                :severity :warn :event-name "oscope.test.log"
+                                :attributes attrs})
+            (logs/emit! logger {:body "" :severity :info
+                                :event-name "oscope.test.empty-log" :attributes attrs})))
         (is (true? (embedded/force-flush! lifecycle)))
         (let [row (jdbc/fetch-one (:connection lifecycle)
-                    ["SELECT ServiceName AS service, ScopeName AS scope, SpanAttributes['scenario'] AS scenario, `Events.Name` AS events, `Events.Attributes` AS event_attrs FROM otel_traces WHERE SpanName=? LIMIT 1"
+                    ["SELECT ServiceName AS service, ScopeName AS scope, TraceId AS trace_id, SpanId AS span_id, SpanAttributes['scenario'] AS scenario, `Events.Name` AS events, `Events.Attributes` AS event_attrs FROM otel_traces WHERE SpanName=? LIMIT 1"
                      "oscope.test.span"])]
           (is (= "oscope-compact-metric-test" (:service row)))
           (is (= "oscope.compact.span-test" (:scope row)))
           (is (= "direct compact/é😀" (:scenario row)))
           (is (= ["captured event"] (:events row)))
-          (is (= [{"stage" "span-capture"}] (:event_attrs row))))
+          (is (= [{"stage" "span-capture"}] (:event_attrs row)))
+          (doseq [[event severity number] [["oscope.test.log" "WARN" 13]
+                                           ["oscope.test.empty-log" "INFO" 9]]]
+            (let [log (jdbc/fetch-one (:connection lifecycle)
+                        ["SELECT ServiceName AS service, ScopeName AS scope, ScopeVersion AS version, Body AS body, TraceId AS trace_id, SpanId AS span_id, SeverityText AS severity, SeverityNumber AS number, LogAttributes['scenario'] AS scenario FROM otel_logs WHERE EventName=? LIMIT 1"
+                         event])]
+              (is (= "oscope-compact-metric-test" (:service log)))
+              (is (= "oscope.compact.log-test" (:scope log)))
+              (is (= "v1" (:version log)))
+              (is (= "direct compact/é😀" (:scenario log)))
+              (is (= severity (:severity log))) (is (= number (:number log)))
+              (is (= (:trace_id row) (:trace_id log)))
+              (is (= (:span_id row) (:span_id log)))
+              (is (= (if (= event "oscope.test.log")
+                       {"answer" 42 "phase" ["é😀" true]} "")
+                     (if (= event "oscope.test.log")
+                       (json/read-str (:body log)) (:body log)))))))
         (doseq [[table name field expected]
                 [["otel_metrics_gauge" "oscope.test.gauge" "Value" 42.0]
                  ["otel_metrics_sum" "oscope.test.counter" "Value" 3.0]

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Advance optional root/embedded profiles to direct compact log rows. Qualify
+  actual SDK logs with structured/empty bodies, severity and trace correlation
+  alongside span events and metrics. Defaults and typed paths remain unchanged.
+
 - Advance matching optional profiles to direct compact span/metric candidate
   pins. Extend real embedded SDK capture with an untyped span and nonempty
   event, checking stored Unicode attributes and event columns. Defaults and

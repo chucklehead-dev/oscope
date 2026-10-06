@@ -47,8 +47,10 @@ jolt -Sdeps '{:paths ["src" "test"]}' -M:native-string-cache -m oscope.json-back
 Local workspace gates must also use the mandated Chez 10.4.1 command wrapper.
 For suites that launch child processes, set `JOLT_BIN` to that same qualified
 wrapper/executable; a newer parent command does not upgrade `jolt` on PATH.
+The historical `cached-metrics` slice also captures span events and correlated
+logs with structured and empty bodies through the real installed SDK.
 These tests cover startup, typed collection/readback and restart, not throughput,
-S3 or native bundled builds. Published exporter mean screens around 25k rows/s
+S3 or native bundled builds. Published exporter mean screens around 31k rows/s
 do not establish Oscope throughput or the requested span-tail targets.
 
 On that qualified runtime, run `jolt -M:test-native-json`,
