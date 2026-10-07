@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Stage the Langfuse qualification lane on the authenticated green Jolt
+  0.8.17-based plain runtime, removing its unnecessary 0.8.6 bootstrap.
+  Keep exact artifact/source/tree/helper checks and separate native qualification;
+  credentials and woven lanes are unchanged. Hosted interoperability remains
+  a separate required gate, not inferred from library benchmark results.
+
 - Stage Jolt 0.8.17 for ordinary hosted tests, selecting the exact measured
   capability runtime for headless parents and children. Keep compiler source,
   tree and version checks; S3/artifact/woven lane upgrades remain separate gates.

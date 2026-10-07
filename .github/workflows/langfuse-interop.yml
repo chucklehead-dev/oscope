@@ -13,20 +13,23 @@ jobs:
     timeout-minutes: 20
     environment: langfuse-interop
     env:
-      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.6
-      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.6
-      # Authenticated producer83 tuple; rotate explicitly before artifact expiry.
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-durable-bcb376a0
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-durable-bcb376a0
+      # Exact green plain-runtime producer; woven lanes remain separate.
+      JOLT_AOT_CACHE: '0'
+      JOLT_NO_USER_DEPS: '1'
+      QUALIFIED_RUNTIME_PROFILE: bcb
       QUALIFIED_RUNTIME_REPOSITORY: casselc/jolt
-      QUALIFIED_RUNTIME_COMPILER_SOURCE: aea91781bbab68bf174fef4a689bb00dcf834ded
-      QUALIFIED_RUNTIME_COMPILER_TREE: a31de1596fcabd0e45fbcbc528842805acea0ee7
-      QUALIFIED_RUNTIME_RUN_ID: '35188849252'
+      QUALIFIED_RUNTIME_COMPILER_SOURCE: bcb376a04f8e3d4508e9f77f4fa33b50bae7924b
+      QUALIFIED_RUNTIME_COMPILER_TREE: eb24fdfdba7da4e468304376e37db3117b3c50b9
+      QUALIFIED_RUNTIME_RUN_ID: '37650983199'
       QUALIFIED_RUNTIME_RUN_ATTEMPT: '1'
-      QUALIFIED_RUNTIME_ARTIFACT_ID: '10483062488'
-      QUALIFIED_RUNTIME_WORKFLOW_SHA: '6bf745bf6101f2c3481d0ffe16401843c7675050'
-      QUALIFIED_RUNTIME_ARTIFACT_SHA256: '353670dda1447d96d46aa1e133e4910481caf2f328d159a9bde76ed863e41524'
-      QUALIFIED_RUNTIME_BINARY_SHA256: '31cff7ea89a652bd99848cf15686eb576d90d9ac3962ac07701fb6005e6eb458'
-      QUALIFIED_RUNTIME_HELPER_SOURCE: https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/c26c9bfcf071112531974729b15469b8c9fe713a/scripts/fetch-qualified-durable-runtime.sh
-      QUALIFIED_RUNTIME_HELPER_SHA256: e962976aea263f00440fdf9bfa53c36a158c501f2b87d15aa8a84867fe51caae
+      QUALIFIED_RUNTIME_ARTIFACT_ID: '11497896255'
+      QUALIFIED_RUNTIME_WORKFLOW_SHA: '2d0f4b59e068b269780b0a669e8bc06524ec98b1'
+      QUALIFIED_RUNTIME_ARTIFACT_SHA256: '6d7043b502ab7839fe4a91ae977b7be8be088ebe620ead6115d2d0afdb9819db'
+      QUALIFIED_RUNTIME_BINARY_SHA256: '9f6e6b4a347ae006ba5810b3bb876b4bb2eca41b611afeadfb18d4feb9c03cf0'
+      QUALIFIED_RUNTIME_HELPER_SOURCE: https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/c9916a8e66c924120f225c3889c1dda8dcab7655/scripts/fetch-qualified-durable-runtime.sh
+      QUALIFIED_RUNTIME_HELPER_SHA256: a20b0e9dc54446172a15d83cec64fd11039af659f54c8997cbeab533c607ff65
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,21 +41,8 @@ jobs:
           ref: 3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04
           path: .qualification/jolt-chdb
           persist-credentials: false
-      - name: Install Jolt v0.8.6
-        shell: bash
-        run: |
-          set -euo pipefail
-          install_dir="$RUNNER_TEMP/jolt-bin"
-          curl -fsSL \
-            https://raw.githubusercontent.com/jolt-lang/jolt/f3041a0e32ba0db1b92bd69b8ecb7b40f8b2e115/install \
-            | bash -s -- --dir "$install_dir" --version 0.8.6 \
-              --checksum 3dab6373f2028efaf7a0e41231fc316de866e55454023c037e9d5981be6358c2
-          echo "$install_dir" >> "$GITHUB_PATH"
-      - name: Assert Jolt version
-        shell: bash
-        run: test "$(jolt --version)" = "jolt v0.8.6"
       - name: Authenticate and select qualified positive runtime
-        timeout-minutes: 3
+        timeout-minutes: 5
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,7 +51,7 @@ jobs:
           helper="$RUNNER_TEMP/fetch-qualified-durable-runtime.sh"
           curl -fsSL --connect-timeout 15 --max-time 30 "$QUALIFIED_RUNTIME_HELPER_SOURCE" -o "$helper"
           printf '%s  %s\n' "$QUALIFIED_RUNTIME_HELPER_SHA256" "$helper" | sha256sum -c -
-          TMPDIR=/tmp timeout --signal=TERM --kill-after=5s 120s bash "$helper" \
+          TMPDIR=/tmp timeout --signal=TERM --kill-after=5s 240s bash "$helper" \
             | tee "$RUNNER_TEMP/oscope-qualified-runtime.log"
           test "$(grep -c '^QUALIFIED_RUNTIME_BIN=' "$RUNNER_TEMP/oscope-qualified-runtime.log")" = 1
           QUALIFIED_RUNTIME_BIN=$(sed -n 's/^QUALIFIED_RUNTIME_BIN=//p' "$RUNNER_TEMP/oscope-qualified-runtime.log")
@@ -69,11 +59,12 @@ jobs:
           test -f "$QUALIFIED_RUNTIME_BIN" && test ! -L "$QUALIFIED_RUNTIME_BIN"
           test "$(realpath "$QUALIFIED_RUNTIME_BIN")" = "$QUALIFIED_RUNTIME_BIN"
           test "$(sha256sum "$QUALIFIED_RUNTIME_BIN" | cut -d ' ' -f1)" = "$QUALIFIED_RUNTIME_BINARY_SHA256"
-          # Positive qualifier/SDK/native children use this exact artifact.
-          # Woven steps retain their explicit f00 compiler override.
+          (cd "$(dirname "$QUALIFIED_RUNTIME_BIN")" && "$QUALIFIED_RUNTIME_BIN" -Srepro -e \
+            '(require (quote jolt.host)) (assert (= "Chez Scheme Version 10.4.1" (jolt.host/scheme-version)))')
+          # This plain lane's qualifier/SDK/native children use this artifact.
+          # There is no bootstrap compiler or woven step in this workflow.
           echo "JOLT_BIN=$QUALIFIED_RUNTIME_BIN" >> "$GITHUB_ENV"
           echo "JOLT_WRAPPER=" >> "$GITHUB_ENV"
-          echo "JOLT_CACHE_DIR=$GITHUB_WORKSPACE/.jolt-cache-durable-aea" >> "$GITHUB_ENV"
           dirname "$QUALIFIED_RUNTIME_BIN" >> "$GITHUB_PATH"
       - name: Qualify pinned chDB native ABI and asset
         working-directory: .qualification/jolt-chdb
