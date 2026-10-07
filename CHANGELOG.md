@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Align minimal embedded-app dependency acceptance with the default chDB
+  checkpoint-option forwarding revision; retain exact-pin and single-provider
+  checks rather than permitting arbitrary revisions.
+
 - Advance matching optional root/embedded native string-cache profiles to
   the measured small-attribute reducer, empty-vector JSON setup, and expanded
   chDB benchmark percentile reporting. Defaults remain unchanged; library measurements
