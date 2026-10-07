@@ -61,6 +61,10 @@ jobs:
           set -euo pipefail
           test "$(git -C .qualification/jolt rev-parse HEAD)" = ab9b85809647770fe604e35481649aabbe8c65bd
           test "$(git -C .qualification/jolt rev-parse HEAD^{tree})" = ebc827edece73b660b1e8fbab0edf09b15eec233
+          git -C .qualification/jolt fetch --no-tags https://github.com/jolt-lang/jolt.git refs/tags/v0.8.17:refs/tags/v0.8.17
+          test "$(git -C .qualification/jolt rev-parse v0.8.17^{commit})" = 58980ac9faa6c3c571d1cb251eb7b09799af1b67
+          test "$(git -C .qualification/jolt rev-parse v0.8.17^{tree})" = 1cf36cb0fed53401364d05f2b9e74a9cc25edaa6
+          git -C .qualification/jolt merge-base --is-ancestor 58980ac9faa6c3c571d1cb251eb7b09799af1b67 ab9b85809647770fe604e35481649aabbe8c65bd
           test -z "$(git -C .qualification/jolt status --porcelain)"
       - name: Provision pinned Chez for the Durable-capable runtime
         run: make -C .qualification/jolt deps JOLT_SYSTEM_CHEZ=
