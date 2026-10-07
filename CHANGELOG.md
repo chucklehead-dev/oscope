@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Stage Jolt 0.8.17 for ordinary hosted tests, selecting the exact measured
+  capability runtime for headless parents and children. Keep compiler source,
+  tree and version checks; S3/artifact/woven lane upgrades remain separate gates.
+
 - Align minimal embedded-app dependency acceptance with the default chDB
   checkpoint-option forwarding revision; retain exact-pin and single-provider
   checks rather than permitting arbitrary revisions.

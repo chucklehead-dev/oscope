@@ -30,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.6
-      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.6
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.17-ab9b8580
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.17-ab9b8580
       HEGEL_CACHE_DIR: ${{ github.workspace }}/.hegel-native
     steps:
       - uses: actions/checkout@v4
@@ -39,28 +39,35 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: casselc/jolt
-          ref: 2d39e854a90926d8f8e9bd5d3ddbb109d657afe1
+          ref: ab9b85809647770fe604e35481649aabbe8c65bd
           path: .qualification/jolt
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
-      - name: Install Jolt v0.8.6
+      - name: Install Jolt v0.8.17
         shell: bash
         run: |
           set -euo pipefail
           install_dir="$RUNNER_TEMP/jolt-bin"
-          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.6/install \
-            | bash -s -- --dir "$install_dir" --version 0.8.6
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.17/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.17
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
         shell: bash
-        run: test "$(jolt --version)" = "jolt v0.8.6"
+        run: test "$(jolt --version)" = "jolt v0.8.17"
+      - name: Verify selected Durable runtime source and tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .qualification/jolt rev-parse HEAD)" = ab9b85809647770fe604e35481649aabbe8c65bd
+          test "$(git -C .qualification/jolt rev-parse HEAD^{tree})" = ebc827edece73b660b1e8fbab0edf09b15eec233
+          test -z "$(git -C .qualification/jolt status --porcelain)"
       - name: Provision pinned Chez for the Durable-capable runtime
         run: make -C .qualification/jolt deps JOLT_SYSTEM_CHEZ=
       - name: Assert Durable-capable Jolt version
         run: >-
           test "$(.qualification/jolt/bin/jolt --version)"
-          = "jolt v0.8.6-7-g2d39e854"
+          = "jolt v0.8.17-37-gab9b8580"
       - name: Install checksum-pinned minimal-profile chDB asset
         working-directory: test/fixtures/minimal-embedded-app
         env:
@@ -73,6 +80,14 @@ jobs:
         run: |
           echo "JOLT_BIN=$GITHUB_WORKSPACE/.qualification/jolt/bin/jolt" >> "$GITHUB_ENV"
           echo "JOLT_CHDB_LIB=$RUNNER_TEMP/chdb-native/libchdb.so" >> "$GITHUB_ENV"
+          # Parent and owned children must use the same capability runtime.
+          echo "$GITHUB_WORKSPACE/.qualification/jolt/bin" >> "$GITHUB_PATH"
+      - name: Verify parent and child capability selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jolt --version)" = "jolt v0.8.17-37-gab9b8580"
+          test "$("$JOLT_BIN" --version)" = "jolt v0.8.17-37-gab9b8580"
       - name: Test strict Langfuse credential wrapper
         run: test/langfuse_interop_env_test.sh
       - name: Test protected manual Langfuse workflow
@@ -87,25 +102,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.6
-      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.6
+      JOLT_CACHE_DIR: ${{ github.workspace }}/.jolt-cache-v0.8.17
+      JOLT_GITLIBS_DIR: ${{ github.workspace }}/.jolt-gitlibs-v0.8.17
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Install Jolt v0.8.6
+      - name: Install Jolt v0.8.17
         shell: bash
         run: |
           set -euo pipefail
           install_dir="$RUNNER_TEMP/jolt-bin"
-          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.6/install \
-            | bash -s -- --dir "$install_dir" --version 0.8.6
+          curl -fsSL https://raw.githubusercontent.com/jolt-lang/jolt/v0.8.17/install \
+            | bash -s -- --dir "$install_dir" --version 0.8.17
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Assert Jolt version
         shell: bash
-        run: test "$(jolt --version)" = "jolt v0.8.6"
+        run: test "$(jolt --version)" = "jolt v0.8.17"
       - name: Install checksum-pinned chDB asset
         run: jolt -Srepro -M -m jdbc.chdb.install
       - name: Qualify typed direct and loopback socket ingestion
