@@ -26,10 +26,10 @@
   {:extra-deps
    {io.github.chucklehead-dev/jolt-chdb
     {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-     :git/sha "c9d033cd94ee5f488ff40121ea92155d5e53477e"}
+     :git/sha "ca7fc8a6ec1d65f8efb153e8b4c1935836f9440e"}
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-     :git/sha "61968ffcc18868c41dc4078e198ae481322614f3"}
+     :git/sha "715cf81509e007b3eb3cfe873c5edf311f49e278"}
     org.clojure/data.json
     {:git/url "https://github.com/casselc/data.json.git"
-     :git/sha "6655d55008845013544fa3681c74cbe076cd5f32"}}}}}
+     :git/sha "3adc8c5d3a57a30d18f62bad9d1c7a5c1f6857e0"}}}}}

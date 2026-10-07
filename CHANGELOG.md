@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Advance matching optional root/embedded native string-cache profiles to
+  the measured small-attribute reducer, empty-vector JSON setup, and expanded
+  benchmark percentile stack. Defaults remain unchanged; library measurements
+  do not qualify application/socket throughput, tail latency or S3 storage.
+
 - Advance optional native string-cache chDB pins to the allocation-light
   manifest traversal. Default pins and persistence/checkpoint behavior stay
   unchanged; this is not throughput-target or S3 qualification.
