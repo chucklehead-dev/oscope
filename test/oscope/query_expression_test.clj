@@ -1,6 +1,6 @@
 (ns oscope.query-expression-test
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing thrown-with-msg?]]
+            [clojure.test :refer [deftest is testing]]
             [jdbc.core :as jdbc]
             [oscope.query.expression :as expression]
             [oscope.query.expression.chdb :as expression-chdb]

@@ -1,6 +1,6 @@
 (ns oscope.plotje-test
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing thrown-with-msg?]]
+            [clojure.test :refer [deftest is testing]]
             [oscope.plotje.spec :as spec]
             [oscope.plotje.svg :as svg]))
 
