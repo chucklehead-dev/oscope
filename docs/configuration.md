@@ -17,6 +17,25 @@ stack and qualified compiler-bearing Jolt source runtime. Current default pins
 are unchanged; selecting an unavailable backend fails before opening storage,
 not silently reverting to another encoder. Bundled/AOT support is not qualified.
 
+On this experimental branch, `:experimental-byte-collector` selects the exact
+published stack, including OTel and its crypto provider. For example, activate
+it together with the standalone server launcher:
+
+```sh
+jolt -M:experimental-byte-collector:server
+```
+
+This selects dependencies only; set the version-2 `:ingest` options above in
+your configuration to choose byte encoding and compact input. Use the already
+qualified compiler/runtime, not an arbitrary released binary. In this workspace
+every local Jolt command must run through the mandatory Chez 10.4.1 wrapper.
+The alias is not a default repin or reviewed production release.
+
+The embedded development profile has the identical alias. Dependency aliases
+do not propagate into consuming applications; an application must explicitly
+select the matching coordinates rather than retaining an older direct OTel pin.
+Selecting only newer chDB/exporter/JSON can leave an incompatible SDK graph.
+
 Other choices are `:configured` (the default), `:native-guarded`, and
 `:native-guarded-string-cache`. Insert format defaults to `:json-each-row`.
 Compact input sends schema-ordered arrays with explicit columns; startup must

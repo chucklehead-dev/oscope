@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add an opt-in `:experimental-byte-collector` Git-pinned stack in root and
+  embedded profiles, selecting OTel and its provider alongside exporter/chDB/
+  JSON. Keep default pins unchanged and require explicit source-runtime choice.
+
 - Add explicit startup JSON-backend and insert-format selection for embedded
   and standalone collection, including experimental serial byte batches with
   a qualified dependency stack. Validate unavailable choices before storage
