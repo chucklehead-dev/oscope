@@ -9,7 +9,7 @@
   {'io.github.casselc/otel ["19fc49d20b3a75906f0ccbb8b50c7e48b03e4813" "otel/any_value.clj"]
    'jolt-lang/jolt-crypto ["5effcc89a3258499a79a2a3d69edad9e7800d1bf" "jolt/crypto.clj"]
    'io.github.chucklehead-dev/jolt-chdb ["cd5a3fb520a6f4144e07db4bae0c1909b261c3b1" "jdbc/chdb.clj"]
-   'io.github.chucklehead-dev/jolt-otel-clickhouse ["f93d4ac9e7a0141eed82653c11c5955461bf1ac7" "otel/exporter/chdb.clj"]
+   'io.github.chucklehead-dev/jolt-otel-clickhouse ["51c225f04e12bd08202b3990598a5e4aaeb8fd17" "otel/exporter/chdb.clj"]
    'org.clojure/data.json ["2fa6ddded8050bb2fc16c28056777e433a4542e4" "clojure/data/json.clj"]})
 
 (deftest aliases-are-identical-exact-git-stacks-without-default-repin
@@ -34,6 +34,12 @@
       (is (and resolved (str/includes? resolved sha)) (str "Wrong source for " resource))
       (is (and resolved (not (str/includes? resolved "/worktrees/")))
           (str "Local override for " resource)))))
+
+(deftest active-stack-includes-the-native-projection-resource
+  (let [resource "otel/exporter/chdb/native_attributes.ss"
+        resolved (some-> (io/resource resource) str)]
+    (is (and resolved (str/includes? resolved "51c225f04e12bd08202b3990598a5e4aaeb8fd17")))
+    (is (and resolved (not (str/includes? resolved "/worktrees/"))))))
 
 (defn -main [& _]
   (let [result (test/run-tests 'oscope.experimental-codec-alias-test)]

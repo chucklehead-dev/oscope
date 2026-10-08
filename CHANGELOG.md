@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update only the experimental byte-collector Git stack to the exporter's
+  exact-sized attribute projection. Default pins remain unchanged; this is
+  an allocation candidate, not a guaranteed throughput or tail-latency win.
+
 - Add an opt-in `:experimental-byte-collector` Git-pinned stack in root and
   embedded profiles, selecting OTel and its provider alongside exporter/chDB/
   JSON. Keep default pins unchanged and require explicit source-runtime choice.
