@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Advance the experimental stack to declared-key typed compact lookup. Keep
+  undeclared telemetry attributes fully captured; defaults and persistence
+  behavior remain unchanged.
+
 - Update the experimental byte-collector stack to direct typed compact span
   projection and generic single-materialization SQL. Keep default pins and
   persistence rules unchanged; require explicit backend/format selection.

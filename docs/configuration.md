@@ -37,6 +37,10 @@ compact rows directly, avoiding intermediate maps. Choose both
 `:insert-format :json-compact-each-row` to use it. Attribute values, typed
 validity statuses, query columns and durability acknowledgements are unchanged.
 
+The temporary typed lookup retains only declared keys. Undeclared attributes
+still follow the normal capture and persistence behavior; this does not filter
+or redact them.
+
 The embedded development profile has the identical alias. Dependency aliases
 do not propagate into consuming applications; an application must explicitly
 select the matching coordinates rather than retaining an older direct OTel pin.
