@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update the experimental byte-collector stack to direct typed compact span
+  projection and generic single-materialization SQL. Keep default pins and
+  persistence rules unchanged; require explicit backend/format selection.
+
 - Update only the experimental byte-collector Git stack to the exporter's
   exact-sized attribute projection. Default pins remain unchanged; this is
   an allocation candidate, not a guaranteed throughput or tail-latency win.

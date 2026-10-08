@@ -31,6 +31,12 @@ qualified compiler/runtime, not an arbitrary released binary. In this workspace
 every local Jolt command must run through the mandatory Chez 10.4.1 wrapper.
 The alias is not a default repin or reviewed production release.
 
+With approved typed span attributes and Durable storage, this stack builds
+compact rows directly, avoiding intermediate maps. Choose both
+`:json-backend :native-guarded-byte-batch` and
+`:insert-format :json-compact-each-row` to use it. Attribute values, typed
+validity statuses, query columns and durability acknowledgements are unchanged.
+
 The embedded development profile has the identical alias. Dependency aliases
 do not propagate into consuming applications; an application must explicitly
 select the matching coordinates rather than retaining an older direct OTel pin.
