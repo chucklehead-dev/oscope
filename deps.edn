@@ -10,7 +10,7 @@
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "ed6efde5eac1bef76d4a588d41aa44dead7f47c3"}
+         :git/sha "64293b131c7e1c06d6e4ec4794a219c91f3b3b90"}
         ;; Select the canonical time provider independently of transitive order.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify the merged chDB Durable performance stack while retaining Oscope's
+  existing head fixes, file-backed WAL observations, and independently pinned
+  woven fixtures. Add a no-argument-inspection file-publication regression.
+  Experimental JSON selections stay opt-in; no throughput guarantee is implied.
+
 - Align the ClickHouse exporter with Oscope's chDB head-scanning and
   decoded-head reuse fixes. Captured telemetry and persistence acknowledgements
   are unchanged; this is not an Oscope throughput qualification (exporter PR #99).
