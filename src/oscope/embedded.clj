@@ -5,6 +5,7 @@
             [jolt.host :as host]
             [oscope.error :as error]
             [oscope.live :as live]
+            [oscope.json-backend :as json-backend]
             [oscope.readiness :as readiness]
             [oscope.typed-schema :as typed-schema]
             [otel.exporter.chdb :as chdb-export]
@@ -503,6 +504,14 @@
   Metrics default on and logs default off. When `:checkpoint-on-close?` is true
   (the default), shutdown compacts committed WAL into a new checkpoint.
   Optional `:typed-schema` is an operator-approved manifest and registry.
+  Optional `:json-backend :native-guarded` selects the general exporter fallback
+  on the qualified source runtime; defaults and specialized codecs stay intact.
+  Availability is checked before storage or worker acquisition.
+  With matching candidate pins, :native-guarded-string-cache adds a bounded
+  per-payload stock-string cache; :insert-format :json-compact-each-row selects
+  schema-confirmed positional input. Both defaults remain unchanged.
+  Experimental :native-guarded-byte-batch requires the matching source-only
+  serial collector stack; no bundled/AOT or throughput guarantee is implied.
 
   Optional `:span-pipelines` must contain exactly `:local` and `:remote` maps.
   Each has independent bounded batch options. Remote OTLP/HTTP JSON accepts
@@ -513,10 +522,12 @@
 
   The caller must stop application ingress before calling `stop!`. The returned
   `:source` can be given to oscope UI handlers."
-  [{:keys [db-spec sdk-options checkpoint-on-close? typed-schema span-pipelines]
+  [{:keys [db-spec sdk-options checkpoint-on-close? typed-schema span-pipelines json-backend insert-format]
     :or {sdk-options {} checkpoint-on-close? true}}]
   (when-not db-spec
     (invalid! "oscope embedded requires a Durable :db-spec" ::missing-db-spec))
+  (json-backend/validate! (if (nil? json-backend) :configured json-backend))
+  (json-backend/validate-format! (if (nil? insert-format) :json-each-row insert-format))
   (when-not (map? sdk-options)
     (invalid! "oscope embedded :sdk-options must be a map" ::invalid-sdk-options))
   (when (contains? sdk-options :exporter)
@@ -562,7 +573,9 @@
                                  (durable/checkpoint! connection)))
             exporter-options
             (typed-schema/exporter-options
-             {:connection connection :signals signals :durable? true}
+             (cond-> {:connection connection :signals signals :durable? true}
+               (some? json-backend) (assoc :json-backend json-backend)
+               (some? insert-format) (assoc :insert-format insert-format))
              schema-context)
             exporter (chdb-export/exporter exporter-options)
             _ (reset! exporter* exporter)

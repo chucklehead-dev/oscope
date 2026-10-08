@@ -12,6 +12,7 @@
             [oscope.live :as live]
             [oscope.sample-emitter :as sample]
             [otel.exporter.chdb.attribute-manifest :as manifest]
+            [otel.exporter.chdb :as chdb-export]
             [otel.otlp.http :as otlp-http]
             [otel.sdk :as sdk]
             [otel.trace :as trace]))
@@ -72,6 +73,9 @@
         :key typed-attribute-key
         :type :boolean}]}]}))
 
+(def ^:dynamic *json-backend* :configured)
+(def ^:dynamic *insert-format* :json-each-row)
+
 (deftest approved-manifest-drives-embedded-sdk-ingestion-and-live-query
   (let [telemetry-store (backend/memory-backend)
         registry-store (backend/memory-backend)
@@ -84,6 +88,8 @@
         lifecycle
         (embedded/start!
          {:db-spec db-spec
+          :json-backend *json-backend*
+          :insert-format *insert-format*
           :sdk-options {:service-name "oscope-embedded-typed-test"
                         :processor :simple
                         :metrics? false
@@ -94,12 +100,17 @@
            :registry-backend registry-store}})]
     (try
       (let [descriptor-set (:typed-span-descriptors lifecycle)
+            exporter-state @(:state (:exporter lifecycle))
             source (:source lifecycle)
             binding (first (:typed-span-fields source))
             tracer (sdk/tracer "oscope.embedded.typed-test")]
         ;; Only the installer-confirmed opaque capability reaches ingestion and
         ;; query state; neither runtime surface retains the input manifest.
         (is (some? descriptor-set))
+        (is (= *json-backend* (:json-backend exporter-state :configured)))
+        (is (= *insert-format* (:insert-format exporter-state :json-each-row)))
+        (when (= :json-compact-each-row *insert-format*)
+          (is (contains? (:compact-plans exporter-state) "otel_traces")))
         (is (identical? descriptor-set (:typed-span-descriptors source)))
         (is (not (contains? lifecycle :approved-manifest)))
         (is (not (contains? source :approved-manifest)))
@@ -113,6 +124,9 @@
         (trace/with-span
           [_ tracer "typed embedded checkout"
            {:attributes {typed-attribute-key true}}])
+        ;; A persistence barrier is not proof that a prior export succeeded.
+        ;; Assert the exporter result surface as well as actual typed readback.
+        (is (nil? (chdb-export/last-error (:exporter lifecycle))))
         (is (true? (embedded/force-flush! lifecycle)))
         (let [screen
               ((:load-command source)
@@ -168,6 +182,8 @@
         lifecycle
         (embedded/start!
          {:db-spec db-spec
+          :json-backend *json-backend*
+          :insert-format *insert-format*
           :sdk-options {:service-name "oscope-embedded-test"
                         :processor :simple
                         :metrics? true

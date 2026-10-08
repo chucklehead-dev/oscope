@@ -312,6 +312,9 @@
   (doseq [file (reverse (file-seq root))]
     (java.nio.file.Files/deleteIfExists (.toPath file))))
 
+(def ^:dynamic *json-backend* :configured)
+(def ^:dynamic *insert-format* :json-each-row)
+
 (deftest file-configured-typed-standalone-restarts-read-only
   (let [directory (java.nio.file.Files/createTempDirectory
                    "oscope-typed-restart-"
@@ -322,6 +325,11 @@
         config-path (str (.resolve directory "oscope.edn"))
         rendered (manifest/render (approved-manifest))
         base (assoc config/defaults
+                    :ingest (cond-> (:ingest config/defaults)
+                              (not= :configured *json-backend*)
+                              (assoc :json-backend *json-backend*)
+                              (not= :json-each-row *insert-format*)
+                              (assoc :insert-format *insert-format*))
                     :server (assoc (:server config/defaults) :port 0)
                     :storage {:type :local-path :path database-path})
         install (assoc base :typed-attributes
@@ -353,6 +361,8 @@
                      (config-cli/load-config ["--config" config-path] {}))
             lifecycle (server/start! options)]
         (reset! install* lifecycle)
+        (is (= *json-backend* (:json-backend @(:state (:exporter lifecycle)) :configured)))
+        (is (= *insert-format* (:insert-format @(:state (:exporter lifecycle)) :json-each-row)))
         (is (= (str "chdb:" database-path) (:db-spec options)))
         (is (= 200 (:status (post! (:port lifecycle) (typed-request now)))))
         (let [catalog (:typed-span-fields (:source lifecycle))

@@ -1,6 +1,35 @@
 # Configuration
 
 Oscope's standalone server accepts one versioned EDN configuration document.
+
+## Experimental encoding options
+
+Version 2 can explicitly select an encoding backend and telemetry insert format:
+
+```clojure
+:ingest {:type :otlp-http-json
+         :json-backend :native-guarded-byte-batch
+         :insert-format :json-compact-each-row}
+```
+
+The byte-batch option requires the matching experimental exporter/chDB/data.json
+stack and qualified compiler-bearing Jolt source runtime. Current default pins
+are unchanged; selecting an unavailable backend fails before opening storage,
+not silently reverting to another encoder. Bundled/AOT support is not qualified.
+
+Other choices are `:configured` (the default), `:native-guarded`, and
+`:native-guarded-string-cache`. Insert format defaults to `:json-each-row`.
+Compact input sends schema-ordered arrays with explicit columns; startup must
+confirm the schema. It does not change captured values, the 8MiB row payload
+budget, or Durable persistence acknowledgements. Version 1 cannot select these
+new options. Omitting them preserves existing behavior.
+
+Embedded callers pass `:json-backend` and `:insert-format` directly to
+`oscope.embedded/start!`; standalone programmatic callers pass them to
+`oscope.server/start!`. Explicit native selections are probed before storage,
+typed schema installation, SDK initialization, or HTTP worker acquisition.
+
+These options alone are not an Oscope-throughput or S3-performance guarantee.
 The same options apply to the `-M:native-server` launcher.
 Configuration precedence is, from strongest to weakest:
 

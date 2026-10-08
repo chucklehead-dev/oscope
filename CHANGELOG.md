@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add explicit startup JSON-backend and insert-format selection for embedded
+  and standalone collection, including experimental serial byte batches with
+  a qualified dependency stack. Validate unavailable choices before storage
+  acquisition; defaults, captured values and Durable ACK rules stay unchanged.
+
 - Fix four test namespace imports: `thrown-with-msg?` is an `is` assertion form,
   not a public Var to refer. Keep all exception/message assertions unchanged.
 
