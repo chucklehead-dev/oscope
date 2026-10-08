@@ -10,7 +10,8 @@
    'oscope.durable-integration-test/standalone-server-flushes-through-durable-jdbc-adapter
    'oscope.embedded-durable-integration-test/approved-manifest-drives-embedded-sdk-ingestion-and-live-query
    'oscope.embedded-durable-integration-test/direct-sdk-exports-survive-a-fresh-durable-reader
-   'oscope.embedded-durable-integration-test/dual-export-preserves-local-and-remote-trace-identity])
+   'oscope.embedded-durable-integration-test/dual-export-preserves-local-and-remote-trace-identity
+   'oscope.durable-cadence-integration-test/logical-cadence-checkpoints-real-physical-inserts-before-response])
 
 (def ^:private nested-settled? (atom true))
 (def ^:private last-reader-receipt (atom nil))
@@ -197,8 +198,8 @@
     receipt))
 
 (defn run-isolated! [executable directory]
-  ;; Six bounded waits plus settlement total at most390s, leaving30s budget
-  ;; for orchestration. The monotonic launch deadline prevents another spawn
+  ;; Seven individually bounded fixtures share the unchanged aggregate budget.
+  ;; The monotonic launch deadline prevents another spawn
   ;; once that native-phase budget is consumed; callers still own outer timeout.
   (let [deadline (+ (System/nanoTime) (* 420000 1000000))]
   (loop [index 0 totals {:test 0 :pass 0 :fail 0 :error 0} qualified? true]
@@ -225,7 +226,7 @@
   (try
     (cond
       (and (= 2 (count args)) (= "--fixture" (first args))
-           (re-matches #"[0-5]" (second args)))
+           (re-matches #"[0-6]" (second args)))
       (let [index (parse-long (second args)) v (prepare-fixture! index)]
         (println :durable-native-executed "fixture" index)
         (test/test-vars [v])

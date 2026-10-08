@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add an isolated native socket test for application-level Durable checkpoint
+  cadence, including checkpoint publication before HTTP success and separate
+  recovery of all five signal tables. Keep logical batches distinct from
+  physical inserts.
+
 - Advance the experimental stack to declared-key typed compact lookup. Keep
   undeclared telemetry attributes fully captured; defaults and persistence
   behavior remain unchanged.

@@ -9,6 +9,7 @@
             [oscope.durable-fault-target-test]
             [oscope.durable-config-runtime-test]
             [oscope.durable-integration-test]
+            [oscope.durable-cadence-integration-test]
             [oscope.durable-server-main-test]
             [oscope.embedded-durable-integration-test]
             [oscope.embedded-query-test]
@@ -41,5 +42,5 @@
             outcome (native-child/run-isolated! (native-child/executable!) directory)]
         (println :durable-native-total (:totals outcome))
         (when-not (and (:qualified? outcome) (:settled? outcome)
-                       (= 6 (get-in outcome [:totals :test])))
+                       (= 7 (get-in outcome [:totals :test])))
           (throw (ex-info "isolated native fixtures did not qualify" {})))))))

@@ -245,8 +245,8 @@
       (let [result (runner/run-isolated! "/approved/jolt" directory)]
         (is (:qualified? result))
         (is (:settled? result))
-        (is (= {:test 6 :pass 12 :fail 0 :error 0} (:totals result)))
-        (is (= 6 (count @calls)))
+        (is (= {:test 7 :pass 14 :fail 0 :error 0} (:totals result)))
+        (is (= 7 (count @calls)))
         (is (every? #(= {:timeout-ms 60000 :settlement-ms 5000} (second %)) @calls))
         (is (= ["/approved/jolt" "-Srepro" "-A:test-durable" "-m"
                 "oscope.durable-native-child-runner" "--fixture" "0"]
