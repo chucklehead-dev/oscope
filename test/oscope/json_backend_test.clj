@@ -42,6 +42,18 @@
                                (catch Throwable error error))))))
       (is (zero? @opens)))))
 
+(deftest exporter-runtime-probe-precedes-borrowed-connection-acquisition
+  (let [validator (ns-resolve 'otel.exporter.chdb 'validate-runtime!)
+        opens (atom 0) unavailable (ex-info "incompatible synthetic graph" {:type ::fixture})]
+    (is (some? validator))
+    (when validator
+      (with-redefs [jdbc/connection (fn [& _] (swap! opens inc))]
+        (with-redefs-fn
+          {validator (fn [] (throw unavailable))}
+          #(doseq [start [server/start! (fn [options] (embedded/start! (assoc options :db-spec ::unused)))]]
+             (is (identical? unavailable (try (start {}) (catch Throwable error error)))))))
+      (is (zero? @opens)))))
+
 (deftest configured-startup-does-not-load-native-writer
   (with-redefs [encoder/open-encoder
                 (fn [_] (throw (ex-info "Must not probe default" {})))]
@@ -146,6 +158,7 @@
                             #'compact-config-and-runtime-validation-are-closed]
                "byte-controls" [#'explicit-config-is-closed-and-reaches-standalone-options
                                  #'runtime-rejects-before-database-acquisition
+                                 #'exporter-runtime-probe-precedes-borrowed-connection-acquisition
                                  #'configured-startup-does-not-load-native-writer
                                  #'compact-config-and-runtime-validation-are-closed
                                  #'durable-config-plumbing-retains-both-selections
