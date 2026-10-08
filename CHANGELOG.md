@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix two test namespace imports: `thrown-with-msg?` is an `is` assertion form,
+- Fix four test namespace imports: `thrown-with-msg?` is an `is` assertion form,
   not a public Var to refer. Keep all exception/message assertions unchanged.
 
 - Qualify the merged chDB Durable performance stack while retaining Oscope's
