@@ -1,7 +1,7 @@
 (ns oscope.query-view-test
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing thrown-with-msg?]]
+            [clojure.test :refer [deftest is testing]]
             [hegel.core :as h]
             [hegel.generator :as g]
             [jdbc.core :as jdbc]

@@ -90,6 +90,40 @@
                           "private-wal-path"]]
             (is (not (.contains serialized secret)))))))))
 
+(deftest file-publication-does-not-inspect-or-open-the-private-payload
+  (with-memory-sdk
+    (fn [exporter handle]
+      (let [calls (atom 0)
+            result {:status :published :private-path "private-wal-file-path"}
+            error (ex-info "private-file-error-message"
+                           {:type :jdbc.chdb.durable.control/lease-fenced
+                            :private-path "private-wal-file-path"})
+            args (lazy-seq (throw (ex-info "advice must not inspect file arguments" {})))]
+        (is (identical? result
+                        (observability/around-control
+                          (join-point :durable/publish-wal-file) args
+                          #(do (swap! calls inc) result))))
+        (is (identical? error
+                        (try (observability/around-control
+                               (join-point :durable/publish-wal-file) args
+                               #(do (swap! calls inc) (throw error)))
+                             nil (catch Throwable observed observed))))
+        (is (= 2 @calls))
+        (is (sdk/force-flush! handle))
+        (let [spans (memory/spans exporter)
+              points (mapcat :data-points (memory/metrics exporter))
+              output (pr-str [spans points])]
+          (is (= ["publish" "publish"]
+                 (mapv #(attribute % :jolt.durable.operation.name) spans)))
+          (is (= ["success" "error"]
+                 (mapv #(attribute % :jolt.durable.operation.outcome) spans)))
+          (is (= "fenced" (attribute (last spans) :jolt.durable.failure.category)))
+          (is (= 2 (count points)))
+          (is (every? bounded-attributes? spans))
+          (is (every? bounded-attributes? points))
+          (doseq [private ["private-wal-file-path" "private-file-error-message"]]
+            (is (not (.contains output private)))))))))
+
 (deftest fenced-and-ambiguous-errors-use-closed-categories
   (with-memory-sdk
     (fn [exporter handle]

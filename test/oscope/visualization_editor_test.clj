@@ -1,6 +1,6 @@
 (ns oscope.visualization-editor-test
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing thrown-with-msg?]]
+            [clojure.test :refer [deftest is testing]]
             [jolt.http.body :as http-body]
             [oscope.hiccup.spec :as hiccup]
             [oscope.query :as query]
