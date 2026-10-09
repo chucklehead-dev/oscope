@@ -31,6 +31,13 @@ qualified compiler/runtime, not an arbitrary released binary. In this workspace
 every local Jolt command must run through the mandatory Chez 10.4.1 wrapper.
 The alias is not a default repin or reviewed production release.
 
+The current experimental pins are chDB `c86f6f1`, exporter `c81f790` and
+data.json `a486d52`, with OTel `19fc49d`. The measured compiler candidate is
+[`casselc/jolt`'s fixed-cache branch](https://github.com/casselc/jolt/tree/perf/string-hash-fixed-storage-20261008)
+at `2fc2dfa3`; its runtime fixes are not supplied by this dependency alias.
+Local collector throughput results do not establish Oscope HTTP throughput,
+S3 performance or bundled support. Ordinary startup remains unchanged.
+
 With approved typed span attributes and Durable storage, this stack builds
 compact rows directly, avoiding intermediate maps. Choose both
 `:json-backend :native-guarded-byte-batch` and

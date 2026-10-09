@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Keep the Durable startup-shape test portable to isolated temporary directories,
+  using the host's temporary-directory property while retaining exact option
+  validation and explicit scratch-parent coverage.
+
+- Advance the opt-in byte-collector stack in standalone and embedded profiles
+  to bounded owned-statement access, immutable attribute-value projection and
+  segmented JSON buffers. Keep ordinary dependency pins and storage defaults
+  unchanged; qualify application sockets/recovery separately from collector
+  throughput results.
+
 - Add an isolated native socket test for application-level Durable checkpoint
   cadence, including checkpoint publication before HTTP success and separate
   recovery of all five signal tables. Keep logical batches distinct from

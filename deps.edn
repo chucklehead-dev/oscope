@@ -38,13 +38,13 @@
      :git/sha "5effcc89a3258499a79a2a3d69edad9e7800d1bf"}
     io.github.chucklehead-dev/jolt-chdb
     {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-     :git/sha "cd5a3fb520a6f4144e07db4bae0c1909b261c3b1"}
+     :git/sha "c86f6f170c16847070e53e67e7093d18660adf7c"}
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-     :git/sha "4105dffa63cecda81c4f995c84ecdef87a27482d"}
+     :git/sha "c81f790cf4bffd4ac416be719c17270f8207cd36"}
     org.clojure/data.json
     {:git/url "https://github.com/casselc/data.json.git"
-     :git/sha "2fa6ddded8050bb2fc16c28056777e433a4542e4"}}}
+     :git/sha "a486d52c06f979dcbc30bfb08565aafa7226162a"}}}
 
   :test-embedded-profile
   {:extra-paths ["test"]

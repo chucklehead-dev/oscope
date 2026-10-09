@@ -86,7 +86,7 @@
                 :owner "oscope"
                 :instance "generated-instance"
                 :database "default"
-                :scratch-parent "/tmp"
+                :scratch-parent (System/getProperty "java.io.tmpdir")
                 :lease-ttl-ms 30000
                 :heartbeat-interval-ms nil
                 :clock-skew-ms 0

@@ -8,9 +8,9 @@
 (def ^:private expected
   {'io.github.casselc/otel ["19fc49d20b3a75906f0ccbb8b50c7e48b03e4813" "otel/any_value.clj"]
    'jolt-lang/jolt-crypto ["5effcc89a3258499a79a2a3d69edad9e7800d1bf" "jolt/crypto.clj"]
-   'io.github.chucklehead-dev/jolt-chdb ["cd5a3fb520a6f4144e07db4bae0c1909b261c3b1" "jdbc/chdb.clj"]
-   'io.github.chucklehead-dev/jolt-otel-clickhouse ["4105dffa63cecda81c4f995c84ecdef87a27482d" "otel/exporter/chdb.clj"]
-   'org.clojure/data.json ["2fa6ddded8050bb2fc16c28056777e433a4542e4" "clojure/data/json.clj"]})
+   'io.github.chucklehead-dev/jolt-chdb ["c86f6f170c16847070e53e67e7093d18660adf7c" "jdbc/chdb.clj"]
+   'io.github.chucklehead-dev/jolt-otel-clickhouse ["c81f790cf4bffd4ac416be719c17270f8207cd36" "otel/exporter/chdb.clj"]
+   'org.clojure/data.json ["a486d52c06f979dcbc30bfb08565aafa7226162a" "clojure/data/json.clj"]})
 
 (deftest aliases-are-identical-exact-git-stacks-without-default-repin
   (let [root (edn/read-string (slurp "deps.edn"))
@@ -38,12 +38,12 @@
 (deftest active-stack-includes-the-native-projection-resource
   (let [resource "otel/exporter/chdb/native_attributes.ss"
         resolved (some-> (io/resource resource) str)]
-    (is (and resolved (str/includes? resolved "4105dffa63cecda81c4f995c84ecdef87a27482d")))
+    (is (and resolved (str/includes? resolved "c81f790cf4bffd4ac416be719c17270f8207cd36")))
     (is (and resolved (not (str/includes? resolved "/worktrees/"))))))
 
 (deftest active-stack-includes-the-typed-positional-projector
   (let [resolved (some-> (io/resource "otel/exporter/chdb/attribute_projection.clj") str)]
-    (is (and resolved (str/includes? resolved "4105dffa63cecda81c4f995c84ecdef87a27482d")))
+    (is (and resolved (str/includes? resolved "c81f790cf4bffd4ac416be719c17270f8207cd36")))
     (is (and resolved (not (str/includes? resolved "/worktrees/")))))
   (require 'otel.exporter.chdb.attribute-projection)
   (is (ifn? (some-> (ns-resolve 'otel.exporter.chdb.attribute-projection 'trace-vector-projector) var-get))))
