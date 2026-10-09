@@ -29,7 +29,7 @@ chDB/exporter/encoder development pins. It does not change this minimal
 profile's defaults, and dependency aliases do not propagate to consumer apps.
 Consumers must explicitly select the matching reviewed dependency versions.
 
-The experimental alias currently selects chDB `291e1f43`, exporter `07c0a64b`
+The experimental alias currently selects chDB `291e1f43`, exporter `4f3bfd2b`
 and data.json `679878df`. These retain the previous stack's typed schema and
 storage behavior
 while reducing row preparation/encoding allocation through private attribute
@@ -48,6 +48,18 @@ confirmed rows/s, 485 ms p99 and 1.88 seconds of GC time. Allocation stayed
 near 75.6 MB per batch. Both runs used 10k-row batches and a single caller;
 fresh readers verified all 3.03 million complete physical rows in each run.
 These are observed local results, not stable application or hosted S3 guarantees.
+
+The exporter also avoids sorted-map churn when reading the exact immutable
+stock status codebook. It keeps the public sorted map unchanged and honors
+replacement codebooks. A subsequent full local collector run measured 29,780
+confirmed rows/s, 455 ms p99 and about 72.1 MB allocation per 10k-row batch,
+with fresh recovery of all 3.03 million complete physical rows. This is one
+passing local window, not application or hosted S3 qualification; earlier
+encoder, attribute and row-source improvements remain in these pins.
+Local qualification uses explicit source runtimes `20f25cf4` and `7c57cf7e`
+with Chez 10.4.1; a released version label alone does not select those patches.
+The latter passed this profile's real socket ingestion and fresh complete-row
+recovery. Neither result establishes aspect-compiler or AOT qualification.
 
 On the qualified Jolt source runtime and native package **26.9.0**, configure
 the Durable dbspec with `:owned-compact-stream? true`, then give `start!`:

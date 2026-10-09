@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retain the guarded private typed-status lookup in matching experimental
+  streaming profiles. Public codebooks and live replacements stay unchanged;
+  ordinary dependencies and hosted-performance claims remain separate.
+
 - Align experimental streaming profiles with both encoder and codec lazy-row
   source handoffs. Retain all previous allocation improvements, keep ordinary
   dependencies unchanged, and separate observed GC gains from qualification
