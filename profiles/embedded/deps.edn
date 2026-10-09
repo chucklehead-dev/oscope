@@ -41,4 +41,22 @@
     org.clojure/data.json
     {:git/url "https://github.com/casselc/data.json.git"
      :git/sha "a486d52c06f979dcbc30bfb08565aafa7226162a"}}}
+  :experimental-durable-stream
+  {:extra-deps
+   {io.github.casselc/otel
+    {:git/url "https://github.com/casselc/otel.git"
+     :git/sha "19fc49d20b3a75906f0ccbb8b50c7e48b03e4813"
+     :exclusions [jolt-lang/jolt-crypto]}
+    jolt-lang/jolt-crypto
+    {:git/url "https://github.com/jolt-lang/jolt-crypto.git"
+     :git/sha "5effcc89a3258499a79a2a3d69edad9e7800d1bf"}
+    io.github.chucklehead-dev/jolt-chdb
+    {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
+     :git/sha "368e767663421b11d24b7ca15cedaa4d47f0796e"}
+    io.github.chucklehead-dev/jolt-otel-clickhouse
+    {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+     :git/sha "9d5456564a1356829e7f5759dfb210806d89565e"}
+    org.clojure/data.json
+    {:git/url "https://github.com/casselc/data.json.git"
+     :git/sha "805bb9a26bba73cbb9f13415a2636755ca4aaa69"}}}
  }}

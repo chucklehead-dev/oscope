@@ -89,9 +89,25 @@ Select the matching opt-in dependency profile and your file:
 jolt -M:experimental-durable-stream:durable-server-dev --config /etc/oscope.edn
 ```
 
-Use the qualified source runtime described above. Native package 26.9.0 is
+This streaming alias is present in both the root and minimal embedded profiles.
+It selects chDB `368e767`, exporter `9d54565`, data.json `805bb9a`, OTel
+`19fc49d` and crypto provider `5effcc8`. The exporter reduces temporary declared
+lookup storage; the JSON writer reuses option slots and integer scratch storage.
+These are cumulative experimental fixes, not a default dependency upgrade.
+
+Use the explicitly selected source runtime at `casselc/jolt` commit
+`20f25cf4cbef710ab00cd7ea7b903233477557e0` (branch
+`perf/collector-runtime-string-vector-20261009`). It combines the string/hash
+fixes with fixed-arity vector construction. The alias does not install those
+compiler fixes. The earlier byte-collector profile remains a separate stack;
+do not assume its compiler or dependency pins match this streaming profile.
+Native package 26.9.0 is
 required; this example does not upgrade your installed native library or make
 bundled builds supported. Default dependency pins remain unchanged.
+
+Local confirmed writes and fresh-reader recovery are tested independently from
+throughput. Reduced allocation has not established the sustained p99 target;
+short throughput samples must not be treated as a service-level guarantee.
 
 The storage flag enables streaming execution of supported owned compact
 statements. Other statements keep the ordinary execution path. The ingestion

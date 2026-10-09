@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Align the opt-in Durable streaming stack in root and minimal embedded
+  profiles, including the smaller declared-attribute collector and JSON writer
+  option slots. Ordinary pins remain unchanged; compiler fixes require an
+  explicitly selected source runtime, and sustained tail/S3 qualification is
+  still pending.
+
 - Allow version-2 configuration files to select owned compact output,
   raw-tick timestamps and Durable streaming. Reject malformed combinations
   during pure validation and preserve explicit false/auto versus omitted

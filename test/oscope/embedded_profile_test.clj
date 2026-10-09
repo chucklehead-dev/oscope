@@ -8,6 +8,27 @@
 
 (def ^:private embedded-profile-dir "profiles/embedded")
 
+(deftest stream-profile-pins-are-consistent-and-explicit
+  (let [root (edn/read-string (slurp "deps.edn"))
+        embedded (edn/read-string (slurp (str embedded-profile-dir "/deps.edn")))
+        root-deps (get-in root [:aliases :experimental-durable-stream :extra-deps])
+        embedded-deps (get-in embedded [:aliases :experimental-durable-stream :extra-deps])]
+    (is (= root-deps embedded-deps))
+    (doseq [[coordinate sha]
+            {'io.github.casselc/otel "19fc49d20b3a75906f0ccbb8b50c7e48b03e4813"
+             'jolt-lang/jolt-crypto "5effcc89a3258499a79a2a3d69edad9e7800d1bf"
+             'io.github.chucklehead-dev/jolt-chdb "368e767663421b11d24b7ca15cedaa4d47f0796e"
+             'io.github.chucklehead-dev/jolt-otel-clickhouse "9d5456564a1356829e7f5759dfb210806d89565e"
+             'org.clojure/data.json "805bb9a26bba73cbb9f13415a2636755ca4aaa69"}]
+      (is (= sha (get-in root-deps [coordinate :git/sha])))
+      (when-not (= coordinate 'jolt-lang/jolt-crypto)
+        (is (not= sha (get-in root [:deps coordinate :git/sha])))
+        (is (not= sha (get-in embedded [:deps coordinate :git/sha])))))
+    (is (= #{'io.github.casselc/otel 'jolt-lang/jolt-crypto
+             'io.github.chucklehead-dev/jolt-chdb
+             'io.github.chucklehead-dev/jolt-otel-clickhouse 'org.clojure/data.json}
+           (set (keys root-deps))))))
+
 (deftest socket-startup-require-failure-reports-fixed-phase-without-exception-content
   (let [forged ":typed-socket-executed 0\n:typed-socket-receipt 0 1 99 0 0\nsecret-payload"
         error (ex-info forged {:payload forged} (ex-info forged {}))
