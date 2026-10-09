@@ -90,9 +90,12 @@ jolt -M:experimental-durable-stream:durable-server-dev --config /etc/oscope.edn
 ```
 
 This streaming alias is present in both the root and minimal embedded profiles.
-It selects chDB `368e767`, exporter `9d54565`, data.json `805bb9a`, OTel
+It selects chDB `368e767`, exporter `0d1e41e`, data.json `805bb9a`, OTel
 `19fc49d` and crypto provider `5effcc8`. The exporter reduces temporary declared
 lookup storage; the JSON writer reuses option slots and integer scratch storage.
+Typed span output now fills and seals one private positional buffer instead of
+copying a persistent tail for each append. Live status callbacks, field order,
+duplicate handling and captured values are unchanged.
 These are cumulative experimental fixes, not a default dependency upgrade.
 
 Use the explicitly selected source runtime at `casselc/jolt` commit
@@ -106,8 +109,10 @@ required; this example does not upgrade your installed native library or make
 bundled builds supported. Default dependency pins remain unchanged.
 
 Local confirmed writes and fresh-reader recovery are tested independently from
-throughput. Reduced allocation has not established the sustained p99 target;
-short throughput samples must not be treated as a service-level guarantee.
+throughput. Two consecutive local 300-batch collector windows met the requested
+inverse-p50 and inverse-p99 targets for 10k wide typed spans per batch. Broader
+tail qualification, application HTTP throughput and hosted S3 remain separate
+gates. These measured windows must not be treated as a service-level guarantee.
 
 The storage flag enables streaming execution of supported owned compact
 statements. Other statements keep the ordinary execution path. The ingestion

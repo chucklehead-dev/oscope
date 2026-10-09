@@ -18,7 +18,7 @@
             {'io.github.casselc/otel "19fc49d20b3a75906f0ccbb8b50c7e48b03e4813"
              'jolt-lang/jolt-crypto "5effcc89a3258499a79a2a3d69edad9e7800d1bf"
              'io.github.chucklehead-dev/jolt-chdb "368e767663421b11d24b7ca15cedaa4d47f0796e"
-             'io.github.chucklehead-dev/jolt-otel-clickhouse "9d5456564a1356829e7f5759dfb210806d89565e"
+             'io.github.chucklehead-dev/jolt-otel-clickhouse "0d1e41ed2ef3288a250b9533dd55b491ab210d0a"
              'org.clojure/data.json "805bb9a26bba73cbb9f13415a2636755ca4aaa69"}]
       (is (= sha (get-in root-deps [coordinate :git/sha])))
       (when-not (= coordinate 'jolt-lang/jolt-crypto)

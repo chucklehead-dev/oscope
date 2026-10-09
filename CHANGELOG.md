@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Advance only the experimental Durable streaming exporter to single-seal typed
+  positional output in root and minimal embedded profiles. Preserve current
+  startup options, default dependencies and persistence acknowledgement rules;
+  local collector results do not qualify application HTTP or hosted S3 tails.
+
 - Align the opt-in Durable streaming stack in root and minimal embedded
   profiles, including the smaller declared-attribute collector and JSON writer
   option slots. Ordinary pins remain unchanged; compiler fixes require an
