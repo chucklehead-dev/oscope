@@ -22,6 +22,37 @@ precedence; this profile is not an override mechanism.
 
 ## Qualification boundary
 
+### Experimental local Durable streaming
+
+From the repository root, `-A:experimental-durable-stream` selects matching
+chDB/exporter/encoder development pins. It does not change this minimal
+profile's defaults, and dependency aliases do not propagate to consumer apps.
+Consumers must explicitly select the matching reviewed dependency versions.
+
+On the qualified Jolt source runtime and native package **26.9.0**, configure
+the Durable dbspec with `:owned-compact-stream? true`, then give `start!`:
+
+```clojure
+{:db-spec writer-dbspec
+ :json-backend :native-guarded-byte-batch
+ :insert-format :json-compact-each-row
+ :owned-statement-output? true
+ :datetime64-wire :raw-ticks}
+```
+
+The exporter writes numeric nanoseconds with the fixed query-local setting in
+each INSERT/WAL record. The writer chooses supported owned compact streaming
+after normal admission; unsupported shapes retain ordinary execution. Invalid
+options and explicit incompatible timestamp packages fail before storage or
+typed schema writes. There is no remote destination unless separately configured.
+
+Local capture, typed Boolean filtering and fresh-process full-row recovery are
+checked separately from throughput. This does not promise 20k tail throughput,
+hosted-S3 performance, standalone builds or replay of older timestamp WAL across
+engines. Keep old objects on their qualified engine until migration is checked.
+
+### Default dependency profile
+
 The checked-in profile is the dependency authority. At this revision it pins
 `casselc/otel` `8110c12f`, `jolt-chdb` `3e3141fd`,
 `jolt-otel-clickhouse` `dfbc9ea6`, `casselc/db` `cb06349c`, and

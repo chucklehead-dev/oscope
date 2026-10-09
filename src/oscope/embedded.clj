@@ -512,6 +512,11 @@
   schema-confirmed positional input. Both defaults remain unchanged.
   Experimental :native-guarded-byte-batch requires the matching source-only
   serial collector stack; no bundled/AOT or throughput guarantee is implied.
+  Explicit :owned-statement-output? true requires byte-batch compact encoding.
+  :datetime64-wire accepts :auto, :iso-utc or :raw-ticks; explicit new-engine
+  modes require native 26.9.0 before acquisition. Raw ticks put their input
+  setting in each INSERT/WAL, not session state. Streaming selection belongs
+  to the Durable dbspec's optional :owned-compact-stream? flag.
 
   Optional `:span-pipelines` must contain exactly `:local` and `:remote` maps.
   Each has independent bounded batch options. Remote OTLP/HTTP JSON accepts
@@ -522,10 +527,12 @@
 
   The caller must stop application ingress before calling `stop!`. The returned
   `:source` can be given to oscope UI handlers."
-  [{:keys [db-spec sdk-options checkpoint-on-close? typed-schema span-pipelines json-backend insert-format]
-    :or {sdk-options {} checkpoint-on-close? true}}]
+  [{:keys [db-spec sdk-options checkpoint-on-close? typed-schema span-pipelines json-backend insert-format
+           owned-statement-output? datetime64-wire]
+    :or {sdk-options {} checkpoint-on-close? true} :as options}]
   (when-not db-spec
     (invalid! "oscope embedded requires a Durable :db-spec" ::missing-db-spec))
+  (json-backend/validate-export-options! options)
   (json-backend/validate! (if (nil? json-backend) :configured json-backend))
   (json-backend/validate-format! (if (nil? insert-format) :json-each-row insert-format))
   (when-not (map? sdk-options)
@@ -575,7 +582,9 @@
             (typed-schema/exporter-options
              (cond-> {:connection connection :signals signals :durable? true}
                (some? json-backend) (assoc :json-backend json-backend)
-               (some? insert-format) (assoc :insert-format insert-format))
+               (some? insert-format) (assoc :insert-format insert-format)
+               (contains? options :owned-statement-output?) (assoc :owned-statement-output? owned-statement-output?)
+               (contains? options :datetime64-wire) (assoc :datetime64-wire datetime64-wire))
              schema-context)
             exporter (chdb-export/exporter exporter-options)
             _ (reset! exporter* exporter)

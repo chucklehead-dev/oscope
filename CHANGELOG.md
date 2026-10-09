@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Forward explicit embedded owned-statement and DateTime64 wire options, with
+  invalid combinations/native selections rejected before acquiring storage.
+  Add an opt-in `:experimental-durable-stream` dependency profile; defaults
+  are unchanged and repeated tails, hosted S3 and bundled builds remain pending.
+
 - Keep the Durable startup-shape test portable to isolated temporary directories,
   using the host's temporary-directory property while retaining exact option
   validation and explicit scratch-parent coverage.
