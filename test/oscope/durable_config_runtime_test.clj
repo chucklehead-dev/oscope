@@ -18,6 +18,34 @@
                       :access-key-env "ACCESS_REF"
                       :secret-key-env "SECRET_REF"}}})
 
+(deftest stream-config-retains-false-true-and-omitted-options
+  (doseq [kind [:durable-local :durable-s3]
+          selection [::omitted false true]]
+    (let [storage (if (= kind :durable-local)
+                    {:type kind :root "/unused"} (s3-storage))
+          storage (cond-> storage (not= ::omitted selection)
+                    (assoc :owned-compact-stream? selection))
+          ingest (if (= ::omitted selection) {}
+                   {:owned-statement-output? selection
+                    :datetime64-wire (if selection :raw-ticks :auto)
+                    :json-backend :native-guarded-byte-batch
+                    :insert-format :json-compact-each-row})
+          result (with-redefs [durable/writer-dbspec identity]
+                   (runtime/server-options
+                    (config/resolve-config [[:file {:storage storage :ingest ingest}]])
+                    {"ACCESS_REF" "unused" "SECRET_REF" "unused"}
+                    {:local-backend-fn (constantly ::local)
+                     :s3-backend-fn (constantly ::s3)
+                     :object-backend-fn (constantly ::registry)
+                     :instance-fn (constantly "instance")}))]
+      (if (= ::omitted selection)
+        (do (is (not (contains? (:db-spec result) :owned-compact-stream?)))
+            (is (not (contains? result :owned-statement-output?)))
+            (is (not (contains? result :datetime64-wire))))
+        (do (is (= selection (get-in result [:db-spec :owned-compact-stream?])))
+            (is (= selection (:owned-statement-output? result)))
+            (is (= (if selection :raw-ticks :auto) (:datetime64-wire result))))))))
+
 (deftest check-config-does-not-resolve-credentials-or-create-runtime-owners
   (let [resolved (assoc (resolved (s3-storage)) :check-config? true)
         effects (atom [])

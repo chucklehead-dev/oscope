@@ -22,12 +22,13 @@
 (def ^:private top-keys (conj legacy-top-keys :typed-attributes))
 (def ^:private server-keys
   #{:host :port :http-workers :http-queue-capacity})
-(def ^:private ingest-keys #{:type :json-backend :insert-format})
+(def ^:private ingest-keys
+  #{:type :json-backend :insert-format :owned-statement-output? :datetime64-wire})
 (def ^:private durable-common-keys
   #{:owner :instance :database :scratch-parent :lease-ttl-ms
     :heartbeat-interval-ms :clock-skew-ms :force? :max-attempts
     :retry-deadline-ms :retry-initial-backoff-ms :retry-max-backoff-ms
-    :checkpoint-every-batches})
+    :checkpoint-every-batches :owned-compact-stream?})
 (def ^:private s3-keys
   #{:endpoint :bucket :prefix :region :object-id :credentials
     :max-attempts :connect-timeout-ms :timeout-ms :retry-deadline-ms
@@ -153,6 +154,10 @@
     (positive-int! [:storage key] (get storage key))))
 
 (defn- validate-durable-common! [storage]
+  (when (and (contains? storage :owned-compact-stream?)
+             (not (boolean? (:owned-compact-stream? storage))))
+    (config-error "stream selection must be boolean"
+                  {:path [:storage :owned-compact-stream?]}))
   (doseq [key [:owner :instance :database :scratch-parent]]
     (when (contains? storage key)
       (nonblank! [:storage key] (get storage key))))
@@ -274,6 +279,25 @@
       (when (and (contains? ingest :insert-format)
                  (not (#{:json-each-row :json-compact-each-row} (:insert-format ingest))))
         (config-error "unknown telemetry insert format" {:path [:ingest :insert-format]}))
+      (when (and (contains? ingest :owned-statement-output?)
+                 (not (boolean? (:owned-statement-output? ingest))))
+        (config-error "owned output selection must be boolean"
+                      {:path [:ingest :owned-statement-output?]}))
+      (when (and (contains? ingest :datetime64-wire)
+                 (not (contains? #{:auto :iso-utc :raw-ticks} (:datetime64-wire ingest))))
+        (config-error "unknown telemetry timestamp wire"
+                      {:path [:ingest :datetime64-wire]}))
+      (when (and (:owned-statement-output? ingest)
+                 (not (and (= :native-guarded-byte-batch (:json-backend ingest))
+                           (= :json-compact-each-row (:insert-format ingest)))))
+        (config-error "owned output requires native byte compact encoding"
+                      {:path [:ingest :owned-statement-output?]}))
+      (when (and (or (:owned-statement-output? ingest)
+                     (= :raw-ticks (:datetime64-wire ingest)))
+                 (not (contains? #{:durable-local :durable-s3}
+                                 (get-in document [:storage :type]))))
+        (config-error "owned/raw-tick output requires Durable storage"
+                      {:path [:storage :type]}))
       (validate-storage! (:storage document))
       (validate-typed-attributes (:typed-attributes document))
       document)))

@@ -66,6 +66,49 @@ Embedded callers pass `:json-backend` and `:insert-format` directly to
 typed schema installation, SDK initialization, or HTTP worker acquisition.
 
 These options alone are not an Oscope-throughput or S3-performance guarantee.
+### Opt-in Durable streaming and raw nanosecond ticks
+
+Version 2 files can enable the locally tested 26.9 stream path without custom
+startup code. For example:
+
+```clojure
+{:version 2
+ :ingest {:type :otlp-http-json
+          :json-backend :native-guarded-byte-batch
+          :insert-format :json-compact-each-row
+          :owned-statement-output? true
+          :datetime64-wire :raw-ticks}
+ :storage {:type :durable-local
+           :root "/var/lib/oscope-durable"
+           :owned-compact-stream? true}}
+```
+
+Select the matching opt-in dependency profile and your file:
+
+```sh
+jolt -M:experimental-durable-stream:durable-server-dev --config /etc/oscope.edn
+```
+
+Use the qualified source runtime described above. Native package 26.9.0 is
+required; this example does not upgrade your installed native library or make
+bundled builds supported. Default dependency pins remain unchanged.
+
+The storage flag enables streaming execution of supported owned compact
+statements. Other statements keep the ordinary execution path. The ingestion
+flags avoid a final SQL String and send exact nanosecond ticks using a setting
+on each insert, not mutable session state. A successful export still waits for
+Durable confirmation; these flags do not introduce background admission or
+weaken WAL/recovery guarantees. Omitted options preserve existing behavior;
+explicit `false` and `:auto` are retained rather than treated as absent.
+
+The same fields can be used with `:durable-s3`, but hosted S3 performance is not
+qualified by the local results. Owned output requires byte-batch compact
+encoding, and owned/raw-tick output requires Durable storage. Malformed file
+options fail during pure config validation, before credentials, backends or
+typed-schema runtime effects. Native availability is checked at startup.
+These fields are file options, not new environment variables; `OSCOPE_CONFIG`
+can select the file. Version 1 does not accept them.
+
 The same options apply to the `-M:native-server` launcher.
 Configuration precedence is, from strongest to weakest:
 

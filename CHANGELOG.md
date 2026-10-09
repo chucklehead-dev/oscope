@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Allow version-2 configuration files to select owned compact output,
+  raw-tick timestamps and Durable streaming. Reject malformed combinations
+  during pure validation and preserve explicit false/auto versus omitted
+  defaults through both startup adapters. Dependency defaults are unchanged.
+
 - Forward owned compact output and raw-tick timestamp options through
   standalone server startup, matching embedded capture. Reject invalid options
   and non-writer storage before acquisition or typed DDL. Defaults are unchanged.

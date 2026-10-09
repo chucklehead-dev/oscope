@@ -55,7 +55,7 @@
   (str (.getCanonicalPath (File. root)) ".oscope-registry"))
 
 (defn- common-writer-options [storage instance-fn]
-  {:owner (or (:owner storage) "oscope")
+  (cond-> {:owner (or (:owner storage) "oscope")
    :instance (or (:instance storage) (instance-fn))
    :database (or (:database storage) "default")
    :scratch-parent (or (:scratch-parent storage)
@@ -67,7 +67,9 @@
    :retry-deadline-ms (or (:retry-deadline-ms storage) 5000)
    :retry-initial-backoff-ms (or (:retry-initial-backoff-ms storage) 10)
    :retry-max-backoff-ms (or (:retry-max-backoff-ms storage) 250)
-   :force? (boolean (:force? storage))})
+   :force? (boolean (:force? storage))}
+    (contains? storage :owned-compact-stream?)
+    (assoc :owned-compact-stream? (:owned-compact-stream? storage))))
 
 (defn server-options
   "Construct Durable server ownership only after config validation/check mode.
@@ -163,4 +165,8 @@
        (assoc :json-backend (get-in document [:ingest :json-backend]))
        (contains? (:ingest document) :insert-format)
        (assoc :insert-format (get-in document [:ingest :insert-format]))
+       (contains? (:ingest document) :owned-statement-output?)
+       (assoc :owned-statement-output? (get-in document [:ingest :owned-statement-output?]))
+       (contains? (:ingest document) :datetime64-wire)
+       (assoc :datetime64-wire (get-in document [:ingest :datetime64-wire]))
        typed (assoc :typed-schema typed)))))

@@ -10,6 +10,38 @@
     :ingest {:type :otlp-http-json}
     :storage {:type :local-path :path \"/private/file\"}}")
 
+(deftest stream-options-are-explicit-version-two-config-data
+  (let [ingest {:owned-statement-output? true :datetime64-wire :raw-ticks
+                :json-backend :native-guarded-byte-batch
+                :insert-format :json-compact-each-row}
+        resolved (config/resolve-config
+                  [[:file {:version 2 :ingest ingest
+                           :storage {:type :durable-local :root "/unused"
+                                     :owned-compact-stream? true}}]])]
+    (is (= ingest (select-keys (get-in resolved [:config :ingest]) (keys ingest))))
+    (is (true? (get-in resolved [:config :storage :owned-compact-stream?])))
+    (is (= :file (get-in resolved [:provenance [:ingest :datetime64-wire]]))))
+  (let [resolved (config/resolve-config
+                  [[:file {:ingest {:owned-statement-output? false :datetime64-wire :auto}}]])
+        options (cli/server-options resolved (fn [& _] nil))]
+    (is (false? (:owned-statement-output? options)))
+    (is (= :auto (:datetime64-wire options))))
+  (let [options (cli/server-options (config/resolve-config []) (fn [& _] nil))]
+    (is (not (contains? options :owned-statement-output?)))
+    (is (not (contains? options :datetime64-wire)))))
+
+(deftest malformed-stream-config-fails-without-startup-effects
+  (doseq [patch [{:ingest {:owned-statement-output? nil}}
+                 {:ingest {:owned-statement-output? "true"}}
+                 {:ingest {:owned-statement-output? true}}
+                 {:ingest {:datetime64-wire nil}}
+                 {:ingest {:datetime64-wire :unix-nanos}}
+                 {:ingest {:datetime64-wire :raw-ticks}}
+                 {:storage {:type :durable-local :root "/unused" :owned-compact-stream? nil}}
+                 {:storage {:type :durable-local :root "/unused" :owned-compact-stream? "true"}}
+                 {:storage {:type :memory :owned-compact-stream? false}}]]
+    (is (thrown? clojure.lang.ExceptionInfo (config/resolve-config [[:file patch]])))))
+
 (deftest standalone-environment-contract-is-local-only-and-closed
   (is (= ["OSCOPE_CONFIG" "OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_CHDB_SPEC"
           "OSCOPE_HTTP_WORKERS" "OSCOPE_HTTP_QUEUE_CAPACITY"

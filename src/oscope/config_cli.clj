@@ -222,6 +222,10 @@
        (assoc :json-backend (get-in document [:ingest :json-backend]))
        (contains? (:ingest document) :insert-format)
        (assoc :insert-format (get-in document [:ingest :insert-format]))
+       (contains? (:ingest document) :owned-statement-output?)
+       (assoc :owned-statement-output? (get-in document [:ingest :owned-statement-output?]))
+       (contains? (:ingest document) :datetime64-wire)
+       (assoc :datetime64-wire (get-in document [:ingest :datetime64-wire]))
        typed-schema (assoc :typed-schema typed-schema)))))
 
 (defn check-output
