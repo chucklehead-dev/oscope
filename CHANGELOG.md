@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Align experimental streaming profiles with both encoder and codec lazy-row
+  source handoffs. Retain all previous allocation improvements, keep ordinary
+  dependencies unchanged, and separate observed GC gains from qualification
+  of repeated tails, application throughput or hosted S3.
+
 - Retain experimental encoder map-visitor reuse in matching root and minimal
   streaming profiles. Keep ordinary dependencies unchanged and distinguish
   the verified allocation reduction from still-pending tail qualification.

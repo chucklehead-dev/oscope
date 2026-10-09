@@ -29,17 +29,25 @@ chDB/exporter/encoder development pins. It does not change this minimal
 profile's defaults, and dependency aliases do not propagate to consumer apps.
 Consumers must explicitly select the matching reviewed dependency versions.
 
-The experimental alias currently selects exporter `07c0a64b` and data.json
-`7fd90244`. These retain the previous stack's typed schema and storage behavior
+The experimental alias currently selects chDB `291e1f43`, exporter `07c0a64b`
+and data.json `679878df`. These retain the previous stack's typed schema and
+storage behavior
 while reducing row preparation/encoding allocation through private attribute
-replay trees and per-factory row cleanup/map visitor closures. They require the explicitly
+replay trees and per-factory row cleanup/map visitor closures. The matching
+encoder/codec handoffs also release completed lazy rows during a batch rather
+than retaining the original sequence head. They require the explicitly
 qualified source runtime; a released version label alone is not qualification.
 These development pins do not change default dependencies or establish stable
 application throughput, hosted S3 tails, or executable/AOT packaging.
 The map visitor saves about 2.56 MB per 10k-row encoded batch on the measured
-workload, without an established timing improvement. Its full local Durable
-window passed recovery, but narrowly missed the inverse-p99 throughput target;
-do not interpret an allocation reduction as stable tail qualification.
+workload, without an established timing improvement by itself. With both row
+source handoffs, a full local Durable window passed recovery and measured
+28,560 confirmed rows/s, 459 ms p99 and 1.83 seconds of GC time versus 5.76
+seconds in the preceding window. An exact-stack repeat measured 28,223
+confirmed rows/s, 485 ms p99 and 1.88 seconds of GC time. Allocation stayed
+near 75.6 MB per batch. Both runs used 10k-row batches and a single caller;
+fresh readers verified all 3.03 million complete physical rows in each run.
+These are observed local results, not stable application or hosted S3 guarantees.
 
 On the qualified Jolt source runtime and native package **26.9.0**, configure
 the Durable dbspec with `:owned-compact-stream? true`, then give `start!`:
