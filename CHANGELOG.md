@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Align only the experimental streaming profiles with JSON row-closure reuse
+  and native attribute private-tree replay. Keep root and minimal pins equal,
+  ordinary defaults unchanged, and performance claims bounded to the exact
+  qualified workload rather than application or hosted S3 guarantees.
+
 - Advance only the experimental Durable streaming exporter to single-seal typed
   positional output in root and minimal embedded profiles. Preserve current
   startup options, default dependencies and persistence acknowledgement rules;

@@ -55,8 +55,8 @@
      :git/sha "368e767663421b11d24b7ca15cedaa4d47f0796e"}
     io.github.chucklehead-dev/jolt-otel-clickhouse
     {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-     :git/sha "0d1e41ed2ef3288a250b9533dd55b491ab210d0a"}
+     :git/sha "07c0a64b60a5630f2d4d77e0c51fb259dceaf652"}
     org.clojure/data.json
     {:git/url "https://github.com/casselc/data.json.git"
-     :git/sha "805bb9a26bba73cbb9f13415a2636755ca4aaa69"}}}
+     :git/sha "c2cf28a0056f6ebe6e1bd8b9d34a0235637bd0b1"}}}
  }}

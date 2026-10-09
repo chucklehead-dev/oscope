@@ -29,6 +29,14 @@ chDB/exporter/encoder development pins. It does not change this minimal
 profile's defaults, and dependency aliases do not propagate to consumer apps.
 Consumers must explicitly select the matching reviewed dependency versions.
 
+The experimental alias currently selects exporter `07c0a64b` and data.json
+`c2cf28a0`. These retain the previous stack's typed schema and storage behavior
+while reducing row preparation/encoding allocation through private attribute
+replay trees and per-factory row cleanup closures. They require the explicitly
+qualified source runtime; a released version label alone is not qualification.
+These development pins do not change default dependencies or establish stable
+application throughput, hosted S3 tails, or executable/AOT packaging.
+
 On the qualified Jolt source runtime and native package **26.9.0**, configure
 the Durable dbspec with `:owned-compact-stream? true`, then give `start!`:
 
@@ -54,9 +62,11 @@ It also needs a canonical Durable writer dbspec and the usual Durable callbacks:
  :datetime64-wire :raw-ticks}
 ```
 
-Use the matching experimental dependency stack described above. These are
-programmatic startup options; the file/environment configuration adapters do
-not expose them yet. This does not change the supported default pins or claim
+Use the matching experimental dependency stack described above. Version-2
+configuration files also accept these encoding fields under `:ingest` and
+`:owned-compact-stream? true` under Durable `:storage`; see
+[configuration](configuration.md#opt-in-durable-streaming-and-raw-nanosecond-ticks).
+This does not change the supported default pins or claim
 standalone executable/AOT packaging or sustained socket-ingestion throughput.
 
 The exporter writes numeric nanoseconds with the fixed query-local setting in
