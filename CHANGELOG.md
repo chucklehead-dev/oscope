@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Forward owned compact output and raw-tick timestamp options through
+  standalone server startup, matching embedded capture. Reject invalid options
+  and non-writer storage before acquisition or typed DDL. Defaults are unchanged.
+
 - Forward explicit embedded owned-statement and DateTime64 wire options, with
   invalid combinations/native selections rejected before acquiring storage.
   Add an opt-in `:experimental-durable-stream` dependency profile; defaults

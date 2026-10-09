@@ -35,6 +35,7 @@
             [oscope.runtime-floor-test]
             [oscope.sample-emitter-test]
             [oscope.server-test]
+            [oscope.server-stream-options-test]
             [oscope.telemetry-test]
             [oscope.typed-schema-config-test]
             [oscope.typed-schema-runtime-test]
@@ -77,6 +78,7 @@
                         'oscope.runtime-floor-test
                         'oscope.sample-emitter-test
                         'oscope.server-test
+                        'oscope.server-stream-options-test
                         'oscope.telemetry-test
                         'oscope.typed-schema-config-test
                         'oscope.typed-schema-runtime-test

@@ -40,6 +40,25 @@ the Durable dbspec with `:owned-compact-stream? true`, then give `start!`:
  :datetime64-wire :raw-ticks}
 ```
 
+The standalone `oscope.server/start!` API accepts the same encoding options.
+It also needs a canonical Durable writer dbspec and the usual Durable callbacks:
+
+```clojure
+{:port 0
+ :db-spec writer-dbspec ; made with :owned-compact-stream? true
+ :durability {:checkpoint! jdbc.chdb.durable/checkpoint!
+              :flush! jdbc.chdb.durable/flush!}
+ :json-backend :native-guarded-byte-batch
+ :insert-format :json-compact-each-row
+ :owned-statement-output? true
+ :datetime64-wire :raw-ticks}
+```
+
+Use the matching experimental dependency stack described above. These are
+programmatic startup options; the file/environment configuration adapters do
+not expose them yet. This does not change the supported default pins or claim
+standalone executable/AOT packaging or sustained socket-ingestion throughput.
+
 The exporter writes numeric nanoseconds with the fixed query-local setting in
 each INSERT/WAL record. The writer chooses supported owned compact streaming
 after normal admission; unsupported shapes retain ordinary execution. Invalid

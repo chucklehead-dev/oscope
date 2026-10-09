@@ -16,7 +16,8 @@
             [oscope.embedded-test]
             [oscope.embedded-viewer-test]
             [oscope.otlp-test]
-            [oscope.server-test]))
+            [oscope.server-test]
+            [oscope.server-stream-options-test]))
 
 (defn -main [& _]
   (let [qualified? (= :supported (:status (native/durable-capability)))
@@ -28,6 +29,7 @@
                             'oscope.embedded-query-test
                             'oscope.otlp-test
                             'oscope.server-test
+                            'oscope.server-stream-options-test
                             'oscope.durable-native-child-runner-test
                             'oscope.durable-fault-target-test]
         _ (when-not qualified?

@@ -167,6 +167,11 @@
   schema-confirmed positional input. Both defaults remain unchanged.
   Experimental :native-guarded-byte-batch requires the matching source-only
   serial collector stack; no bundled/AOT or throughput guarantee is implied.
+  Explicit :owned-statement-output? true selects owned compact output, and
+  :datetime64-wire :raw-ticks selects query-local nanosecond ticks on 26.9.0.
+  Both require a canonical Durable writer dbspec; streaming itself is selected
+  by that dbspec's :owned-compact-stream? option. These programmatic options
+  are validated before storage, typed DDL or HTTP workers. Defaults are unchanged.
   Optional `:typed-schema` is a closed operator-supplied approved
   manifest, registry backend, and optional event sink. A canonical Durable
   dbspec requires explicit valid `:durability` callbacks and a writer role;
@@ -182,16 +187,22 @@
   default and no internal CAS phase is inferred."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema readiness durability-diagnostic! json-backend insert-format]
+            typed-schema readiness durability-diagnostic! json-backend insert-format
+            owned-statement-output? datetime64-wire]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
-          http-queue-capacity default-http-queue-capacity}}]
+          http-queue-capacity default-http-queue-capacity} :as options}]
    (when-not (= default-host host)
      (throw (ex-info "oscope standalone receiver must bind to 127.0.0.1"
                      {:oscope.server/error true :host host})))
    (when-not (and (integer? port) (<= 0 port 65535))
      (throw (ex-info "oscope port must be between 0 and 65535"
                      {:oscope.server/error true :port port})))
+   (json-backend/validate-export-options! options)
+   (when (and (or owned-statement-output? (= :raw-ticks datetime64-wire))
+              (not (and (durable-dbspec? db-spec) (not (:read-only? db-spec)))))
+     (throw (ex-info "Owned/raw-tick output requires a Durable writer"
+                     {:oscope.server/error true :type ::durable-writer-required})))
    (json-backend/validate! (if (nil? json-backend) :configured json-backend))
    (json-backend/validate-format! (if (nil? insert-format) :json-each-row insert-format))
    (validate-http-executor-options! http-workers http-queue-capacity)
@@ -249,6 +260,10 @@
                (cond-> {:connection conn :signals #{:spans :logs :metrics}}
                  (some? json-backend) (assoc :json-backend json-backend)
                  (some? insert-format) (assoc :insert-format insert-format)
+                 (contains? options :owned-statement-output?)
+                 (assoc :owned-statement-output? owned-statement-output?)
+                 (contains? options :datetime64-wire)
+                 (assoc :datetime64-wire datetime64-wire)
                  (durable-dbspec? db-spec)
                  (assoc :durable? true))
                schema-context))
