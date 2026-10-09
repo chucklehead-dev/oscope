@@ -63,7 +63,7 @@
      :git/sha "07c0a64b60a5630f2d4d77e0c51fb259dceaf652"}
     org.clojure/data.json
     {:git/url "https://github.com/casselc/data.json.git"
-     :git/sha "c2cf28a0056f6ebe6e1bd8b9d34a0235637bd0b1"}}}
+     :git/sha "7fd90244356efa457a9c26e84f65076a43b0e4d5"}}}
 
   :test-embedded-profile
   {:extra-paths ["test"]

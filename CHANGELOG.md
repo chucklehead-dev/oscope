@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retain experimental encoder map-visitor reuse in matching root and minimal
+  streaming profiles. Keep ordinary dependencies unchanged and distinguish
+  the verified allocation reduction from still-pending tail qualification.
+
 - Align only the experimental streaming profiles with JSON row-closure reuse
   and native attribute private-tree replay. Keep root and minimal pins equal,
   ordinary defaults unchanged, and performance claims bounded to the exact

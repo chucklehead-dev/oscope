@@ -30,12 +30,16 @@ profile's defaults, and dependency aliases do not propagate to consumer apps.
 Consumers must explicitly select the matching reviewed dependency versions.
 
 The experimental alias currently selects exporter `07c0a64b` and data.json
-`c2cf28a0`. These retain the previous stack's typed schema and storage behavior
+`7fd90244`. These retain the previous stack's typed schema and storage behavior
 while reducing row preparation/encoding allocation through private attribute
-replay trees and per-factory row cleanup closures. They require the explicitly
+replay trees and per-factory row cleanup/map visitor closures. They require the explicitly
 qualified source runtime; a released version label alone is not qualification.
 These development pins do not change default dependencies or establish stable
 application throughput, hosted S3 tails, or executable/AOT packaging.
+The map visitor saves about 2.56 MB per 10k-row encoded batch on the measured
+workload, without an established timing improvement. Its full local Durable
+window passed recovery, but narrowly missed the inverse-p99 throughput target;
+do not interpret an allocation reduction as stable tail qualification.
 
 On the qualified Jolt source runtime and native package **26.9.0**, configure
 the Durable dbspec with `:owned-compact-stream? true`, then give `start!`:
