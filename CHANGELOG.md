@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update ordinary chDB to the optional native-JSON binding fix. Default startup
+  works with the existing ordinary data.json dependency; experimental encoder
+  aliases and persistence semantics remain unchanged.
+
 - Keep minimal streaming fixture verification active when assertions are
   disabled, and guard its ordinary dependencies against experimental pin drift.
 
