@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update ordinary chDB to the optional native-JSON binding fix. Default startup
+  works with the existing ordinary data.json dependency; persistence semantics
+  and explicitly qualified embedded profiles remain unchanged.
+
 - Fix four test namespace imports: `thrown-with-msg?` is an `is` assertion form,
   not a public Var to refer. Keep all exception/message assertions unchanged.
 
