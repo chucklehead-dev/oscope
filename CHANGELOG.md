@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Keep minimal streaming fixture verification active when assertions are
+  disabled, and guard its ordinary dependencies against experimental pin drift.
+
 - Add a minimal application's explicit experimental streaming dependency graph
   and native fixture entry point. Reuse ordinary SQLite/SDK/query/shutdown
   checks, require an actual compact stream, and verify typed plus generic

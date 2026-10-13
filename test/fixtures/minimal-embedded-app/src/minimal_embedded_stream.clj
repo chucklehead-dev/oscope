@@ -12,13 +12,14 @@
         status-column (get-in field [:physical :status-column])]
       ;; These independently expected values are read from the physical table,
       ;; not inferred from a count, installer receipt, or successful flush.
-      (assert (= [{:span_name "minimal embedded fixture" :typed_value true
+      (@#'ordinary/require! (= [{:span_name "minimal embedded fixture" :typed_value true
                    :typed_status 3 :generic_value "true"}]
                  (jdbc/fetch connection
                              (str "SELECT SpanName AS span_name, `" value-column
                                   "` AS typed_value, `" status-column
                                   "` AS typed_status, SpanAttributes['fixture.confirmed']"
-                                  " AS generic_value FROM otel_traces"))))))
+                                  " AS generic_value FROM otel_traces")))
+                            "fresh streaming snapshot physical values did not match")))
 
 (defn -main [& args]
   (let [[mode] args
@@ -27,7 +28,8 @@
         start embedded/start!
         stream native/chdb-stream-insert-n
         reader @#'ordinary/run-reader!]
-    (assert (contains? #{"writer" "reader" "mutant"} mode))
+    (@#'ordinary/require! (contains? #{"writer" "reader" "mutant"} mode)
+                         "streaming fixture mode is invalid")
     (with-redefs
       [ordinary/run-reader!
        (fn [root seal marker] (reader root seal marker typed-readback!))
@@ -43,8 +45,8 @@
        (fn [& values] (swap! streams inc) (apply stream values))]
       (apply ordinary/-main args)
       (case mode
-        "writer" (assert (= 1 @streams))
-        "reader" (assert (zero? @streams))
-        "mutant" (assert (zero? @streams))))
+        "writer" (@#'ordinary/require! (= 1 @streams) "streaming writer witness did not match")
+        "reader" (@#'ordinary/require! (zero? @streams) "snapshot reader unexpectedly inserted")
+        "mutant" (@#'ordinary/require! (zero? @streams) "generation mutant unexpectedly inserted")))
     ;; A fixed marker, not a payload/status/path or native response dump.
     (println "minimal embedded stream fixture: PASS")))

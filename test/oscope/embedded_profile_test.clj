@@ -25,7 +25,8 @@
       (is (= sha (get-in root-deps [coordinate :git/sha])))
       (when-not (= coordinate 'jolt-lang/jolt-crypto)
         (is (not= sha (get-in root [:deps coordinate :git/sha])))
-        (is (not= sha (get-in embedded [:deps coordinate :git/sha])))))
+        (is (not= sha (get-in embedded [:deps coordinate :git/sha])))
+        (is (not= sha (get-in fixture [:deps coordinate :git/sha])))))
     (is (= #{'io.github.casselc/otel 'jolt-lang/jolt-crypto
              'io.github.chucklehead-dev/jolt-chdb
              'io.github.chucklehead-dev/jolt-otel-clickhouse 'org.clojure/data.json}

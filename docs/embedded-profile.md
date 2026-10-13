@@ -251,6 +251,15 @@ The writer additionally requires exactly one native streaming insert. The
 fresh reader checks the physical Boolean value, status code and original
 generic attribute on its single native connection before publishing the
 generation-match marker. The later-generation rejection control is retained.
+These checks are unconditional, including when the fixture is compiled with
+assertions disabled. Run their synthetic negative controls separately:
+
+```sh
+env OSCOPE_STREAM_JOLT_BIN=/path/to/qualified-runtime-launcher \
+    bash test/run_minimal_stream_checks.sh
+```
+
+This command opens no application or telemetry store and uses no receiver.
 The receipt format remains v1; it does not separately name streaming checks.
 This is local integration evidence, not throughput, S3 or remote-delivery
 qualification. The remote peer is a deliberately stalled loopback fixture.
