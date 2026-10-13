@@ -228,6 +228,42 @@ Hosted CI pins that runtime to public `casselc/jolt` `2d39e854` and installs
 the profile's checksum-pinned Linux x86-64 chDB 26.7.3 asset before running the
 aggregate. This slice does not claim macOS behavioral qualification.
 
+### Experimental streaming fixture
+
+The same minimal application has an opt-in `:stream-test` alias. It selects
+the experimental SDK, exporter, encoder and Durable revisions explicitly;
+dependency aliases do not propagate from the root project. Ordinary startup
+and the existing `:test` alias remain unchanged.
+
+To exercise it through the private-output controller, select a Chez-10.4.1
+runtime launcher for `jolt v0.8.17-49-g7c57cf7e`:
+
+```sh
+env OSCOPE_STREAM_JOLT_BIN=/path/to/qualified-runtime-launcher \
+    JOLT_BIN="$PWD/test/run_minimal_stream_jolt.sh" \
+    JOLT_CHDB_LIB=/path/to/chdb-26.9.0/libchdb.so \
+    RUNNER_TEMP=/path/to/private-test-directory \
+    OSCOPE_EMBEDDED_NATIVE_RECEIPT=/path/to/private-test-directory/receipt.edn \
+    bash test/run_embedded_native_profile.sh
+```
+
+The writer additionally requires exactly one native streaming insert. The
+fresh reader checks the physical Boolean value, status code and original
+generic attribute on its single native connection before publishing the
+generation-match marker. The later-generation rejection control is retained.
+These checks are unconditional, including when the fixture is compiled with
+assertions disabled. Run their synthetic negative controls separately:
+
+```sh
+env OSCOPE_STREAM_JOLT_BIN=/path/to/qualified-runtime-launcher \
+    bash test/run_minimal_stream_checks.sh
+```
+
+This command opens no application or telemetry store and uses no receiver.
+The receipt format remains v1; it does not separately name streaming checks.
+This is local integration evidence, not throughput, S3 or remote-delivery
+qualification. The remote peer is a deliberately stalled loopback fixture.
+
 ## Samizdat qualification boundary
 
 The original dependency audit was pinned to casselc/samizdat

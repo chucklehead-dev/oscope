@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Update ordinary chDB to the optional native-JSON binding fix. Default startup
+  works with the existing ordinary data.json dependency; experimental encoder
+  aliases and persistence semantics remain unchanged.
+
+- Keep minimal streaming fixture verification active when assertions are
+  disabled, and guard its ordinary dependencies against experimental pin drift.
+
+- Add a minimal application's explicit experimental streaming dependency graph
+  and native fixture entry point. Reuse ordinary SQLite/SDK/query/shutdown
+  checks, require an actual compact stream, and verify typed plus generic
+  attributes in a fresh sealed reader. Ordinary startup and dependencies stay
+  unchanged; this is not a throughput or hosted-runtime qualification.
+
 - Retain the guarded private typed-status lookup in matching experimental
   streaming profiles. Public codebooks and live replacements stay unchanged;
   ordinary dependencies and hosted-performance claims remain separate.

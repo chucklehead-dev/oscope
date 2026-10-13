@@ -234,7 +234,10 @@
     :scratch-parent root-path
     :expected-normalized-head-sha256 expected}))
 
-(defn- run-reader! [root-path seal-path marker-path]
+(defn- run-reader!
+  ([root-path seal-path marker-path]
+   (run-reader! root-path seal-path marker-path (fn [_] nil)))
+  ([root-path seal-path marker-path verify-readback!]
   (let [expected (read-private-seal! seal-path)
         connection (jdbc/connection (snapshot-dbspec root-path expected))]
     (try
@@ -243,9 +246,10 @@
       (require! (= [{:count 1}]
                    (jdbc/fetch connection "select count() as count from otel_traces"))
                 "fresh snapshot reader did not recover the emitted span")
+      (verify-readback! connection)
       (spit marker-path "generation-match\n")
       (finally
-        (.close connection)))))
+        (.close connection))))))
 
 (defn- snapshot-mismatch? [thunk]
   (try

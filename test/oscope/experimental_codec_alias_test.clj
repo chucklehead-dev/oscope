@@ -25,7 +25,7 @@
     (is (= ['jolt-lang/jolt-crypto] (get-in selected ['io.github.casselc/otel :exclusions])))
     (is (= "8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2"
            (get-in root [:deps 'io.github.casselc/otel :git/sha])))
-    (is (= "64293b131c7e1c06d6e4ec4794a219c91f3b3b90"
+    (is (= "a0a65765cfc39c6facb812a042fa0b4ee63f713c"
            (get-in root [:deps 'io.github.chucklehead-dev/jolt-chdb :git/sha])))))
 
 (deftest active-stack-resolves-published-sources-not-local-overrides

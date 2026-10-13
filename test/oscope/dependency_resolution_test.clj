@@ -10,7 +10,7 @@
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "64293b131c7e1c06d6e4ec4794a219c91f3b3b90/"))
+       "a0a65765cfc39c6facb812a042fa0b4ee63f713c/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
