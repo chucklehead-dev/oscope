@@ -12,8 +12,10 @@
   (let [root (edn/read-string (slurp "deps.edn"))
         embedded (edn/read-string (slurp (str embedded-profile-dir "/deps.edn")))
         root-deps (get-in root [:aliases :experimental-durable-stream :extra-deps])
-        embedded-deps (get-in embedded [:aliases :experimental-durable-stream :extra-deps])]
+        embedded-deps (get-in embedded [:aliases :experimental-durable-stream :extra-deps])
+        fixture (edn/read-string (slurp "test/fixtures/minimal-embedded-app/deps.edn"))]
     (is (= root-deps embedded-deps))
+    (is (= root-deps (get-in fixture [:aliases :stream-test :extra-deps])))
     (doseq [[coordinate sha]
             {'io.github.casselc/otel "19fc49d20b3a75906f0ccbb8b50c7e48b03e4813"
              'jolt-lang/jolt-crypto "5effcc89a3258499a79a2a3d69edad9e7800d1bf"
