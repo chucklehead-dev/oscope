@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Qualify the current ordinary exporter and merged chDB writer fixes while
+  retaining OTel, JSON, crypto, native-package and woven-profile pins. Require
+  the actual resolved revisions and qualify embedded SDK capture followed by
+  a fresh Durable reader. No experimental encoder or
+  throughput claim is enabled by this dependency update.
+
 - Update ordinary chDB to the optional native-JSON binding fix. Default startup
   works with the existing ordinary data.json dependency; persistence semantics
   and explicitly qualified embedded profiles remain unchanged.
