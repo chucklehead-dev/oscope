@@ -5,7 +5,7 @@
 
 (def ^:private runtime-floor "0.8.6")
 (def ^:private root-driver-sha
-  "a0a65765cfc39c6facb812a042fa0b4ee63f713c")
+  "16e44fcb09a6c85334a98da4d252ff5d110feff8")
 (def ^:private ordinary-driver-sha
   "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private woven-qualification-driver-sha
