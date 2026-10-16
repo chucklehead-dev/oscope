@@ -6,15 +6,15 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "3a53e4b07ff56f0e0b12cdab4b16a01e619d5f3c")
+  "1a0b787157e0bcc33136eadf6023befbce45ea45")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "677219027d68702a18ee826b55ee1f2ccc3d172d/"))
+       "bad991ad191ffb57d90ff86795ccbeb3992bf186/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "16e44fcb09a6c85334a98da4d252ff5d110feff8/"))
+       "677219027d68702a18ee826b55ee1f2ccc3d172d/"))
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -41,12 +41,12 @@
        ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
 (def ^:private prior-exporter-sha
-  "953f4f469522ff2eee5ed3e63233b70c903acecf")
+  "3a53e4b07ff56f0e0b12cdab4b16a01e619d5f3c")
 
 (def ^:private prior-exporter-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
-       ":git/sha \"953f4f469522ff2eee5ed3e63233b70c903acecf\"}}}"))
+       ":git/sha \"3a53e4b07ff56f0e0b12cdab4b16a01e619d5f3c\"}}}"))
 
 (def ^:private prior-scalar-sdk-root
   "https___github.com_casselc_otel.git/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/")
@@ -57,7 +57,7 @@
 (def ^:private prior-chdb-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-chdb "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-chdb.git\" "
-       ":git/sha \"16e44fcb09a6c85334a98da4d252ff5d110feff8\"}}}"))
+       ":git/sha \"677219027d68702a18ee826b55ee1f2ccc3d172d\"}}}"))
 
 (defn- dependency-roots [classpath dependency]
   (->> (str/split (str classpath) #":")

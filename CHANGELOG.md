@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Qualify the merged chDB scoped S3 ownership helpers and the exporter SDK/S3
+  integration through ordinary dependency pins. Preserve SDK, JSON, native
+  package and historical profile selections, with current/prior resolved-root
+  controls. This does not enable transport reuse automatically or change
+  embedded shutdown, persistence, queries, or application throughput claims.
+
 - Update the ordinary SDK and exporter together to use guarded scalar
   attribute formatting without normalization-result maps. Keep exact attribute
   text and fallbacks, check actual current/prior source roots, and retain chDB,
