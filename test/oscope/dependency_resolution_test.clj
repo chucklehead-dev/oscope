@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "953f4f469522ff2eee5ed3e63233b70c903acecf")
+  "3a53e4b07ff56f0e0b12cdab4b16a01e619d5f3c")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -18,7 +18,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/"))
+       "ff8e2e4ab8fe0b8b3f8410cb202d47b1c29267a1/"))
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -41,12 +41,18 @@
        ":git/sha \"9cb5801e8c5929387715aa6713c33b2c21fd9a2a\"}}}"))
 
 (def ^:private prior-exporter-sha
-  "a550e500653cb6e723cded30d0ca06f71b7d39f1")
+  "953f4f469522ff2eee5ed3e63233b70c903acecf")
 
 (def ^:private prior-exporter-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
-       ":git/sha \"a550e500653cb6e723cded30d0ca06f71b7d39f1\"}}}"))
+       ":git/sha \"953f4f469522ff2eee5ed3e63233b70c903acecf\"}}}"))
+
+(def ^:private prior-scalar-sdk-root
+  "https___github.com_casselc_otel.git/8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2/")
+
+(def ^:private prior-scalar-sdk-coordinate
+  "{:deps {io.github.casselc/otel {:git/url \"https://github.com/casselc/otel.git\" :git/sha \"8110c12f058e1d6902fe6dad0f370d9a8b3a2ec2\"}}}")
 
 (def ^:private prior-chdb-coordinate
   (str "{:deps {io.github.chucklehead-dev/jolt-chdb "
@@ -140,6 +146,18 @@
       (testing "the reviewed exporter-root oracle rejects that resolution"
         (is (false? (exact-exporter-resolution? (:out result)
                                                 exporter-sha)))))))
+
+(deftest prior-scalar-sdk-coordinate-is-a-causal-red-control
+  ;; The exporter now needs the helper in this exact SDK revision. Check the
+  ;; real prior single-provider selection independently of the historical
+  ;; duplicate-SDK/HTTP fixture below; -Spath does not load the incompatible app.
+  (let [result (dependency-report ["-Sdeps" prior-scalar-sdk-coordinate])]
+    (is (successful-report? result))
+    (when (map? result)
+      (is (exact-coordinate? (:out result) "casselc_otel.git"
+                             prior-scalar-sdk-root))
+      (is (false? (exact-coordinate? (:out result) "casselc_otel.git"
+                                     otel-root))))))
 
 (deftest prior-otel-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-otel-coordinate])]

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the ordinary SDK and exporter together to use guarded scalar
+  attribute formatting without normalization-result maps. Keep exact attribute
+  text and fallbacks, check actual current/prior source roots, and retain chDB,
+  JSON, native-package and historical profile pins. No persistence or query
+  contract changes; no new application throughput claim.
+
 - Update ordinary chDB and exporter pins to the qualified native SQL
   placeholder detector. Confirm their actual source roots and reject the prior
   revisions. Keep SDK, JSON, native-package and historical woven-profile pins;
