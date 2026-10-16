@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update ordinary chDB and exporter pins to the qualified native SQL
+  placeholder detector. Confirm their actual source roots and reject the prior
+  revisions. Keep SDK, JSON, native-package and historical woven-profile pins;
+  collection, querying and persistence acknowledgements are unchanged. No new
+  application throughput gain is claimed by this dependency update.
+
 - Qualify the current ordinary exporter and merged chDB writer fixes while
   retaining OTel, JSON, crypto, native-package and woven-profile pins. Require
   the actual resolved revisions and qualify embedded SDK capture followed by
