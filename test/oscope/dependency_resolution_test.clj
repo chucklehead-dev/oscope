@@ -6,11 +6,11 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "65f0f5b30efe58dc4c0b9a5bde989aabcee2001f")
+  "ed4e1cacbd7eeb7a5e45b7f0acdec11505aa1fc8")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "af3a902be39fc466246b39864cdf77879032c87a/"))
+       "3d766fa295b0e98c30f275d0a334db92e6dd998c/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -154,6 +154,29 @@
       (testing "the current chDB source-root receipt rejects the mutation"
         (is (false? (exact-coordinate? (:out prior)
                                        "chucklehead-dev_jolt-chdb.git" chdb-root)))))))
+
+(deftest previous-product-stack-coordinates-are-causal-red-controls
+  (let [driver-sha "af3a902be39fc466246b39864cdf77879032c87a"
+        previous-exporter "65f0f5b30efe58dc4c0b9a5bde989aabcee2001f"
+        coordinate (fn [lib repo sha]
+                     (str "{:deps {" lib " {:git/url \"https://github.com/"
+                          repo ".git\" :git/sha \"" sha "\"}}}"))
+        driver (dependency-report
+                 ["-Sdeps" (coordinate "io.github.chucklehead-dev/jolt-chdb"
+                                       "chucklehead-dev/jolt-chdb" driver-sha)])
+        exporter (dependency-report
+                   ["-Sdeps" (coordinate "io.github.chucklehead-dev/jolt-otel-clickhouse"
+                                         "chucklehead-dev/jolt-otel-clickhouse"
+                                         previous-exporter)])]
+    (is (successful-report? driver))
+    (is (exact-coordinate? (:out driver) "chucklehead-dev_jolt-chdb.git"
+                           (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
+                                driver-sha "/")))
+    (is (false? (exact-coordinate? (:out driver)
+                                  "chucklehead-dev_jolt-chdb.git" chdb-root)))
+    (is (successful-report? exporter))
+    (is (exact-exporter-resolution? (:out exporter) previous-exporter))
+    (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
 
 (deftest prior-exporter-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-exporter-coordinate])]
