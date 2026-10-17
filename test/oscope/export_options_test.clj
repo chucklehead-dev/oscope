@@ -45,7 +45,8 @@
       (is (empty? @effects)))))
 
 (deftest validated-options-reach-both-public-exporter-construction-sites
-  (doseq [kind [:embedded :standalone]]
+  (doseq [[kind options durable?] [[:embedded compact true] [:embedded owned true]
+                                  [:standalone compact false] [:standalone owned true]]]
     (let [seen (atom nil) closed (atom false)
           connection (reify java.io.Closeable (close [_] (reset! closed true)))
           sentinel (ex-info "Stop after exporter handoff" {})]
@@ -54,13 +55,16 @@
         (let [failure (try
                         (if (= kind :embedded)
                           (embedded/start! {:db-spec ::unused :sdk-options {:metrics? false}
-                                            :export-options compact})
-                          (server/start! {:db-spec ::unused :port 0 :export-options compact}))
+                                            :export-options options})
+                          (server/start! (cond-> {:db-spec ::unused :port 0 :export-options options}
+                                           durable? (assoc :db-spec {:vendor "chdb-durable"}
+                                                           :durability {:checkpoint! (fn [_] true)
+                                                                        :flush! (fn [_] true)}))))
                         nil (catch Throwable e e))]
           (is (identical? sentinel failure))
-          (is (= (merge compact {:connection connection
+          (is (= (merge options {:connection connection
                                 :signals (if (= kind :embedded) #{:spans} #{:spans :logs :metrics})}
-                        (when (= kind :embedded) {:durable? true})) @seen))
+                        (when durable? {:durable? true})) @seen))
           (is @closed))))))
 
 (deftest file-options-reach-local-and-durable-runtime-without-owning-resources
