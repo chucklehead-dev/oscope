@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Update the exporter and optional native byte-JSON checkpoint to revisions
+  containing local ASCII cursor emission and unexposed row-writer reuse. Preserve live
+  custom writer behavior and ordinary JSON, SDK, driver, native installation,
+  storage and encoding defaults. This is not a throughput-target qualification.
+
 - Update the exporter and optional native byte-JSON dependency together to
   reduce temporary span-encoding allocation. Keep ordinary JSON, SDK, driver,
   installation and encoding defaults unchanged. This is a dependency
