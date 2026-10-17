@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Update the exporter and optional native byte-JSON dependency together to
+  reduce temporary span-encoding allocation. Keep ordinary JSON, SDK, driver,
+  installation and encoding defaults unchanged. This is a dependency
+  checkpoint, not a new application-throughput guarantee.
+
 - Update the exporter and optional native JSON dependency together for cheaper
   empty event/link JSON strings in byte-batch mode. Keep ordinary JSON and
   encoding defaults unchanged. Require real companion execution during native
