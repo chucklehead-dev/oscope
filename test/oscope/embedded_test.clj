@@ -443,7 +443,10 @@
                                   :sdk-options (cond-> {:logs? true :runtime-metrics? true
                                                        :bridge-logging? false}
                                                  (= :validation mode)
-                                                 (assoc :max-queue-size 0))}
+                                                 (assoc :max-queue-size 0)
+                                                 (= :metric-policy-validation mode)
+                                                 (assoc :metric-reader-options
+                                                        {:shutdown-cancel-grace-ms -1}))}
                            dual? (assoc :span-pipelines
                                         {:local {:schedule-delay-ms 60000}
                                          :remote {:endpoint "http://127.0.0.1:4318"
@@ -492,7 +495,8 @@
                 (is (= before @releases))))
             (do
               (is (some? error))
-              (when (not= :validation mode) (is (identical? sentinel error)))
+              (when-not (#{:validation :metric-policy-validation} mode)
+                (is (identical? sentinel error)))
               (is (count-oracle))
               (is (= :connection-close (last @events)))
               (when (not= :partial mode)
@@ -529,6 +533,11 @@
   (doseq [mode [:held-false :held-throw]]
     (let [trace (actual-startup-face-trace mode)]
       (is (= [:source-close :connection-close] (vec (take-last 2 (:events trace))))))))
+
+(deftest actual-early-metric-policy-validation-cleans-up-without-workers
+  (let [trace (actual-startup-face-trace :metric-policy-validation)]
+    (is (zero? (:workers trace)))
+    (is (= [:source-close :connection-close] (vec (take-last 2 (:cleanup-events trace)))))))
 
 (deftest actual-unreturned-pipeline-evidence-remains-unknown
   (doseq [mode [:foreign-pipeline :pipeline-post-success :foreign-returned-pipeline]]

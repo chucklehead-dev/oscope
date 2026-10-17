@@ -1,6 +1,11 @@
 {:paths [".."]
  :deps
  {io.github.chucklehead-dev/oscope {:local/root "../.."}
+  ;; CI supplies this producer's old driver through its workflow-pinned
+  ;; .qualification checkout. Keep its matching exporter explicit too.
+  io.github.chucklehead-dev/jolt-otel-clickhouse
+  {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+   :git/sha "1a0b787157e0bcc33136eadf6023befbce45ea45"}
   io.github.chucklehead-dev/jolt-chdb
   {:local/root "../../.qualification/jolt-chdb"}}
  :jolt/build

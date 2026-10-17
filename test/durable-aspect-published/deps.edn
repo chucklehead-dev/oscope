@@ -13,6 +13,11 @@
   {:git/url "https://github.com/chucklehead-dev/time.git"
    :git/sha "2494b21b25cd959573c3e6050cd475e4bf302fdb"}
   io.github.chucklehead-dev/oscope {:local/root "../.."}
+  ;; Historical woven producer stays on its pre-owned-output exporter. The
+  ;; ordinary app and fresh-reader graph retain the current root dependencies.
+  io.github.chucklehead-dev/jolt-otel-clickhouse
+  {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+   :git/sha "1a0b787157e0bcc33136eadf6023befbce45ea45"}
   io.github.chucklehead-dev/jolt-chdb
   {:local/root "../../.qualification/jolt-chdb"}
   io.github.chucklehead-dev/jolt-aspect-packs

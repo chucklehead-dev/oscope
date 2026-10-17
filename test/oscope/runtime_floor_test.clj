@@ -5,7 +5,7 @@
 
 (def ^:private runtime-floor "0.8.6")
 (def ^:private root-driver-sha
-  "bad991ad191ffb57d90ff86795ccbeb3992bf186")
+  "af3a902be39fc466246b39864cdf77879032c87a")
 (def ^:private ordinary-driver-sha
   "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private woven-qualification-driver-sha
@@ -317,6 +317,35 @@
     (is (str/includes? s3-workflow woven-qualification-driver-sha))
     (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes? s3-workflow aspect-compiler-sha))))
+
+(defn- historical-producer-pair? [deps workflow]
+  (boolean
+   (and (= "1a0b787157e0bcc33136eadf6023befbce45ea45"
+           (get-in deps [:deps 'io.github.chucklehead-dev/jolt-otel-clickhouse :git/sha]))
+        (= "../../.qualification/jolt-chdb"
+           (get-in deps [:deps 'io.github.chucklehead-dev/jolt-chdb :local/root]))
+        (re-find (re-pattern
+                  (str "repository: chucklehead-dev/jolt-chdb\\s+ref: "
+                       woven-qualification-driver-sha
+                       "\\s+path: \\.qualification/jolt-chdb(?:\\s|$)"))
+                 (executable-declarations workflow)))))
+
+(deftest historical-producers-retain-compatible-exporter
+  (doseq [path ["test/durable-aspect-published/deps.edn"
+               "test/durable-process-published/deps.edn"
+               "test/durable-fault-published/deps.edn"]
+          :let [deps (edn/read-string (slurp path))
+                workflow (slurp ".github/workflows/durable-s3-e2e.yml")]]
+    ;; A declared tuple, not a working-build proof: CI must still build/run
+    ;; each fixture. Root app and fresh-reader sources are independent pins.
+    (is (historical-producer-pair? deps workflow))
+    (is (false? (historical-producer-pair?
+                 (assoc-in deps [:deps 'io.github.chucklehead-dev/jolt-otel-clickhouse :git/sha]
+                           "f862cb1acc190cc2c03eb1b8096d76a2f15270d3") workflow)))
+    (is (false? (historical-producer-pair?
+                 (assoc-in deps [:deps 'io.github.chucklehead-dev/jolt-chdb :local/root] "../..") workflow)))
+    (is (false? (historical-producer-pair?
+                 deps (str/replace workflow woven-qualification-driver-sha root-driver-sha))))))
 
 (deftest downgrade-mutations-are-rejected-causally
   (let [deps (edn/read-string (slurp "deps.edn"))
