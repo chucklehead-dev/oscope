@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Update the exporter and optional native JSON dependency together for cheaper
+  empty event/link JSON strings in byte-batch mode. Keep ordinary JSON and
+  encoding defaults unchanged. Require real companion execution during native
+  SDK/socket capture, and zero adapter calls in the configured-mode control.
+
 - Update the exporter for lower-allocation native attribute conversion and
   typed projection. Preserve live conversion policy changes and fallback
   behavior. Keep SDK, driver, JSON, native installation and encoding defaults

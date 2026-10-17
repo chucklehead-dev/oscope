@@ -85,8 +85,8 @@ jobs:
           for task_consumer in embedded standalone embedded-typed; do
             timeout --signal=TERM --kill-after=5s 120s "$WRITER_JOLT_BIN" \
               -Srepro -A:test-durable:native-json-byte-batch \
-              -m oscope.export-options-native-test-runner stream "$task_consumer"
+              -m oscope.export-options-native-test-runner stream "$task_consumer" --require-json-companion
           done
           timeout --signal=TERM --kill-after=5s 120s "$WRITER_JOLT_BIN" \
             -Srepro -A:test-durable:native-json-byte-batch \
-            -m oscope.export-options-native-test-runner stream-fallback standalone
+            -m oscope.export-options-native-test-runner stream-fallback standalone --require-json-companion
