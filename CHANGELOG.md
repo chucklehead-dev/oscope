@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add closed exporter encoding options to embedded/standalone startup and
+  version-2 storage configuration. Keep defaults and ownership authority fixed;
+  expose explicit compact/native/owned modes and the optional byte dependency.
+  Check-only configuration validates choices without probing native code.
+
 - Qualify the current Durable exporter, SDK reader policy and driver together,
   including Oscope's direct SDK/JSON pins. Preserve ordinary defaults and
   historical profiles; check early policy-validation cleanup without workers.

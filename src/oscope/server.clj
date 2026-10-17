@@ -5,6 +5,7 @@
             [jolt.http.server :as http]
             [oscope.config :as config]
             [oscope.error :as error]
+            [oscope.export-options :as encoding]
             [oscope.http-app :as http-app]
             [oscope.http-executor :as http-executor]
             [oscope.live :as live]
@@ -163,7 +164,11 @@
   manifest, registry backend, and optional event sink. A canonical Durable
   dbspec requires explicit valid `:durability` callbacks and a writer role;
   reader dbspecs are rejected before acquisition. Oscope binds all
-  database effects to its owned connection. The returned
+  database effects to its owned connection. Optional
+  `:export-options` input selects only `:insert-format`, `:json-backend`, and
+  `:owned-statement-output?`; omitted settings retain exporter defaults.
+  Owned output requires Durable storage and the native-byte compact backend.
+  The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary
   on each call. `:durability-observation` is an atom containing nil or the last
   closed request-barrier observation. Optional `:durability-diagnostic!` is a
@@ -174,10 +179,11 @@
   default and no internal CAS phase is inferred."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema readiness durability-diagnostic!]
+            typed-schema readiness durability-diagnostic! export-options]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
-          http-queue-capacity default-http-queue-capacity}}]
+          http-queue-capacity default-http-queue-capacity export-options {}}}]
+   (encoding/validate! export-options (durable-dbspec? db-spec))
    (when-not (= default-host host)
      (throw (ex-info "oscope standalone receiver must bind to 127.0.0.1"
                      {:oscope.server/error true :host host})))
@@ -236,7 +242,7 @@
                ;; exact vendor (and no URI prefix). Its exporter verifies the
                ;; opened connection is a writer before schema/data effects.
                ;; Persistence callbacks alone must not classify ordinary JDBC.
-               (cond-> {:connection conn :signals #{:spans :logs :metrics}}
+               (cond-> (merge export-options {:connection conn :signals #{:spans :logs :metrics}})
                  (durable-dbspec? db-spec)
                  (assoc :durable? true))
                schema-context))

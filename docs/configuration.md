@@ -2,6 +2,64 @@
 
 Oscope's standalone server accepts one versioned EDN configuration document.
 The same options apply to the `-M:native-server` launcher.
+
+### Export encoding
+
+Version 2 storage sections may include `:export-options`. For example, ordinary
+memory storage can use compact JSON rows without changing persistence behavior:
+
+```clojure
+{:version 2
+ :storage {:type :memory
+           :export-options {:insert-format :json-compact-each-row
+                            :json-backend :configured}}}
+```
+
+The same map is accepted as `:export-options` by `oscope.embedded/start!` and
+`oscope.server/start!`. Omitting it preserves all exporter defaults. It accepts
+only these encoding settings, not connections, signals, schema descriptors, or
+persistence callbacks:
+
+- `:insert-format`: `:json-each-row` or `:json-compact-each-row`.
+- `:json-backend`: `:configured`, `:native-guarded`,
+  `:native-guarded-string-cache`, or `:native-guarded-byte-batch`.
+- `:owned-statement-output?`: a Boolean, defaulting to false.
+
+Owned output is opt-in and requires Durable storage, compact rows, and
+`:native-guarded-byte-batch`. Native byte and owned modes additionally require
+the qualified byte-capable Jolt runtime and the `:native-json-byte-batch` alias
+(which selects the matching JSON library). They are not supported by stock Jolt
+merely by setting this map. For example, add the alias to the qualified runtime's
+normal server command: `-M:native-json-byte-batch:server --config PATH`.
+Other library aliases do not propagate automatically into Oscope.
+
+Configuration validation checks the option names and combinations without
+opening storage or probing native encoder availability. An unavailable native
+encoder is rejected during actual startup, with normal startup cleanup; no
+automatic downgrade or retry with a different encoder occurs. Version 1 files
+do not accept this extension. Encoding options do not change acknowledgement,
+flush, recovery, or shutdown contracts.
+
+Maintainers can exercise real ingestion with the existing recovery fixtures:
+
+```sh
+# Set JOLT_CHDB_LIB to the qualified native library and JOLT_BIN to the selected
+# runtime (absolute paths). Use the workspace Chez wrapper for local commands.
+"$JOLT_BIN" -Srepro -A:test-durable -m oscope.export-options-native-test-runner configured standalone
+"$JOLT_BIN" -Srepro -A:test-durable -m oscope.export-options-native-test-runner configured embedded
+# With the qualified byte-capable runtime:
+"$JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner owned standalone
+"$JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner owned embedded
+"$JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner owned embedded-typed
+```
+
+Each invocation owns one native writer lifetime. The standalone and embedded
+capture fixtures require a checked, settled fresh-reader receipt; the typed
+fixture checks approved-manifest ingestion and schema-aware live queries.
+These are correctness checks, not throughput benchmarks.
+
+### Configuration precedence
+
 Configuration precedence is, from strongest to weakest:
 
 ```text

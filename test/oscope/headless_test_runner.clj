@@ -18,6 +18,7 @@
             [oscope.embedded-query-test]
             [oscope.embedded-viewer-test]
             [oscope.events-test]
+            [oscope.export-options-test]
             [oscope.http-executor-test]
             [oscope.langfuse-profile-test]
             [oscope.live-test]
@@ -60,6 +61,7 @@
                         'oscope.embedded-query-test
                         'oscope.embedded-viewer-test
                         'oscope.events-test
+                        'oscope.export-options-test
                         'oscope.http-executor-test
                         'oscope.langfuse-profile-test
                         'oscope.live-test
