@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "c24ffc30685d83d2eadb68d33dd18af04ffaa1bd")
+  "5be78d565be0a7a929d108be929540c1b4f19524")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -149,7 +149,7 @@
                                "\"https://github.com/casselc/data.json.git\" :git/sha \""
                                prior-sha "\"}}}")])
         ordinary-root (root "0f51b99101bc5e840f957c073f87b6f877309a25")
-        byte-root (root "a0172a0f1418632c760af98ef5280dd234d21e85")]
+        byte-root (root "8d557cc18eb9526ed29ae5613089c3793d5973fa")]
     (doseq [report [ordinary byte prior]] (is (successful-report? report)))
     (is (exact-coordinate? (:out ordinary) "data.json" ordinary-root))
     (is (exact-coordinate? (:out byte) "data.json" byte-root))
@@ -159,7 +159,7 @@
 (deftest previous-byte-json-checkpoint-is-a-coordinate-red-control
   ;; This checks the selected dependency checkpoint, not backend ABI
   ;; compatibility, a runtime rejection or a persistence property.
-  (let [sha "4aeb24bf64e9c19fb16b945056414bb93ed1b1fb"
+  (let [sha "a0172a0f1418632c760af98ef5280dd234d21e85"
         coordinate (str "{:deps {org.clojure/data.json "
                         "{:git/url \"https://github.com/casselc/data.json.git\" "
                         ":git/sha \"" sha "\"}}}")
@@ -168,7 +168,7 @@
     (is (exact-coordinate? (:out result) "data.json"
                            (str "https___github.com_casselc_data.json.git/" sha "/")))
     (is (false? (exact-coordinate? (:out result) "data.json"
-                                  "https___github.com_casselc_data.json.git/a0172a0f1418632c760af98ef5280dd234d21e85/")))))
+                                  "https___github.com_casselc_data.json.git/8d557cc18eb9526ed29ae5613089c3793d5973fa/")))))
 
 (deftest current-chdb-source-root-is-exact-and-prior-pin-is-rejected
   (let [current (dependency-report [])
@@ -231,7 +231,7 @@
     (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
 
 (deftest previous-integrated-exporter-is-a-causal-red-control
-  (let [sha "fd8fa0e84d7e6b1913af52a0564ab8d6aeebd290"
+  (let [sha "c24ffc30685d83d2eadb68d33dd18af04ffaa1bd"
         coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
                         "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
                         ":git/sha \"" sha "\"}}}")

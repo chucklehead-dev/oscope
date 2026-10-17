@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the exporter and optional native byte-JSON dependency together for
+  short clean ASCII emission without fragment-cache lookup. Retain Unicode
+  and longer-string caching, ordinary JSON, SDK, driver, installation and
+  encoding defaults. Verify resolved roots and reject the previous pins;
+  this update does not establish sustained throughput or tail targets.
+
 - Update the SDK and exporter together for one-pass bounded string-attribute
   admission. Preserve captured values, changed-policy fallbacks, storage and
   encoding defaults. Check actual dependency roots and reject the previous
