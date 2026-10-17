@@ -3,6 +3,7 @@
   (:require [clojure.test :as test :refer [deftest is]]
             [jdbc.chdb.native :as native]
             [oscope.durable-native-child-runner :as child]
+            [oscope.embedded :as embedded]
             [oscope.export-options-native-test-runner :as fixture]))
 
 (def ^:private ^:dynamic *fake-companion* nil)
@@ -42,6 +43,17 @@
 
 (deftest noop-ingestion-cannot-qualify-the-positive-witness
   (let [result (run-control "stream" #(native/chdb-stream-insert-n))]
+    (is (= ::fixture/unobserved-json-companion (:type (ex-data (:failure result)))))))
+
+(deftest startup-only-adapter-calls-cannot-qualify-ingestion
+  (let [result (with-redefs [embedded/start!
+                            (fn [_]
+                              (binding [*fake-companion* :active]
+                                (observed-adapter))
+                              nil)]
+                 (run-control "stream"
+                              #(do (embedded/start! {})
+                                   (native/chdb-stream-insert-n))))]
     (is (= ::fixture/unobserved-json-companion (:type (ex-data (:failure result)))))))
 
 (deftest configured-control-forbids-all-native-adapter-calls

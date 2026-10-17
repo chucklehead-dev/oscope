@@ -74,8 +74,19 @@
     (println :export-encoding-fixture mode consumer)
     (with-redefs-fn overrides
       (fn []
-        (with-redefs [embedded/start! (fn [args] (start-embedded (handoff args)))
-                  server/start! (fn [args] (start-server (handoff args)))
+        (with-redefs [embedded/start!
+                  (fn [args]
+                    (let [lifecycle (start-embedded (handoff args))]
+                      ;; Constructor activity is not ingestion evidence.
+                      (when require-json?
+                        (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
+                      lifecycle))
+                  server/start!
+                  (fn [args]
+                    (let [lifecycle (start-server (handoff args))]
+                      (when require-json?
+                        (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
+                      lifecycle))
                   native/chdb-stream-insert-n
                   (fn [& args] (swap! stream-calls inc) (apply insert args))
                   test/test-vars
