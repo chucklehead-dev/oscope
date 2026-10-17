@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Update the SDK and exporter together for one-pass bounded string-attribute
+  admission. Preserve captured values, changed-policy fallbacks, storage and
+  encoding defaults. Check actual dependency roots and reject the previous
+  stack; this update is not an application throughput or tail qualification.
+
 - Update the exporter and optional native byte-JSON checkpoint to revisions
   containing local ASCII cursor emission and unexposed row-writer reuse. Preserve live
   custom writer behavior and ordinary JSON, SDK, driver, native installation,

@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "0bd0c5aab7f69a3083acf548b578cdf33307b494")
+  "c24ffc30685d83d2eadb68d33dd18af04ffaa1bd")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -18,7 +18,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "14ffd741351373f07d96aa070b0f9853d7daf8ab/"))
+       "d93846e40b837dcecb546fb59f6cb05ca639f054/"))
 
 (def ^:private prior-map-reuse-sdk-root
   "https___github.com_casselc_otel.git/12074bcfd668dec00a4e6ca2ca52a4f765a331e9/")
@@ -207,6 +207,27 @@
                                   "chucklehead-dev_jolt-chdb.git" chdb-root)))
     (is (successful-report? exporter))
     (is (exact-exporter-resolution? (:out exporter) previous-exporter))
+    (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
+
+(deftest pre-bounded-admission-stack-is-a-causal-red-control
+  ;; Deliberately resolve old coordinates without loading their incompatible
+  ;; app. The source-root oracle must discriminate both sides of this repin.
+  (let [sdk-sha "14ffd741351373f07d96aa070b0f9853d7daf8ab"
+        old-exporter "0bd0c5aab7f69a3083acf548b578cdf33307b494"
+        coordinate (fn [lib repo sha]
+                     (str "{:deps {" lib " {:git/url \"https://github.com/"
+                          repo ".git\" :git/sha \"" sha "\"}}}"))
+        sdk (dependency-report
+              ["-Sdeps" (coordinate "io.github.casselc/otel" "casselc/otel" sdk-sha)])
+        exporter (dependency-report
+                   ["-Sdeps" (coordinate "io.github.chucklehead-dev/jolt-otel-clickhouse"
+                                         "chucklehead-dev/jolt-otel-clickhouse" old-exporter)])]
+    (is (successful-report? sdk))
+    (is (exact-coordinate? (:out sdk) "casselc_otel.git"
+                           (str "https___github.com_casselc_otel.git/" sdk-sha "/")))
+    (is (false? (exact-coordinate? (:out sdk) "casselc_otel.git" otel-root)))
+    (is (successful-report? exporter))
+    (is (exact-exporter-resolution? (:out exporter) old-exporter))
     (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
 
 (deftest previous-integrated-exporter-is-a-causal-red-control
