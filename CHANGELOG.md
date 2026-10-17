@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the ordinary driver/exporter stack with current Durable fixes and
+  lower-allocation native attribute projection. Keep SDK/JSON pins, native
+  installation, encoding defaults and historical profiles unchanged. Check
+  actual resolved roots and reject the immediately previous product stack;
+  this dependency update does not establish application throughput targets.
+
 - Update the exporter and SDK together for bounded string-map reuse with live
   normalization policy checks. Preserve map kind, entry order and metadata,
   including collision and promotion fallbacks. Keep encoding defaults, chDB,
