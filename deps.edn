@@ -17,7 +17,7 @@
          :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "fd8fa0e84d7e6b1913af52a0564ab8d6aeebd290"}
+         :git/sha "0bd0c5aab7f69a3083acf548b578cdf33307b494"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
@@ -30,7 +30,7 @@
  {:native-json-byte-batch
   {:extra-deps {org.clojure/data.json
                 {:git/url "https://github.com/casselc/data.json.git"
-                 :git/sha "4aeb24bf64e9c19fb16b945056414bb93ed1b1fb"}}}
+                 :git/sha "a0172a0f1418632c760af98ef5280dd234d21e85"}}}
 
   :test-export-options
   {:extra-paths ["test"] :main-opts ["-m" "oscope.export-options-test"]}
