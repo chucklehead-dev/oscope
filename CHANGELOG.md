@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the exporter for lower-allocation native attribute conversion and
+  typed projection. Preserve live conversion policy changes and fallback
+  behavior. Keep SDK, driver, JSON, native installation and encoding defaults
+  unchanged; component allocation savings do not establish application
+  throughput. Check the resolved source and reject the previous product pin.
+
 - Expose explicit timestamp-wire choices to embedded/standalone exporters and
   optional owned compact streaming to version-2 Durable writer configuration.
   Keep installation/encoding defaults, readers and persistence contracts fixed;
