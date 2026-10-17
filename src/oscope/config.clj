@@ -28,7 +28,7 @@
   #{:owner :instance :database :scratch-parent :lease-ttl-ms
     :heartbeat-interval-ms :clock-skew-ms :force? :max-attempts
     :retry-deadline-ms :retry-initial-backoff-ms :retry-max-backoff-ms
-    :checkpoint-every-batches})
+    :checkpoint-every-batches :owned-compact-stream?})
 (def ^:private s3-keys
   #{:endpoint :bucket :prefix :region :object-id :credentials
     :max-attempts :connect-timeout-ms :timeout-ms :retry-deadline-ms
@@ -144,6 +144,9 @@
         (when (contains? (:storage document) :export-options)
           (config-error "export options require configuration version 2"
                         {:path [:storage :export-options]}))
+        (when (contains? (:storage document) :owned-compact-stream?)
+          (config-error "streaming requires configuration version 2"
+                        {:path [:storage :owned-compact-stream?]}))
         (assoc document
                :version version
                :typed-attributes {:mode :disabled}))
@@ -172,6 +175,10 @@
   (when (and (contains? storage :force?) (not (boolean? (:force? storage))))
     (config-error "configuration value must be boolean"
                   {:path [:storage :force?]}))
+  (when (and (contains? storage :owned-compact-stream?)
+             (not (boolean? (:owned-compact-stream? storage))))
+    (config-error "configuration value must be boolean"
+                  {:path [:storage :owned-compact-stream?]}))
   (when (and (:heartbeat-interval-ms storage) (:lease-ttl-ms storage)
              (> (:heartbeat-interval-ms storage)
                 (quot (:lease-ttl-ms storage) 3)))

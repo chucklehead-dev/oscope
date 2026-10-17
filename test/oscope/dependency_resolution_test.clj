@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "ed4e1cacbd7eeb7a5e45b7f0acdec11505aa1fc8")
+  "11ba3b88da54c1d73c1925d451da47196c1ac9ed")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -177,6 +177,16 @@
     (is (successful-report? exporter))
     (is (exact-exporter-resolution? (:out exporter) previous-exporter))
     (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
+
+(deftest previous-integrated-exporter-is-a-causal-red-control
+  (let [sha "ed4e1cacbd7eeb7a5e45b7f0acdec11505aa1fc8"
+        coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
+                        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
+                        ":git/sha \"" sha "\"}}}")
+        result (dependency-report ["-Sdeps" coordinate])]
+    (is (successful-report? result))
+    (is (exact-exporter-resolution? (:out result) sha))
+    (is (false? (exact-exporter-resolution? (:out result) exporter-sha)))))
 
 (deftest prior-exporter-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-exporter-coordinate])]

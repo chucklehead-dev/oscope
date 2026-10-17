@@ -1,0 +1,89 @@
+name: native-269-export
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/native-269-export.yml
+      - deps.edn
+      - src/oscope/**
+      - test/oscope/**
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JOLT_AOT_CACHE: '0'
+      JOLT_NO_USER_DEPS: '1'
+      GH_TOKEN: ${{ github.token }}
+      QUALIFIED_RUNTIME_PROFILE: current-0821-1ae7
+      QUALIFIED_RUNTIME_RUN_ID: '38618434034'
+      QUALIFIED_RUNTIME_RUN_ATTEMPT: '1'
+      QUALIFIED_RUNTIME_WORKFLOW_SHA: 1533b9fe6f7782f4d024a07aefbfb7ce50c4251b
+      QUALIFIED_RUNTIME_ARTIFACT_ID: '11921513712'
+      QUALIFIED_RUNTIME_ARTIFACT_SHA256: 931dda8bf4e9d9beeaa92ad64b8a1c925d3ab670f87414ec9efee9af28cb3537
+      QUALIFIED_RUNTIME_BINARY_SHA256: 06a2ccb858c072bfcd74ce94d96eb95f008d75e0fb1f46117728602572189811
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch the authenticated byte-capable writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_helper="$RUNNER_TEMP/qualified-runtime.sh"
+          curl -fsSL --connect-timeout 15 --max-time 30 \
+            https://raw.githubusercontent.com/chucklehead-dev/jolt-otel-clickhouse/96119103195b67cfc9fd52277251888980fc7852/scripts/fetch-qualified-durable-runtime.sh \
+            -o "$task_helper"
+          printf '%s  %s\n' 81030fafdb2e3c79765792d043585139f4410c27a281113dd19874b4c27e74b2 "$task_helper" | sha256sum -c -
+          TMPDIR=/tmp timeout --signal=TERM --kill-after=5s 240s bash "$task_helper" > "$RUNNER_TEMP/qualified-runtime.log"
+          test "$(grep -c '^QUALIFIED_RUNTIME_BIN=' "$RUNNER_TEMP/qualified-runtime.log")" = 1
+          task_bin=$(sed -n 's/^QUALIFIED_RUNTIME_BIN=//p' "$RUNNER_TEMP/qualified-runtime.log")
+          [[ "$task_bin" =~ ^/tmp/qualified-durable-runtime\.[A-Za-z0-9]+/jolt$ ]]
+          test -f "$task_bin" && test ! -L "$task_bin"
+          test "$(realpath "$task_bin")" = "$task_bin"
+          echo "WRITER_JOLT_BIN=$task_bin" >> "$GITHUB_ENV"
+      - name: Fetch checksum-pinned stock 0.8.22 reader and native 26.9
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_dir=$(mktemp -d "$RUNNER_TEMP/oscope-native-269.XXXXXXXX")
+          task_archive="$task_dir/reader.tar.gz"
+          curl -fsSL --connect-timeout 15 --max-time 180 \
+            https://github.com/jolt-lang/jolt/releases/download/v0.8.22/jolt-v0.8.22-x86_64-linux.tar.gz -o "$task_archive"
+          printf '%s  %s\n' b6aef5a73c8537cf7e5c4d51887511c275fde1a01ca9ac59a0f5200e606ccd0f "$task_archive" | sha256sum -c -
+          task_member=$(tar -tzf "$task_archive" | grep -E '(^|/)jolt$')
+          test "$(printf '%s\n' "$task_member" | wc -l)" = 1
+          tar --extract --gzip --to-stdout --file "$task_archive" -- "$task_member" > "$task_dir/jolt"
+          printf '%s  %s\n' 1960d07af8216a4dff79dd505af16c046bd785b45ef2c1515b42d747cce3612d "$task_dir/jolt" | sha256sum -c -
+          chmod 755 "$task_dir/jolt"
+          test "$("$task_dir/jolt" --version)" = 'jolt v0.8.22'
+          rm -- "$task_archive"
+          echo "JOLT_BIN=$task_dir/jolt" >> "$GITHUB_ENV"
+          task_archive="$task_dir/native.tar.gz"
+          curl -fsSL --connect-timeout 15 --max-time 300 \
+            https://github.com/chdb-io/chdb-core/releases/download/v26.9.0/linux-x86_64-libchdb.tar.gz -o "$task_archive"
+          printf '%s  %s\n' c6398bcc71dc58d12fb81548540aacd5d8248830ec81cec537f51c114670543b "$task_archive" | sha256sum -c -
+          task_member=$(tar -tzf "$task_archive" | grep -E '(^|/)libchdb\.so$')
+          test "$(printf '%s\n' "$task_member" | wc -l)" = 1
+          tar --extract --gzip --to-stdout --file "$task_archive" -- "$task_member" > "$task_dir/libchdb.so"
+          printf '%s  %s\n' a7d22ade86e1de82b187adf572b569a6034600ce932c52b0acb8c97b82430557 "$task_dir/libchdb.so" | sha256sum -c -
+          rm -- "$task_archive"
+          echo "JOLT_CHDB_LIB=$task_dir/libchdb.so" >> "$GITHUB_ENV"
+      - name: Check option routing and the no-op stream control
+        run: '"$WRITER_JOLT_BIN" -Srepro -M:test-export-options'
+      - name: Require real SDK/socket streams and fresh stock recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          for task_consumer in embedded standalone embedded-typed; do
+            timeout --signal=TERM --kill-after=5s 120s "$WRITER_JOLT_BIN" \
+              -Srepro -A:test-durable:native-json-byte-batch \
+              -m oscope.export-options-native-test-runner stream "$task_consumer"
+          done

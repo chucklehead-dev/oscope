@@ -504,8 +504,9 @@
   Metrics default on and logs default off. When `:checkpoint-on-close?` is true
   (the default), shutdown compacts committed WAL into a new checkpoint.
   Optional `:typed-schema` is an operator-approved manifest and registry.
-  Optional `:export-options` selects only `:insert-format`, `:json-backend`, and
-  `:owned-statement-output?`; omitted settings retain exporter defaults.
+  Optional `:export-options` selects only `:insert-format`, `:json-backend`,
+  `:datetime64-wire`, and `:owned-statement-output?`; omitted settings retain
+  exporter defaults. Streaming belongs to the writer's `:db-spec` instead.
   Native byte/owned modes require the qualified runtime and JSON backend.
 
   Optional `:span-pipelines` must contain exactly `:local` and `:remote` maps.

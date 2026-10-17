@@ -19,7 +19,13 @@
                       :secret-key-env "SECRET_REF"}}})
 
 (deftest check-config-does-not-resolve-credentials-or-create-runtime-owners
-  (let [resolved (assoc (resolved (s3-storage)) :check-config? true)
+  (let [resolved (assoc (resolved (assoc (s3-storage)
+                                       :owned-compact-stream? true
+                                       :export-options
+                                       {:insert-format :json-compact-each-row
+                                        :json-backend :native-guarded-byte-batch
+                                        :owned-statement-output? true
+                                        :datetime64-wire :raw-ticks})) :check-config? true)
         effects (atom [])
         output (with-out-str
                  (durable-main/execute!

@@ -24,6 +24,10 @@ persistence callbacks:
 - `:json-backend`: `:configured`, `:native-guarded`,
   `:native-guarded-string-cache`, or `:native-guarded-byte-batch`.
 - `:owned-statement-output?`: a Boolean, defaulting to false.
+- `:datetime64-wire`: `:auto`, `:iso-utc`, or `:raw-ticks`. The default `:auto`
+  uses integer nanoseconds on native 26.7.3 and UTC ISO strings on 26.9.0.
+  Explicit `:iso-utc` requires 26.9.0. `:raw-ticks` also requires Durable storage;
+  the exporter records the required query-local setting with the WAL statement.
 
 Owned output is opt-in and requires Durable storage, compact rows, and
 `:native-guarded-byte-batch`. Native byte and owned modes additionally require
@@ -40,6 +44,37 @@ automatic downgrade or retry with a different encoder occurs. Version 1 files
 do not accept this extension. Encoding options do not change acknowledgement,
 flush, recovery, or shutdown contracts.
 
+### Optional native 26.9 streaming
+
+For a **new** Durable object, version-2 `:durable-local` and `:durable-s3`
+storage can set `:owned-compact-stream? true`. This is a writer option, not an
+export encoding option. Only eligible owned compact statements use streaming;
+other statements keep the ordinary execution path. For example:
+
+```clojure
+{:version 2
+ :storage {:type :durable-local
+           :root "./oscope-269-fresh"
+           :owned-compact-stream? true
+           :export-options {:insert-format :json-compact-each-row
+                            :json-backend :native-guarded-byte-batch
+                            :owned-statement-output? true
+                            :datetime64-wire :raw-ticks}}}
+```
+
+Select the checksum-qualified 26.9.0 library with `JOLT_CHDB_LIB` and use the
+qualified byte-capable runtime plus `:native-json-byte-batch` alias described
+above. The installer still defaults to 26.7.3; neither this document nor
+check-only configuration switches native libraries. Unsupported versions fail
+at startup rather than silently choosing another execution mode.
+
+Do not point 26.9 at existing 26.7 Durable telemetry objects: replay of their
+older integer-timestamp WAL has not been qualified. Streaming does not change
+the WAL format or weaken persistence confirmation, lease fencing or recovery.
+For embedded/programmatic startup, put `:owned-compact-stream?` in the options
+passed to `jdbc.chdb.durable/writer-dbspec`, and pass `:datetime64-wire` in
+`:export-options`. Readers must not receive the writer-only streaming option.
+
 Maintainers can exercise real ingestion with the existing recovery fixtures:
 
 ```sh
@@ -51,6 +86,9 @@ Maintainers can exercise real ingestion with the existing recovery fixtures:
 "$JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner owned standalone
 "$JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner owned embedded
 "$JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner owned embedded-typed
+# Fresh 26.9 object only, with the qualified writer and a separate stock reader:
+# invoke the writer below; JOLT_BIN selects the nested recovery reader.
+"$WRITER_JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner stream embedded
 ```
 
 Each invocation owns one native writer lifetime. The standalone and embedded
