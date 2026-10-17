@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "f862cb1acc190cc2c03eb1b8096d76a2f15270d3")
+  "65f0f5b30efe58dc4c0b9a5bde989aabcee2001f")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -18,7 +18,19 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "12074bcfd668dec00a4e6ca2ca52a4f765a331e9/"))
+       "14ffd741351373f07d96aa070b0f9853d7daf8ab/"))
+
+(def ^:private prior-map-reuse-sdk-root
+  "https___github.com_casselc_otel.git/12074bcfd668dec00a4e6ca2ca52a4f765a331e9/")
+
+(def ^:private prior-map-reuse-sdk-coordinate
+  "{:deps {io.github.casselc/otel {:git/url \"https://github.com/casselc/otel.git\" :git/sha \"12074bcfd668dec00a4e6ca2ca52a4f765a331e9\"}}}")
+
+(def ^:private prior-map-reuse-exporter-sha
+  "f862cb1acc190cc2c03eb1b8096d76a2f15270d3")
+
+(def ^:private prior-map-reuse-exporter-coordinate
+  "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse {:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" :git/sha \"f862cb1acc190cc2c03eb1b8096d76a2f15270d3\"}}}")
 
 (def ^:private prior-reader-policy-root
   "https___github.com_casselc_otel.git/e8435b381ee0cafd7d1cb5cb7b8639c551544042/")
@@ -164,6 +176,17 @@
                              prior-scalar-sdk-root))
       (is (false? (exact-coordinate? (:out result) "casselc_otel.git"
                                      otel-root))))))
+
+(deftest pre-map-reuse-stack-coordinates-are-causal-red-controls
+  ;; Resolving an incompatible SDK is intentional here; never load its app.
+  (let [sdk (dependency-report ["-Sdeps" prior-map-reuse-sdk-coordinate])
+        exporter (dependency-report ["-Sdeps" prior-map-reuse-exporter-coordinate])]
+    (is (successful-report? sdk))
+    (is (exact-coordinate? (:out sdk) "casselc_otel.git" prior-map-reuse-sdk-root))
+    (is (false? (exact-coordinate? (:out sdk) "casselc_otel.git" otel-root)))
+    (is (successful-report? exporter))
+    (is (exact-exporter-resolution? (:out exporter) prior-map-reuse-exporter-sha))
+    (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
 
 (deftest prior-otel-coordinate-is-a-causal-red-control
   (let [result (dependency-report ["-Sdeps" prior-otel-coordinate])]

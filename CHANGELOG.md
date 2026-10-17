@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the exporter and SDK together for bounded string-map reuse with live
+  normalization policy checks. Preserve map kind, entry order and metadata,
+  including collision and promotion fallbacks. Keep encoding defaults, chDB,
+  JSON, native package and historical profiles unchanged; no new application
+  throughput or persistence guarantee is claimed by this dependency update.
+
 - Retain closed fault-fixture failure categories and migration coordinates in
   CI logs while preserving the original failure and all existing timing bounds.
   This adds diagnostics, not a repair or qualification of startup failures.
