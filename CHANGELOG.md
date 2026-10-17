@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Expose explicit timestamp-wire choices to embedded/standalone exporters and
+  optional owned compact streaming to version-2 Durable writer configuration.
+  Keep installation/encoding defaults, readers and persistence contracts fixed;
+  update the exporter pin with the reviewed empty event/link allocation fix.
+
 - Update the ordinary driver/exporter stack with current Durable fixes and
   lower-allocation native attribute projection. Keep SDK/JSON pins, native
   installation, encoding defaults and historical profiles unchanged. Check

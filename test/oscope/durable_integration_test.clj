@@ -19,6 +19,10 @@
            [java.nio.file Files Path]
            [java.nio.file.attribute FileAttribute]))
 
+(def ^:dynamic *storage-options*
+  "Encoding/native writer overrides for the same versioned-file fixture."
+  {})
+
 (defn- unsigned-prefix [bytes length]
   (mapv #(bit-and 255 %) (take length bytes)))
 
@@ -283,13 +287,13 @@
                [[:file
                  {:version 2
                   :server {:port 0}
-                  :storage {:type :durable-local
+                  :storage (merge {:type :durable-local
                             :root (str root)
                             :owner "oscope-test"
                             :instance "oscope-test-instance"
                             :database "default"
                             :lease-ttl-ms 30000
-                            :heartbeat-interval-ms 50}}]])
+                            :heartbeat-interval-ms 50} *storage-options*)}]])
               {}))]
         (try
           (is (pos? (:port lifecycle)))

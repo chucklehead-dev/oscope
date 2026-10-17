@@ -165,8 +165,8 @@
   dbspec requires explicit valid `:durability` callbacks and a writer role;
   reader dbspecs are rejected before acquisition. Oscope binds all
   database effects to its owned connection. Optional
-  `:export-options` input selects only `:insert-format`, `:json-backend`, and
-  `:owned-statement-output?`; omitted settings retain exporter defaults.
+  `:export-options` selects only `:insert-format`, `:json-backend`,
+  `:datetime64-wire`, and `:owned-statement-output?`; omitted settings retain defaults.
   Owned output requires Durable storage and the native-byte compact backend.
   The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary

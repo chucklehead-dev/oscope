@@ -8,6 +8,7 @@
      [:insert-format {:optional true} [:enum :json-each-row :json-compact-each-row]]
      [:json-backend {:optional true}
       [:enum :configured :native-guarded :native-guarded-string-cache :native-guarded-byte-batch]]
+     [:datetime64-wire {:optional true} [:enum :auto :iso-utc :raw-ticks]]
      [:owned-statement-output? {:optional true} :boolean]]))
 
 (defn validate!
@@ -23,4 +24,7 @@
                        (= :native-guarded-byte-batch (:json-backend options)))))
     (throw (ex-info "Owned output requires native-byte compact Durable storage"
                     {:oscope.export-options/error true :type ::incompatible-owned-output})))
+  (when (and (= :raw-ticks (:datetime64-wire options)) (not durable?))
+    (throw (ex-info "Raw timestamp ticks require Durable storage"
+                    {:oscope.export-options/error true :type ::incompatible-timestamp-wire})))
   options)
