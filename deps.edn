@@ -27,7 +27,15 @@
          :git/sha "0f51b99101bc5e840f957c073f87b6f877309a25"}}
 
  :aliases
- {:test-embedded-profile
+ {:native-json-byte-batch
+  {:extra-deps {org.clojure/data.json
+                {:git/url "https://github.com/casselc/data.json.git"
+                 :git/sha "b959a5625c28cc8571e04de5ca02a2c8902b8b5e"}}}
+
+  :test-export-options
+  {:extra-paths ["test"] :main-opts ["-m" "oscope.export-options-test"]}
+
+  :test-embedded-profile
   {:extra-paths ["test"]
    :main-opts ["-m" "oscope.embedded-profile-test-runner"]}
 

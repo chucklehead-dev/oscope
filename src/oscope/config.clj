@@ -6,6 +6,7 @@
   maps, then perform any requested startup only after `resolve-config` returns."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [oscope.export-options :as encoding]
             [malli.core :as m]))
 
 (def version 2)
@@ -140,6 +141,9 @@
   (case (:version document)
     1 (do
         (closed! [] legacy-top-keys document)
+        (when (contains? (:storage document) :export-options)
+          (config-error "export options require configuration version 2"
+                        {:path [:storage :export-options]}))
         (assoc document
                :version version
                :typed-attributes {:mode :disabled}))
@@ -225,21 +229,21 @@
   (let [kind (:type storage)]
     (case kind
       :memory
-      (closed! [:storage] #{:type} storage)
+      (closed! [:storage] #{:type :export-options} storage)
 
       :local-path
-      (do (closed! [:storage] #{:type :path} storage)
+      (do (closed! [:storage] #{:type :path :export-options} storage)
           (nonblank! [:storage :path] (:path storage)))
 
       :durable-local
       (do (closed! [:storage]
-                   (conj durable-common-keys :type :root) storage)
+                   (conj durable-common-keys :type :root :export-options) storage)
           (nonblank! [:storage :root] (:root storage))
           (validate-durable-common! storage))
 
       :durable-s3
       (do (closed! [:storage]
-                   (conj durable-common-keys :type :s3) storage)
+                   (conj durable-common-keys :type :s3 :export-options) storage)
           (validate-s3! (:s3 storage))
           (validate-durable-common! storage))
 
@@ -267,6 +271,13 @@
       (when-not (= :otlp-http-json (:type ingest))
         (config-error "unknown ingest type" {:path [:ingest :type]}))
       (validate-storage! (:storage document))
+      (when (contains? (:storage document) :export-options)
+        (try (encoding/validate! (get-in document [:storage :export-options])
+                                 (contains? #{:durable-local :durable-s3}
+                                            (get-in document [:storage :type])))
+             (catch clojure.lang.ExceptionInfo _
+               (config-error "storage export options are invalid"
+                             {:path [:storage :export-options]}))))
       (validate-typed-attributes (:typed-attributes document))
       document)))
 

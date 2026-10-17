@@ -8,6 +8,63 @@
             [oscope.durable-fault-verify :as verify]))
 
 (def commit-point {:id :durable/commit-reference})
+
+(deftest failure-diagnostics-are-closed-and-follow-bounded-causes
+  (let [private-value "PRIVATE-FAILURE-CANARY"
+        root (ex-info private-value {:type ::control/lease-fenced :private private-value})
+        sql (ex-info private-value {:jdbc/sql-error true} root)
+        wrapped (ex-info private-value {:type :otel.exporter.chdb.schema/migration-failed
+                                       :version 4 :phase :statement :statement-index 27
+                                       :statement private-value} sql)
+        diagnostic (target/failure-diagnostic wrapped)]
+    (is (= {"version" 1 "categories" ["schema-migration" "server-failed" "sql-adapter" "lease-fenced"]
+            "migration" {"version" 4 "phase" "statement" "statement-index" 27}}
+           diagnostic))
+    (is (not (.contains (json/write-str diagnostic) private-value)))
+    (let [deep (reduce (fn [cause _] (ex-info private-value {} cause)) root (range 8))]
+      (is (= ["server-failed"] (get (target/failure-diagnostic deep) "categories"))))
+    (is (= {"version" "unknown" "phase" "unknown" "statement-index" "unknown"}
+           (get (target/failure-diagnostic
+                 (ex-info private-value {:type :otel.exporter.chdb.schema/migration-failed
+                                         :version private-value :phase private-value
+                                         :statement-index private-value})) "migration")))))
+
+(deftest failure-reporting-does-not-change-primary-outcome
+  (let [seen (atom []) failure (ex-info "private" {})]
+    (is (= :returned (target/call-with-failure-diagnostic! (constantly :returned) #(swap! seen conj %))))
+    (is (empty? @seen))
+    (is (identical? failure
+                   (try (target/call-with-failure-diagnostic! #(throw failure) #(swap! seen conj %))
+                        (catch Throwable caught caught))))
+    (is (= 1 (count @seen)))
+    (let [output (java.io.StringWriter.)]
+      (binding [*out* output]
+        (is (identical? failure
+                       (try (target/call-with-failure-diagnostic! #(throw failure)
+                                                                (fn [_] (throw (ex-info "sink" {}))))
+                            (catch Throwable caught caught)))))
+      (is (.contains (.toString output) "FAIL: fault server diagnostic unavailable")))))
+
+(deftest failure-diagnostic-boundaries
+  (doseq [[index expected] [[-1 "unknown"] [0 0] [255 255] [256 "unknown"]]]
+    (is (= expected
+           (get-in (target/failure-diagnostic
+                    (ex-info "" {:type :otel.exporter.chdb.schema/migration-failed
+                                 :version 4 :phase :record :statement-index index}))
+                   ["migration" "statement-index"]))))
+  (doseq [[version expected] [[0 "unknown"] [1 1] [4 4] [5 "unknown"]]]
+    (is (= expected
+           (get-in (target/failure-diagnostic
+                    (ex-info "" {:type :otel.exporter.chdb.schema/migration-failed
+                                 :version version :phase :record :statement-index 0}))
+                   ["migration" "version"]))))
+  (is (= {"version" 1 "categories" ["lease-fenced" "sql-adapter"] "migration" nil}
+         (target/failure-diagnostic
+          (ex-info "" {:type ::control/lease-fenced :jdbc/sql-error true}))))
+  (with-redefs [oscope.durable-server-main/failure-diagnostic
+                (constantly {:category :unrecognized-private-category})]
+    (is (= {"version" 1 "categories" ["unknown"] "migration" nil}
+           (target/failure-diagnostic (ex-info "" {}))))))
 (defn- invoke [kind proceed]
   (target/around-request-wal commit-point [::store ::token {:kind kind}] proceed))
 
