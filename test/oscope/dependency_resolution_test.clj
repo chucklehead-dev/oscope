@@ -170,7 +170,8 @@
                                          previous-exporter)])]
     (is (successful-report? driver))
     (is (exact-coordinate? (:out driver) "chucklehead-dev_jolt-chdb.git"
-                           (str "/" driver-sha "/")))
+                           (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
+                                driver-sha "/")))
     (is (false? (exact-coordinate? (:out driver)
                                   "chucklehead-dev_jolt-chdb.git" chdb-root)))
     (is (successful-report? exporter))
