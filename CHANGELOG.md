@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retain closed fault-fixture failure categories and migration coordinates in
+  CI logs while preserving the original failure and all existing timing bounds.
+  This adds diagnostics, not a repair or qualification of startup failures.
+
 - Add closed exporter encoding options to embedded/standalone startup and
   version-2 storage configuration. Keep defaults and ownership authority fixed;
   expose explicit compact/native/owned modes and the optional byte dependency.

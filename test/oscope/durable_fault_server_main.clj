@@ -9,6 +9,43 @@
 
 (def ^:dynamic *fault-witness!* nil)
 
+(def ^:private diagnostic-categories
+  #{:schema-migration :lease-held :lease-fenced :storage-timeout :commit-ambiguous
+    :corrupt-head :engine-incompatible :storage-authentication :storage-permission
+    :storage-throttled :storage-transport :storage-provider :storage-response
+    :storage-configuration :server-failed})
+
+(defn failure-diagnostic
+  "Closed fixture metadata from at most eight causes. Never retain the error,
+  its message, SQL, arbitrary type names, or unselected exception data."
+  [failure]
+  (loop [current failure remaining 8 categories [] migration nil]
+    (if (and current (pos? remaining))
+      (let [data (ex-data current)
+            ;; Classify only this node: the public classifier normally follows
+            ;; causes itself, which would expand this fixture's depth bound.
+            category (:category (durable-main/failure-diagnostic
+                                 (ex-info "" {:type (:type data)})))
+            category (if (contains? diagnostic-categories category) (name category) "unknown")
+            categories (cond-> (conj categories category)
+                         (true? (:jdbc/sql-error data)) (conj "sql-adapter"))
+            migration (or migration
+                          (when (= :otel.exporter.chdb.schema/migration-failed (:type data))
+                            {"version" (if (contains? #{1 2 3 4} (:version data)) (:version data) "unknown")
+                             "phase" (get {:statement "statement" :record "record"} (:phase data) "unknown")
+                             "statement-index" (let [index (:statement-index data)]
+                                                 (if (and (integer? index) (<= 0 index 255)) index "unknown"))}))]
+        (recur (when (> remaining 1) (ex-cause current)) (dec remaining) categories migration))
+      {"version" 1 "categories" (vec (distinct categories)) "migration" migration})))
+
+(defn call-with-failure-diagnostic! [run! report!]
+  (try (run!)
+       (catch Throwable failure
+         (try (report! (failure-diagnostic failure))
+              (catch Throwable _
+                (println "FAIL: fault server diagnostic unavailable")))
+         (throw failure))))
+
 (defn fault-witness [failure]
   (let [action faults/*action*]
     (when (and (identical? failure (:error action))
@@ -88,6 +125,8 @@
     (when-not (and (string? path) (not (empty? path)))
       (throw (ex-info "fault witness file required" {:oscope.durable-fault/error true})))
     (binding [*fault-witness!* #(publish-witness! path %)]
-      (faults/call-with-fault
-       (fault-action (System/getenv "OSCOPE_DURABLE_FAULT_PHASE"))
-       #(server-main/run! (durable-main/env-options))))))
+      (call-with-failure-diagnostic!
+       (fn [] (faults/call-with-fault
+               (fault-action (System/getenv "OSCOPE_DURABLE_FAULT_PHASE"))
+               #(server-main/run! (durable-main/env-options))))
+       #(println :durable-fault-failure (json/write-str %))))))
