@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Qualify the current Durable exporter, SDK reader policy and driver together,
+  including Oscope's direct SDK/JSON pins. Preserve ordinary defaults and
+  historical profiles; check early policy-validation cleanup without workers.
+  Experimental byte/owned modes are not enabled by this dependency update.
+
 - Qualify the merged chDB scoped S3 ownership helpers and the exporter SDK/S3
   integration through ordinary dependency pins. Preserve SDK, JSON, native
   package and historical profile selections, with current/prior resolved-root

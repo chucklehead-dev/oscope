@@ -6,11 +6,11 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "1a0b787157e0bcc33136eadf6023befbce45ea45")
+  "f862cb1acc190cc2c03eb1b8096d76a2f15270d3")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "bad991ad191ffb57d90ff86795ccbeb3992bf186/"))
+       "af3a902be39fc466246b39864cdf77879032c87a/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -18,7 +18,13 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "ff8e2e4ab8fe0b8b3f8410cb202d47b1c29267a1/"))
+       "12074bcfd668dec00a4e6ca2ca52a4f765a331e9/"))
+
+(def ^:private prior-reader-policy-root
+  "https___github.com_casselc_otel.git/e8435b381ee0cafd7d1cb5cb7b8639c551544042/")
+
+(def ^:private prior-reader-policy-coordinate
+  "{:deps {io.github.casselc/otel {:git/url \"https://github.com/casselc/otel.git\" :git/sha \"e8435b381ee0cafd7d1cb5cb7b8639c551544042\"}}}")
 
 (def ^:private prior-otel-root
   (str "https___github.com_casselc_otel.git/"
@@ -175,3 +181,13 @@
         (is (false? (exact-coordinate? (:out result)
                                        "casselc_http-client.git"
                                        http-provider-root)))))))
+
+(deftest current-json-root-is-exact-and-pre-receipt-sdk-is-rejected
+  (let [current (dependency-report [])
+        prior (dependency-report ["-Sdeps" prior-reader-policy-coordinate])]
+    (is (successful-report? current))
+    (is (exact-resolution? (:out current) "casselc_data.json.git"
+                           "https___github.com_casselc_data.json.git/0f51b99101bc5e840f957c073f87b6f877309a25/src/main/clojure"))
+    (is (successful-report? prior))
+    (is (exact-coordinate? (:out prior) "casselc_otel.git" prior-reader-policy-root))
+    (is (false? (exact-coordinate? (:out prior) "casselc_otel.git" otel-root)))))
