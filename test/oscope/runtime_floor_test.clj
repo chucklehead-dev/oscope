@@ -318,12 +318,34 @@
     (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes? s3-workflow aspect-compiler-sha))))
 
-(deftest historical-woven-producer-retains-compatible-exporter
-  (let [deps (edn/read-string (slurp "test/durable-aspect-published/deps.edn"))]
-    ;; This producer intentionally runs an older driver/compiler. Its exporter
-    ;; must not acquire the new owned-statement namespace through the app root.
-    (is (= "1a0b787157e0bcc33136eadf6023befbce45ea45"
-           (get-in deps [:deps 'io.github.chucklehead-dev/jolt-otel-clickhouse :git/sha])))))
+(defn- historical-producer-pair? [deps workflow]
+  (boolean
+   (and (= "1a0b787157e0bcc33136eadf6023befbce45ea45"
+           (get-in deps [:deps 'io.github.chucklehead-dev/jolt-otel-clickhouse :git/sha]))
+        (= "../../.qualification/jolt-chdb"
+           (get-in deps [:deps 'io.github.chucklehead-dev/jolt-chdb :local/root]))
+        (re-find (re-pattern
+                  (str "repository: chucklehead-dev/jolt-chdb\\s+ref: "
+                       woven-qualification-driver-sha
+                       "\\s+path: \\.qualification/jolt-chdb(?:\\s|$)"))
+                 (executable-declarations workflow)))))
+
+(deftest historical-producers-retain-compatible-exporter
+  (doseq [path ["test/durable-aspect-published/deps.edn"
+               "test/durable-process-published/deps.edn"
+               "test/durable-fault-published/deps.edn"]
+          :let [deps (edn/read-string (slurp path))
+                workflow (slurp ".github/workflows/durable-s3-e2e.yml")]]
+    ;; A declared tuple, not a working-build proof: CI must still build/run
+    ;; each fixture. Root app and fresh-reader sources are independent pins.
+    (is (historical-producer-pair? deps workflow))
+    (is (false? (historical-producer-pair?
+                 (assoc-in deps [:deps 'io.github.chucklehead-dev/jolt-otel-clickhouse :git/sha]
+                           "f862cb1acc190cc2c03eb1b8096d76a2f15270d3") workflow)))
+    (is (false? (historical-producer-pair?
+                 (assoc-in deps [:deps 'io.github.chucklehead-dev/jolt-chdb :local/root] "../..") workflow)))
+    (is (false? (historical-producer-pair?
+                 deps (str/replace workflow woven-qualification-driver-sha root-driver-sha))))))
 
 (deftest downgrade-mutations-are-rejected-causally
   (let [deps (edn/read-string (slurp "deps.edn"))
