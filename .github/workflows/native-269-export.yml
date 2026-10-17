@@ -87,3 +87,6 @@ jobs:
               -Srepro -A:test-durable:native-json-byte-batch \
               -m oscope.export-options-native-test-runner stream "$task_consumer"
           done
+          timeout --signal=TERM --kill-after=5s 120s "$WRITER_JOLT_BIN" \
+            -Srepro -A:test-durable:native-json-byte-batch \
+            -m oscope.export-options-native-test-runner stream-fallback standalone

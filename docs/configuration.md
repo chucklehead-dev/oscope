@@ -27,7 +27,8 @@ persistence callbacks:
 - `:datetime64-wire`: `:auto`, `:iso-utc`, or `:raw-ticks`. The default `:auto`
   uses integer nanoseconds on native 26.7.3 and UTC ISO strings on 26.9.0.
   Explicit `:iso-utc` requires 26.9.0. `:raw-ticks` also requires Durable storage;
-  the exporter records the required query-local setting with the WAL statement.
+  the pinned exporter records its existing query-local setting in the exact
+  replayable SQL statement, not a new WAL metadata field.
 
 Owned output is opt-in and requires Durable storage, compact rows, and
 `:native-guarded-byte-batch`. Native byte and owned modes additionally require
@@ -65,12 +66,16 @@ other statements keep the ordinary execution path. For example:
 Select the checksum-qualified 26.9.0 library with `JOLT_CHDB_LIB` and use the
 qualified byte-capable runtime plus `:native-json-byte-batch` alias described
 above. The installer still defaults to 26.7.3; neither this document nor
-check-only configuration switches native libraries. Unsupported versions fail
-at startup rather than silently choosing another execution mode.
+check-only configuration switches native libraries. Pure option validation
+does not probe the native ABI. The pinned exporter/driver enforce native-version
+and runtime requirements during startup; failure follows Oscope's normal cleanup,
+not a silent downgrade.
 
 Do not point 26.9 at existing 26.7 Durable telemetry objects: replay of their
-older integer-timestamp WAL has not been qualified. Streaming does not change
-the WAL format or weaken persistence confirmation, lease fencing or recovery.
+older integer-timestamp WAL has not been qualified. These options select existing
+[driver streaming behavior](https://github.com/chucklehead-dev/jolt-chdb/blob/3d766fa295b0e98c30f275d0a334db92e6dd998c/docs/durable.md):
+the Durable V1 container and the driver's confirmation/fencing rules stay in
+place. Oscope does not implement or override those persistence rules.
 For embedded/programmatic startup, put `:owned-compact-stream?` in the options
 passed to `jdbc.chdb.durable/writer-dbspec`, and pass `:datetime64-wire` in
 `:export-options`. Readers must not receive the writer-only streaming option.

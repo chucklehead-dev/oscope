@@ -11,12 +11,50 @@
             [oscope.durable-native-child-runner :as native-child]
             [jdbc.chdb.native :as native]
             [oscope.server :as server]
-            [otel.exporter.chdb :as exporter]))
+            [otel.exporter.chdb :as exporter]
+            [otel.exporter.chdb.schema :as schema]))
 
 (def compact {:insert-format :json-compact-each-row :json-backend :configured})
 (def owned {:insert-format :json-compact-each-row
             :json-backend :native-guarded-byte-batch :owned-statement-output? true})
 (defn- error [f] (try (f) nil (catch clojure.lang.ExceptionInfo e e)))
+
+(deftest startup-reaches-the-pinned-exporters-version-fence-before-ddl
+  (doseq [wire [:auto :iso-utc :raw-ticks] kind [:embedded :standalone]]
+    (let [closed (atom false) ddl (atom 0)
+          connection (reify java.io.Closeable (close [_] (reset! closed true)))
+          schema-sentinel (ex-info "Reached schema after native version admission" {})
+          failure
+          (with-redefs [jdbc/connection (constantly connection)
+                        durable/connection-role (constantly :writer)
+                        native/ensure-loaded! (constantly nil)
+                        native/chdb-version (constantly "26.7.3")
+                        schema/ensure-schema! (fn [_] (swap! ddl inc) (throw schema-sentinel))]
+            (error #(if (= kind :embedded)
+                      (embedded/start! {:db-spec {:vendor "chdb-durable"}
+                                        :sdk-options {:metrics? false}
+                                        :export-options {:datetime64-wire wire}})
+                      (server/start! {:db-spec {:vendor "chdb-durable"} :port 0
+                                      :durability {:checkpoint! (fn [_] true) :flush! (fn [_] true)}
+                                      :export-options {:datetime64-wire wire}}))))]
+      ;; Exercise the actual exporter, not a mocked exporter that invents the
+      ;; guard. Auto is the positive control: it reaches the schema sentinel.
+      (if (= :auto wire)
+        (is (identical? schema-sentinel failure))
+        (is (= ::exporter/unqualified-timestamp-wire (:type (ex-data failure)))))
+      (is (= (if (= :auto wire) 1 0) @ddl))
+      (is @closed))))
+
+(deftest ordinary-stream-fallback-witness-rejects-unconditional-streaming
+  (let [failure (atom nil)]
+    (with-redefs [embedded/start! (fn [_] nil)
+                  native/chdb-stream-insert-n (fn [& _] :synthetic-result)
+                  native-child/-main (fn [& _]
+                                        (native/chdb-stream-insert-n)
+                                        (test/test-vars []))]
+      (with-out-str
+        (reset! failure (error #(native-runner/-main "stream-fallback" "embedded")))))
+    (is (= ::native-runner/unexpected-stream (:type (ex-data @failure))))))
 
 (deftest streaming-fixture-rejects-a-no-op-and-routes-only-writer-options
   (doseq [execute? [false true]]
