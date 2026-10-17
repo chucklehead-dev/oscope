@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Update the exporter and optional native byte-JSON checkpoint for local ASCII
-  cursor emission and safe reuse of never-exposed row writers. Preserve live
+- Update the exporter and optional native byte-JSON checkpoint to revisions
+  containing local ASCII cursor emission and unexposed row-writer reuse. Preserve live
   custom writer behavior and ordinary JSON, SDK, driver, native installation,
   storage and encoding defaults. This is not a throughput-target qualification.
 

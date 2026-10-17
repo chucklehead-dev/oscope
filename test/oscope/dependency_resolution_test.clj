@@ -157,8 +157,8 @@
     (is (false? (exact-coordinate? (:out prior) "data.json" byte-root)))))
 
 (deftest previous-byte-json-checkpoint-is-a-coordinate-red-control
-  ;; The previous backend remains ABI-compatible. This checks the selected
-  ;; dependency checkpoint, not a runtime rejection or a persistence property.
+  ;; This checks the selected dependency checkpoint, not backend ABI
+  ;; compatibility, a runtime rejection or a persistence property.
   (let [sha "4aeb24bf64e9c19fb16b945056414bb93ed1b1fb"
         coordinate (str "{:deps {org.clojure/data.json "
                         "{:git/url \"https://github.com/casselc/data.json.git\" "
