@@ -5,7 +5,7 @@
 
 (def ^:private runtime-floor "0.8.6")
 (def ^:private root-driver-sha
-  "bad991ad191ffb57d90ff86795ccbeb3992bf186")
+  "af3a902be39fc466246b39864cdf77879032c87a")
 (def ^:private ordinary-driver-sha
   "3e3141fd29b335aa7bf2b6039fed7b3bbb4ebe04")
 (def ^:private woven-qualification-driver-sha
@@ -317,6 +317,13 @@
     (is (str/includes? s3-workflow woven-qualification-driver-sha))
     (is (str/includes? s3-workflow aspect-sha))
     (is (str/includes? s3-workflow aspect-compiler-sha))))
+
+(deftest historical-woven-producer-retains-compatible-exporter
+  (let [deps (edn/read-string (slurp "test/durable-aspect-published/deps.edn"))]
+    ;; This producer intentionally runs an older driver/compiler. Its exporter
+    ;; must not acquire the new owned-statement namespace through the app root.
+    (is (= "1a0b787157e0bcc33136eadf6023befbce45ea45"
+           (get-in deps [:deps 'io.github.chucklehead-dev/jolt-otel-clickhouse :git/sha])))))
 
 (deftest downgrade-mutations-are-rejected-causally
   (let [deps (edn/read-string (slurp "deps.edn"))
