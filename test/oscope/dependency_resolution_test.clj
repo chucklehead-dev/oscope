@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "a9f680a9c4801addac23ade97c309828c29d520d")
+  "45c0603afb8f9d980540279dac23fc3eb86175f0")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -139,6 +139,23 @@
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
 
+(deftest ordinary-and-byte-json-roots-are-qualified-independently
+  (let [root #(str "https___github.com_casselc_data.json.git/" % "/")
+        ordinary (dependency-report [])
+        byte (dependency-report ["-A:native-json-byte-batch"])
+        prior-sha "b959a5625c28cc8571e04de5ca02a2c8902b8b5e"
+        prior (dependency-report
+                ["-Sdeps" (str "{:deps {org.clojure/data.json {:git/url "
+                               "\"https://github.com/casselc/data.json.git\" :git/sha \""
+                               prior-sha "\"}}}")])
+        ordinary-root (root "0f51b99101bc5e840f957c073f87b6f877309a25")
+        byte-root (root "a28b7a88fb9ae2a72253e69e71e8c6dea8598df1")]
+    (doseq [report [ordinary byte prior]] (is (successful-report? report)))
+    (is (exact-coordinate? (:out ordinary) "data.json" ordinary-root))
+    (is (exact-coordinate? (:out byte) "data.json" byte-root))
+    (is (exact-coordinate? (:out prior) "data.json" (root prior-sha)))
+    (is (false? (exact-coordinate? (:out prior) "data.json" byte-root)))))
+
 (deftest current-chdb-source-root-is-exact-and-prior-pin-is-rejected
   (let [current (dependency-report [])
         prior (dependency-report ["-Sdeps" prior-chdb-coordinate])]
@@ -179,7 +196,7 @@
     (is (false? (exact-exporter-resolution? (:out exporter) exporter-sha)))))
 
 (deftest previous-integrated-exporter-is-a-causal-red-control
-  (let [sha "11ba3b88da54c1d73c1925d451da47196c1ac9ed"
+  (let [sha "a9f680a9c4801addac23ade97c309828c29d520d"
         coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
                         "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
                         ":git/sha \"" sha "\"}}}")

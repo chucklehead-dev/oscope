@@ -7,7 +7,18 @@
             [oscope.embedded :as embedded]
             [oscope.server :as server]))
 
-(defn -main [mode consumer]
+(defn- json-companion-capability []
+  (require 'clojure.data.json.jolt-native)
+  (let [adapter (ns-resolve 'clojure.data.json.jolt-native 'write-str)
+        companion (ns-resolve 'clojure.data.json.jolt-native '*batch-string-output-writer*)]
+    (when-not (and adapter companion)
+      (throw (ex-info "Required JSON companion capability is unavailable"
+                      {:type ::missing-json-companion})))
+    {:adapter adapter :companion companion}))
+
+(defn -main [mode consumer & extra]
+  (when (and (seq extra) (not= ["--require-json-companion"] (vec extra)))
+    (throw (ex-info "Unknown native encoding fixture option" {})))
   (let [options (case mode
                   "configured" {:insert-format :json-compact-each-row :json-backend :configured}
                   "owned" {:insert-format :json-compact-each-row
@@ -28,6 +39,25 @@
         run-tests test/test-vars
         insert native/chdb-stream-insert-n
         stream-calls (atom 0)
+        require-json? (seq extra)
+        {:keys [adapter companion]} (when require-json? (json-companion-capability))
+        original-adapter (when adapter @adapter)
+        observations (atom {:calls 0 :bound 0 :empty-bound 0})
+        overrides
+        (if require-json?
+          {adapter
+           (fn [value]
+             ;; Test-only numeric observation. Keep the real adapter and its
+             ;; guards; do not replace a hook or alter encoded values.
+             (let [bound? (some? @companion)]
+               (swap! observations
+                      (fn [state]
+                        (cond-> (update state :calls inc)
+                          bound? (update :bound inc)
+                          (and bound? (vector? value) (empty? value))
+                          (update :empty-bound inc)))))
+             (original-adapter value))}
+          {})
         streaming? (contains? #{"stream" "stream-fallback"} mode)
         handoff (fn [args]
                   (if (and streaming? (= consumer "standalone"))
@@ -42,8 +72,21 @@
                     (cond-> (assoc args :export-options options)
                       streaming? (assoc-in [:db-spec :owned-compact-stream?] true))))]
     (println :export-encoding-fixture mode consumer)
-    (with-redefs [embedded/start! (fn [args] (start-embedded (handoff args)))
-                  server/start! (fn [args] (start-server (handoff args)))
+    (with-redefs-fn overrides
+      (fn []
+        (with-redefs [embedded/start!
+                  (fn [args]
+                    (let [lifecycle (start-embedded (handoff args))]
+                      ;; Constructor activity is not ingestion evidence.
+                      (when require-json?
+                        (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
+                      lifecycle))
+                  server/start!
+                  (fn [args]
+                    (let [lifecycle (start-server (handoff args))]
+                      (when require-json?
+                        (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
+                      lifecycle))
                   native/chdb-stream-insert-n
                   (fn [& args] (swap! stream-calls inc) (apply insert args))
                   test/test-vars
@@ -71,5 +114,16 @@
                           (throw (ex-info "Ordinary statements unexpectedly used streaming"
                                           {:type ::unexpected-stream})))
                         (println :stream-fallback-native-calls @stream-calls))
+                      (when require-json?
+                        (let [{:keys [calls bound empty-bound]} @observations]
+                          (if (= :native-guarded-byte-batch (:json-backend options))
+                            (when-not (and (pos? bound) (pos? empty-bound))
+                              (throw (ex-info "JSON companion execution was not observed"
+                                              {:type ::unobserved-json-companion})))
+                            (when-not (zero? calls)
+                              (throw (ex-info "Configured encoding used the native JSON adapter"
+                                              {:type ::unexpected-json-companion}))))
+                          (println :json-companion-calls calls :bound bound
+                                   :empty-bound empty-bound)))
                       result))]
-      (child/-main "--fixture" index))))
+          (child/-main "--fixture" index))))))
