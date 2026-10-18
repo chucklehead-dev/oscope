@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Accept a per-exporter `:max-insert-bytes` setting in version 2 files and
+  embedded/standalone startup. Keep the 8 MiB default; validate the optional
+  1-byte through 64 MiB limit before acquiring resources. Pin the reviewed
+  exporter implementation and verify actual dependency resolution. Larger
+  limits permit larger payloads, not stronger delivery or throughput guarantees.
+
 - Update the exporter to avoid building unused intermediate attribute groups
   during ordinary typed ingestion. Keep captured attributes, duplicate detection,
   typed values/status, storage and encoding defaults unchanged. Check the

@@ -6,10 +6,10 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "695fa01711cc97e16c6d62dde9c8ad9cab1e1fdd")
+  "67e28b59bfd215da982682dd9c59d51d52d460ed")
 
-(def ^:private prior-unfiltered-exporter-sha
-  "5be78d565be0a7a929d108be929540c1b4f19524")
+(def ^:private prior-fixed-budget-exporter-sha
+  "695fa01711cc97e16c6d62dde9c8ad9cab1e1fdd")
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -142,13 +142,13 @@
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
 
-(deftest prior-unfiltered-typed-exporter-is-rejected
+(deftest prior-fixed-budget-exporter-is-rejected
   (let [coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
                         "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
-                        ":git/sha \"" prior-unfiltered-exporter-sha "\"}}}")
+                        ":git/sha \"" prior-fixed-budget-exporter-sha "\"}}}")
         result (dependency-report ["-Sdeps" coordinate])]
     (is (successful-report? result))
-    (is (exact-exporter-resolution? (:out result) prior-unfiltered-exporter-sha))
+    (is (exact-exporter-resolution? (:out result) prior-fixed-budget-exporter-sha))
     (is (false? (exact-exporter-resolution? (:out result) exporter-sha)))))
 
 (deftest ordinary-and-byte-json-roots-are-qualified-independently
