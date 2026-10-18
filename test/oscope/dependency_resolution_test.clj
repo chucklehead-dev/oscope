@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "67e28b59bfd215da982682dd9c59d51d52d460ed")
+  "4d48871cf2ac7a2ad0bf6517042c624df376a9bf")
 
 (def ^:private prior-fixed-budget-exporter-sha
   "695fa01711cc97e16c6d62dde9c8ad9cab1e1fdd")
@@ -21,7 +21,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "37c684a2c370fc82fde82331635973bce87a52b3/"))
+       "7878a2eb4340519d6843d13490a5a7c99ebade8a/"))
 
 (def ^:private prior-map-reuse-sdk-root
   "https___github.com_casselc_otel.git/12074bcfd668dec00a4e6ca2ca52a4f765a331e9/")
@@ -172,7 +172,7 @@
                                "\"https://github.com/casselc/data.json.git\" :git/sha \""
                                prior-sha "\"}}}")])
         ordinary-root (root "0f51b99101bc5e840f957c073f87b6f877309a25")
-        byte-root (root "8d557cc18eb9526ed29ae5613089c3793d5973fa")]
+        byte-root (root "96f3e47dba5970728866dacb5ac41a25135a2df5")]
     (doseq [report [ordinary byte prior]] (is (successful-report? report)))
     (doseq [report [ordinary byte]]
       (is (exact-exporter-resolution? (:out report) exporter-sha)))
@@ -193,7 +193,33 @@
     (is (exact-coordinate? (:out result) "data.json"
                            (str "https___github.com_casselc_data.json.git/" sha "/")))
     (is (false? (exact-coordinate? (:out result) "data.json"
-                                  "https___github.com_casselc_data.json.git/8d557cc18eb9526ed29ae5613089c3793d5973fa/")))))
+                                  "https___github.com_casselc_data.json.git/96f3e47dba5970728866dacb5ac41a25135a2df5/")))))
+
+(deftest prior-sorted-stack-coordinates-are-causal-red-controls
+  ;; These are real dependency selections, not assertions about backend ABI
+  ;; rejection or about whether an older runtime supports the optional fold.
+  (doseq [[library url old-sha dependency current-root]
+          [["io.github.casselc/otel" "https://github.com/casselc/otel.git"
+            "37c684a2c370fc82fde82331635973bce87a52b3" "casselc_otel.git" otel-root]
+           ["io.github.chucklehead-dev/jolt-otel-clickhouse"
+            "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+            "67e28b59bfd215da982682dd9c59d51d52d460ed"
+            "jolt-otel-clickhouse" (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/" exporter-sha "/")]
+           ["org.clojure/data.json" "https://github.com/casselc/data.json.git"
+            "8d557cc18eb9526ed29ae5613089c3793d5973fa" "data.json"
+            "https___github.com_casselc_data.json.git/96f3e47dba5970728866dacb5ac41a25135a2df5/"]]]
+    (let [selection (str "{" library " {:git/url \"" url "\" :git/sha \"" old-sha "\"}}")
+          byte? (= library "org.clojure/data.json")
+          ;; The JSON mutation must exercise the active byte alias, with an
+          ;; override that cannot be shadowed by that alias's extra-deps.
+          coordinate (if byte?
+                       (str "{:aliases {:native-json-byte-batch {:override-deps " selection "}}}")
+                       (str "{:deps " selection "}"))
+          result (dependency-report (cond-> ["-Sdeps" coordinate]
+                                      byte? (conj "-A:native-json-byte-batch")))]
+      (is (successful-report? result))
+      (is (includes-coordinate? (:out result) dependency (str old-sha "/")))
+      (is (false? (exact-coordinate? (:out result) dependency current-root))))))
 
 (deftest current-chdb-source-root-is-exact-and-prior-pin-is-rejected
   (let [current (dependency-report [])
