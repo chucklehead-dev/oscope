@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Update the root application's SDK, exporter and optional native byte-JSON
+  pins together for lower-allocation sorted telemetry attributes and encoding.
+  Keep ordinary JSON, storage/configuration defaults and runtime artifact pins
+  unchanged. The runtime-owned fold is optional; older runtimes retain sequence
+  traversal. This is not an application throughput guarantee or an update to
+  the separately pinned minimal embedded dependency profile.
+
 - Update the SDK so ready embedded span batches do not wait out the export
   timer. Validate batch size against queue capacity before native or remote
   acquisition, and qualify both actual SDK destinations without explicit flush.
