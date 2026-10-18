@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Exercise optional S3 checksum confirmation through real application OTLP
+  ingestion, verified loopback TLS and an independent stock-runtime reader.
+  Reject a deliberately dropped option as confirmation evidence while checking
+  that its ordinary readback path still leaves recoverable telemetry.
+
 - Accept explicit experimental S3 WAL checksum confirmation in Durable config
   files and the Durable launcher environment. Keep verified readback as the
   default and reject unknown modes before backend creation. Requesting checksum

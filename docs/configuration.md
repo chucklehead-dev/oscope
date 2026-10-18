@@ -242,6 +242,24 @@ The requested setting is not proof that checksum confirmation was selected.
 Do not enable it automatically for arbitrary S3-compatible services. Performance
 and provider qualification remain separate from accepting the configuration.
 
+The native application gate exercises real `/v1/traces`, `/v1/logs` and
+`/v1/metrics` ingestion with the option enabled. It observes actual confirmation
+selection and uses a separate stock-runtime reader with normal verification.
+A deliberate dropped-option control must recover through readback but fail
+confirmation qualification. The test uses fake credentials and an ephemeral
+loopback TLS provider; it is not a new AWS or performance qualification:
+
+```bash
+JOLT_CHDB_LIB=/path/to/qualified/libchdb.so \
+  bash test/s3_checksum_capture.sh /path/to/qualified-writer /path/to/stock-reader \
+  /path/to/chdb-fixture-checkout
+```
+
+The fixture checkout must contain the exact consumed files from chDB commit
+`3d766fa295b0e98c30f275d0a334db92e6dd998c`. Tests verify TLS rejection before
+trusting their generated CA explicitly; TLS verification is never disabled.
+Successful fixtures are removed after both reader processes have exited.
+
 Diagnostic rendering redacts local paths, object-store locations, Durable
 owner/instance identities, database names, and credential-reference names.
 Field provenance is retained internally as `:default`, `:file`, `:environment`,

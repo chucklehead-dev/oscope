@@ -8,6 +8,7 @@ on:
       - deps.edn
       - src/oscope/**
       - test/oscope/**
+      - test/s3_checksum_capture.sh
 
 permissions:
   contents: read
@@ -90,3 +91,18 @@ jobs:
           timeout --signal=TERM --kill-after=5s 120s "$WRITER_JOLT_BIN" \
             -Srepro -A:test-durable:native-json-byte-batch \
             -m oscope.export-options-native-test-runner stream-fallback standalone --require-json-companion
+      - name: Checkout immutable checksum/TLS fixture and transparent observers
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: chucklehead-dev/jolt-chdb
+          ref: 3d766fa295b0e98c30f275d0a334db92e6dd998c
+          path: .qualification/checksum-fixture
+          sparse-checkout: |
+            test/support
+            scripts
+          persist-credentials: false
+      - name: Require application checksum selection and independent stock recovery
+        timeout-minutes: 5
+        run: >-
+          bash test/s3_checksum_capture.sh "$WRITER_JOLT_BIN" "$JOLT_BIN"
+          "$GITHUB_WORKSPACE/.qualification/checksum-fixture"
