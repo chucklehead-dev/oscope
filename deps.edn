@@ -17,7 +17,7 @@
          :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "5be78d565be0a7a929d108be929540c1b4f19524"}
+         :git/sha "695fa01711cc97e16c6d62dde9c8ad9cab1e1fdd"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
