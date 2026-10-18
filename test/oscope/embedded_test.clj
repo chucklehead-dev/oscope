@@ -1023,6 +1023,44 @@
     (export-logs! [_ _] true)
     (shutdown-log-exporter! [_] true)))
 
+(deftest embedded-span-destinations-export-ready-batches-without-explicit-flush
+  (let [local (atom []) remote (atom [])
+        local-shutdowns (atom 0) remote-shutdowns (atom 0)
+        connection (reify java.io.Closeable (close [_] nil))]
+    (with-redefs [host/getenv (constantly nil)
+                  jdbc/connection (constantly connection)
+                  chdb-export/exporter (constantly (test-exporter local local-shutdowns))
+                  otlp/exporter (constantly (test-exporter remote remote-shutdowns))
+                  live/open! (constantly {:close! (fn [] nil)})
+                  jdbc.chdb.durable/checkpoint! (fn [_] {:status :committed})]
+      (let [runtime (embedded/start!
+                      {:db-spec ::durable
+                       :sdk-options {:service-name "oscope.batch-readiness"
+                                     :metrics? false :logs? false}
+                       :span-pipelines
+                       {:local {:max-queue-size 8 :max-export-batch-size 2
+                                :schedule-delay-ms 60000}
+                        :remote {:endpoint "http://collector:4318"
+                                 :max-queue-size 8 :max-export-batch-size 2
+                                 :schedule-delay-ms 60000}}})]
+        (try
+          (dotimes [i 2]
+            (trace/with-span [_ (sdk/tracer "oscope.batch-readiness") (str "ready-" i)]))
+          (is (await! #(and (= 2 (reduce + (map count @local)))
+                           (= 2 (reduce + (map count @remote)))))
+              "both actual SDK workers export before a 60s timer, without force-flush")
+          (is (= (mapv :span-context (mapcat identity @local))
+                 (mapv :span-context (mapcat identity @remote))))
+          (is (await! #(let [stats (embedded/span-pipeline-stats runtime)]
+                         (= [2 2] (mapv (fn [destination]
+                                          (get-in stats [destination :exported-span-count]))
+                                        [:local :remote])))))
+          (is (= [0 0] (let [stats (embedded/span-pipeline-stats runtime)]
+                         (mapv (fn [destination]
+                                 (get-in stats [destination :dropped-count]))
+                               [:local :remote]))))
+          (finally (is (= :closed (:phase (embedded/stop! runtime))))))))))
+
 (deftest embedded-lifecycle-retains-background-remote-export-failure
   (let [entered (promise)
         release (promise)
@@ -1187,11 +1225,11 @@
              {:db-spec ::durable
               :sdk-options {:metrics? true :logs? true}
               :span-pipelines
-              {:local {:schedule-delay-ms 60000 :max-queue-size 8}
+              {:local {:schedule-delay-ms 60000 :max-queue-size 8 :max-export-batch-size 8}
                :remote {:traces-url "https://collector.example/v1/traces"
                         :headers-env "OSCOPE_REMOTE_HEADERS"
                         :timeout-ms 1234 :max-retries 0 :insecure? false
-                        :schedule-delay-ms 60000 :max-queue-size 8}}})
+                        :schedule-delay-ms 60000 :max-queue-size 8 :max-export-batch-size 8}}})
             processor (first (:span-processors @sdk-options))]
         (is (identical? local-exporter (:exporter @sdk-options))
             "the local exporter remains the SDK logs and metrics owner")
@@ -1466,6 +1504,10 @@
            {:local {} :remote {:endpoint "https://collector?token=secret"}}
            {:local {} :remote {:traces-url "https://collector/v1/traces#secret"}}
            {:local {:max-queue-size 0} :remote {:endpoint "http://collector"}}
+           {:local {:max-queue-size 8} :remote {:endpoint "http://collector"}}
+           {:local {} :remote {:endpoint "http://collector" :max-queue-size 8}}
+           {:local {:max-queue-size 2 :max-export-batch-size 3}
+            :remote {:endpoint "http://collector"}}
            {:local {} :remote {:endpoint "http://collector" :headers {"x" "secret"}}}
            {:local {} :remote {:endpoint "http://collector" :headers-env "bad-name"}}
            {:local {} :remote {:endpoint "http://collector" :max-retries -1}}

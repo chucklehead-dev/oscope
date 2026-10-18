@@ -582,6 +582,12 @@ OTLP/HTTP JSON collector while retaining spans, logs, and metrics locally. Each
 span destination has its own bounded queue and worker, so a slow or unavailable
 remote collector cannot block local ingestion:
 
+Each span worker exports a complete batch without waiting out its schedule
+delay, checking readiness within its existing short wait slices (not a hard
+real-time deadline). Batch size must not exceed queue capacity, including when
+using a custom small queue. Invalid combinations are rejected before opening
+the database or constructing the remote exporter.
+
 ```clojure
 (def runtime
   (embedded/start!

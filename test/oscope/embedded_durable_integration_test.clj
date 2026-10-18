@@ -249,12 +249,23 @@
                             :logs? true
                             :bridge-logging? false}
               :span-pipelines
-              {:local {:schedule-delay-ms 60000}
+              {:local {:schedule-delay-ms 60000 :max-export-batch-size 5}
                :remote {:endpoint "http://collector.invalid:4318"
                         :max-retries 0
+                        :max-export-batch-size 5
                         :schedule-delay-ms 60000}}})]
         (try
           (sample/emit-scenario!)
+          (is (let [deadline (+ (System/nanoTime) 5000000000)]
+                (loop []
+                  (let [stats (embedded/span-pipeline-stats lifecycle)]
+                    (cond
+                      (and (= 5 (get-in stats [:local :exported-span-count]))
+                           (= 5 (get-in stats [:remote :exported-span-count]))) true
+                      (< (System/nanoTime) deadline)
+                      (do (Thread/sleep 5) (recur))
+                      :else false))))
+              "real native and OTLP destinations finish their ready batches before explicit flush")
           (is (= {:sdk {:ok? true}
                   :span-pipelines
                   {:local {:ok? true} :remote {:ok? true}}}

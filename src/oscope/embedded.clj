@@ -64,7 +64,13 @@
 (defn- batch-options! [destination options]
   (doseq [option batch-option-keys]
     (positive-integer! destination options option))
-  (select-keys options batch-option-keys))
+  (let [selected (select-keys options batch-option-keys)
+        effective (merge export/default-batch-config selected)]
+    (when (> (:max-export-batch-size effective) (:max-queue-size effective))
+      (invalid! "oscope embedded span batch size must not exceed queue capacity"
+                ::invalid-span-pipelines
+                {:destination destination :option :max-export-batch-size}))
+    selected))
 
 (defn- safe-http-url? [value]
   ;; OTLP credentials belong in environment-referenced headers. Keeping them
