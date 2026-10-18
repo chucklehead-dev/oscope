@@ -135,6 +135,16 @@
     (throw (ex-info (str name " must be true or false")
                     {:oscope.durable-server/error true :option name}))))
 
+(defn- wal-confirmation-option [environment]
+  ;; Closed parsing: never intern arbitrary input or retain it in diagnostics.
+  (case (get environment "OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION")
+    nil nil
+    "" nil
+    "sha256-single-put" :sha256-single-put
+    (throw (ex-info "unsupported Durable S3 WAL upload confirmation mode"
+                    {:oscope.durable-server/error true
+                     :option "OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION"}))))
+
 (defn- required-option [environment name]
   (or (not-empty (get environment name))
       (throw (ex-info (str name " is required")
@@ -159,6 +169,7 @@
    "OSCOPE_DURABLE_S3_REGION" "OSCOPE_DURABLE_S3_ACCESS_KEY"
    "OSCOPE_DURABLE_S3_SECRET_KEY" "OSCOPE_DURABLE_S3_SESSION_TOKEN"
    "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"
+   "OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION"
    "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS" "OSCOPE_DURABLE_S3_TIMEOUT_MS"
    "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS"
    "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"
@@ -248,6 +259,8 @@
           "s3"
           (let [optional-s3
                 (cond-> {}
+                  (wal-confirmation-option environment)
+                  (assoc :wal-upload-confirmation (wal-confirmation-option environment))
                   (some? (get environment "OSCOPE_DURABLE_S3_PREFIX"))
                   (assoc :prefix (get environment "OSCOPE_DURABLE_S3_PREFIX"))
                   (optional-positive environment "OSCOPE_DURABLE_S3_MAX_ATTEMPTS")
@@ -445,6 +458,7 @@
                            {:oscope.durable-server/error true
                             :option
                             "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"})))
+                     confirmation (wal-confirmation-option environment)
                      options
                      {:endpoint (required-option
                                  environment "OSCOPE_DURABLE_S3_ENDPOINT")
@@ -480,7 +494,9 @@
                       :retry-initial-backoff-ms
                       s3-retry-initial-backoff-ms
                       :retry-max-backoff-ms s3-retry-max-backoff-ms}]
-                 {:namespace-backend (s3-backend-fn options)
+                 {:namespace-backend (s3-backend-fn
+                                     (cond-> options
+                                       confirmation (assoc :wal-upload-confirmation confirmation)))
                   :object-id object-id}))]
          {:host host
           :port port
@@ -510,29 +526,9 @@
   (durable-options
    (into {}
          (map (fn [name] [name (System/getenv name)]))
-         ["OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_HTTP_WORKERS"
-          "OSCOPE_HTTP_QUEUE_CAPACITY" "OSCOPE_DURABLE_ROOT"
-          "OSCOPE_DURABLE_BACKEND" "OSCOPE_DURABLE_OBJECT_ID"
-          "OSCOPE_DURABLE_S3_ENDPOINT" "OSCOPE_DURABLE_S3_BUCKET"
-          "OSCOPE_DURABLE_S3_PREFIX" "OSCOPE_DURABLE_S3_REGION"
-          "OSCOPE_DURABLE_S3_ACCESS_KEY" "OSCOPE_DURABLE_S3_SECRET_KEY"
-          "OSCOPE_DURABLE_S3_SESSION_TOKEN"
-          "OSCOPE_DURABLE_S3_MAX_ATTEMPTS"
-          "OSCOPE_DURABLE_S3_CONNECT_TIMEOUT_MS"
-          "OSCOPE_DURABLE_S3_TIMEOUT_MS"
-          "OSCOPE_DURABLE_S3_RETRY_DEADLINE_MS"
-          "OSCOPE_DURABLE_S3_RETRY_INITIAL_BACKOFF_MS"
-          "OSCOPE_DURABLE_S3_RETRY_MAX_BACKOFF_MS"
-          "OSCOPE_DURABLE_OWNER" "OSCOPE_DURABLE_INSTANCE"
-          "OSCOPE_DURABLE_DATABASE" "OSCOPE_DURABLE_SCRATCH_PARENT"
-          "OSCOPE_DURABLE_LEASE_TTL_MS"
-          "OSCOPE_DURABLE_HEARTBEAT_INTERVAL_MS"
-          "OSCOPE_DURABLE_CLOCK_SKEW_MS" "OSCOPE_DURABLE_FORCE"
-          "OSCOPE_DURABLE_MAX_ATTEMPTS"
-          "OSCOPE_DURABLE_RETRY_DEADLINE_MS"
-          "OSCOPE_DURABLE_RETRY_INITIAL_BACKOFF_MS"
-          "OSCOPE_DURABLE_RETRY_MAX_BACKOFF_MS"
-          "OSCOPE_DURABLE_CHECKPOINT_EVERY_BATCHES"])))
+         (concat ["OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_HTTP_WORKERS"
+                  "OSCOPE_HTTP_QUEUE_CAPACITY"]
+                 durable-environment-names))))
 
 (defn system-environment []
   (into {}

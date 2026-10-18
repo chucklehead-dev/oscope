@@ -224,6 +224,24 @@ handling, and are passed directly to the backend. A missing required value
 fails before backend creation. Neither config diagnostics nor bounded startup
 errors contain credential values.
 
+### Experimental S3 upload confirmation
+
+For a provider qualified for chDB's single-PUT SHA256 contract, you can add
+`:wal-upload-confirmation :sha256-single-put` inside `:storage :s3`. In the
+Durable launcher environment, use
+`OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION=sha256-single-put` alongside your
+complete S3 environment selection. Embedded startup accepts the same config
+field. Omit the setting to retain normal readback confirmation; unknown modes
+are rejected before backend creation.
+
+This may avoid a redundant WAL download after a qualified new upload. It does
+not disable independent reader verification or alter captured telemetry, lease
+ownership, head CAS or acknowledgement guarantees. Missing evidence, unsupported
+transports and ambiguous/existing uploads retain the library's readback path.
+The requested setting is not proof that checksum confirmation was selected.
+Do not enable it automatically for arbitrary S3-compatible services. Performance
+and provider qualification remain separate from accepting the configuration.
+
 Diagnostic rendering redacts local paths, object-store locations, Durable
 owner/instance identities, database names, and credential-reference names.
 Field provenance is retained internally as `:default`, `:file`, `:environment`,

@@ -1,6 +1,8 @@
 (ns oscope.durable-config-runtime-test
   (:require [clojure.test :refer [deftest is testing]]
             [jdbc.chdb.durable :as durable]
+            [jdbc.chdb.durable.backend :as backend]
+            [jdbc.chdb.durable.s3 :as s3]
             [oscope.config :as config]
             [oscope.durable-config-runtime :as runtime]
             [oscope.durable-server-main :as durable-main]))
@@ -112,6 +114,111 @@
     (is (= ["ACCESS_REF" "SECRET_REF"] @lookups))
     (is (= "access" (:access-key @backend-options)))
     (is (= "secret" (:secret-key @backend-options)))))
+
+(defn- checksum-environment []
+  {"OSCOPE_DURABLE_BACKEND" "s3"
+   "OSCOPE_DURABLE_S3_ENDPOINT" "https://s3.example.test"
+   "OSCOPE_DURABLE_S3_BUCKET" "telemetry"
+   "OSCOPE_DURABLE_S3_REGION" "us-west-2"
+   "OSCOPE_DURABLE_S3_ACCESS_KEY" "access"
+   "OSCOPE_DURABLE_S3_SECRET_KEY" "secret"})
+
+(deftest legacy-env-options-reuses-the-durable-environment-allowlist
+  (let [key "OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION"
+        environment (with-redefs [durable-main/durable-options identity]
+                      (durable-main/env-options))]
+    (is (contains? environment key))
+    (is (= (into #{"OSCOPE_HOST" "OSCOPE_PORT" "OSCOPE_HTTP_WORKERS"
+                   "OSCOPE_HTTP_QUEUE_CAPACITY"}
+                 durable-main/durable-environment-names)
+           (set (keys environment)))))
+  ;; A new entry must flow through without editing a second literal list.
+  (with-redefs [durable-main/durable-options identity
+                durable-main/durable-environment-names ["OSCOPE_TEST_ALLOWLIST_CANARY"]]
+    (is (contains? (durable-main/env-options) "OSCOPE_TEST_ALLOWLIST_CANARY"))))
+
+(deftest checksum-setting-reaches-file-and-environment-backend-constructors
+  (let [key "OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION"]
+    (is (some #{key} durable-main/durable-environment-names))
+    (doseq [selected? [false true]]
+      (let [storage (cond-> (s3-storage)
+                      selected? (assoc-in [:s3 :wal-upload-confirmation] :sha256-single-put))
+            environment (cond-> (checksum-environment)
+                          selected? (assoc key "sha256-single-put"))
+            captured (atom [])
+            backend! (fn [options] (swap! captured conj options) ::namespace)]
+        (with-redefs [durable/writer-dbspec identity]
+          ;; File resolution is shared by the standalone/embedded adapter.
+          (let [file (durable-main/resolve-config
+                      ["--config" "/unused/oscope.edn"] {}
+                      (constantly (pr-str {:version 2 :storage storage}))
+                      (fn [& _] (throw (ex-info "unexpected manifest read" {}))))]
+            (runtime/server-options file {"ACCESS_REF" "access" "SECRET_REF" "secret"}
+                                    {:s3-backend-fn backend! :instance-fn (constantly "instance")}))
+          (runtime/server-options (durable-main/resolve-config [] environment) environment
+                                  {:s3-backend-fn backend! :instance-fn (constantly "instance")})
+          (durable-main/durable-options environment (fn [& _] ::unexpected)
+                                        backend! (constantly "instance")))
+        (is (= 3 (count @captured)))
+        (doseq [options @captured]
+          (is (= selected? (contains? options :wal-upload-confirmation)))
+          (is (= (when selected? :sha256-single-put) (:wal-upload-confirmation options))))))))
+
+(deftest invalid-confirmation-environment-fails-before-backend-creation
+  (doseq [value ["readback" "true" "SHA256-SINGLE-PUT" "PRIVATE-CANARY"]]
+    (let [environment (assoc (checksum-environment)
+                             "OSCOPE_DURABLE_S3_WAL_UPLOAD_CONFIRMATION" value)
+          calls (atom [])
+          error (try
+                  (durable-main/durable-options
+                   environment (fn [& _] (swap! calls conj :local))
+                   (fn [& _] (swap! calls conj :s3)) (constantly "instance"))
+                  nil (catch Throwable e e))]
+      (is (some? error))
+      (is (empty? @calls))
+      (is (not (re-find #"PRIVATE-CANARY" (str (ex-message error) (ex-data error)))))
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (durable-main/resolve-config [] environment))))))
+
+(deftest actual-backend-capability-selection-is-not-requested-configuration
+  ;; Real runtime adapter + real native transport factory, without creating a
+  ;; writer or issuing requests. A selected HTTPS capability validates its source
+  ;; before PUT; the unselected path returns :unsupported without touching it.
+  ;; This tests constructor routing, NOT a successful upload confirmation proof.
+  (let [missing (str (System/getProperty "java.io.tmpdir")
+                     "/oscope-checksum-probe-" (random-uuid))
+        digest "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        credentials {"ACCESS_REF" "access" "SECRET_REF" "secret"}]
+    (is (not (.exists (java.io.File. missing))))
+    (doseq [selected? [false true]]
+      (let [storage (cond-> (s3-storage)
+                      selected? (assoc-in [:s3 :wal-upload-confirmation] :sha256-single-put))
+            options (runtime/server-options (resolved storage) credentials)
+            store (get-in options [:db-spec :namespace-backend])]
+        (if selected?
+          (let [error (try (backend/put-file-with-checksum-if-absent! store "probe" missing 3 digest)
+                           nil (catch clojure.lang.ExceptionInfo e e))]
+            (is (= ::s3/invalid-file (:type (ex-data error)))))
+          (is (= {:status :unsupported}
+                 (backend/put-file-with-checksum-if-absent! store "probe" missing 3 digest))))))
+    (let [storage (-> (s3-storage)
+                      (assoc-in [:s3 :endpoint] "http://127.0.0.1:1")
+                      (assoc-in [:s3 :wal-upload-confirmation] :sha256-single-put))
+          store (get-in (runtime/server-options (resolved storage) credentials)
+                        [:db-spec :namespace-backend])]
+      (is (= {:status :unsupported}
+             (backend/put-file-with-checksum-if-absent! store "probe" missing 3 digest))))
+    (let [calls (atom 0)
+          storage (assoc-in (s3-storage) [:s3 :wal-upload-confirmation] :sha256-single-put)
+          options (runtime/server-options
+                   (resolved storage) credentials
+                   {:instance-fn (constantly "instance")
+                    :s3-backend-fn #(s3/s3-backend
+                                    (assoc % :request! (fn [& _] (swap! calls inc))))})
+          store (get-in options [:db-spec :namespace-backend])]
+      (is (= {:status :unsupported}
+             (backend/put-file-with-checksum-if-absent! store "probe" missing 3 digest)))
+      (is (zero? @calls)))))
 
 (deftest legacy-local-environment-has-the-same-runtime-options
   (let [environment

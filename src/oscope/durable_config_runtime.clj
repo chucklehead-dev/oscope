@@ -112,7 +112,7 @@
            (let [s3 (:s3 storage)
                  credentials (:credentials s3)
                  s3-options
-                 {:endpoint (:endpoint s3)
+                 (cond-> {:endpoint (:endpoint s3)
                   :bucket (:bucket s3)
                   :prefix (or (:prefix s3) "")
                   :region (:region s3)
@@ -133,6 +133,8 @@
                   :retry-initial-backoff-ms
                   (or (:retry-initial-backoff-ms s3) 25)
                   :retry-max-backoff-ms (or (:retry-max-backoff-ms s3) 1000)}
+                   (contains? s3 :wal-upload-confirmation)
+                   (assoc :wal-upload-confirmation (:wal-upload-confirmation s3)))
                  namespace-backend
                  (try (s3-backend-fn s3-options)
                       (catch Throwable _

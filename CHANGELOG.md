@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Accept explicit experimental S3 WAL checksum confirmation in Durable config
+  files and the Durable launcher environment. Keep verified readback as the
+  default and reject unknown modes before backend creation. Requesting checksum
+  confirmation does not prove transport selection or change reader verification.
+
 - Accept a per-exporter `:max-insert-bytes` setting in version 2 files and
   embedded/standalone startup. Keep the 8 MiB default; validate the optional
   1-byte through 64 MiB limit before acquiring resources. Pin the reviewed
