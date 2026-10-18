@@ -57,7 +57,7 @@
     (is (= ::native-runner/unexpected-stream (:type (ex-data @failure))))))
 
 (deftest streaming-fixture-rejects-a-no-op-and-routes-only-writer-options
-  (doseq [execute? [false true]]
+  (doseq [execute? [false true] mode ["stream" "stream-budget"]]
     (let [seen (atom nil)
           failure (atom nil)]
       (with-redefs [embedded/start! #(reset! seen %)
@@ -68,11 +68,13 @@
                       (when execute? (native/chdb-stream-insert-n))
                       (test/test-vars []))]
         (with-out-str
-          (reset! failure (error #(native-runner/-main "stream" "embedded")))))
+          (reset! failure (error #(native-runner/-main mode "embedded")))))
       (is (= (when-not execute? ::native-runner/unobserved-stream)
              (:type (ex-data @failure))))
       (is (true? (get-in @seen [:db-spec :owned-compact-stream?])))
       (is (= :raw-ticks (get-in @seen [:export-options :datetime64-wire])))
+      (is (= (when (= mode "stream-budget") (* 16 1024 1024))
+             (get-in @seen [:export-options :max-insert-bytes])))
       (is (not (contains? (:export-options @seen) :owned-compact-stream?))))))
 
 (deftest standalone-streaming-fixture-does-not-repair-dropped-file-options
@@ -96,6 +98,40 @@
   (doseq [wire [nil "auto" :unix-nanos :unknown]]
     (is (= :oscope.export-options/invalid-options
            (:type (ex-data (error #(encoding/validate! {:datetime64-wire wire} true))))))))
+
+(deftest insert-byte-limit-is-bounded-and-rejected-before-resources
+  (doseq [durable? [false true] value [nil 1 (* 8 1024 1024) (* 64 1024 1024)]
+          :let [options {:max-insert-bytes value}]]
+    (is (identical? options (encoding/validate! options durable?))))
+  (let [effects (atom [])]
+    (with-redefs [jdbc/connection (fn [& _] (swap! effects conj :connection))
+                  exporter/exporter (fn [& _] (swap! effects conj :exporter))]
+      (doseq [start [embedded/start! server/start!]
+              value [0 -1 1.5 true "PRIVATE-CANARY" {} (inc (* 64 1024 1024))]]
+        (let [failure (error #(start {:db-spec ::unused :export-options {:max-insert-bytes value}}))]
+          (is (= ::encoding/invalid-options (:type (ex-data failure))))
+          (is (nil? (ex-cause failure)))
+          (is (not (.contains (str (ex-message failure) (pr-str (ex-data failure)))
+                             "PRIVATE-CANARY")))))
+      (is (empty? @effects)))))
+
+(deftest insert-byte-limit-file-roundtrips-and-reaches-both-storage-runtimes
+  (doseq [value [nil 1 (* 32 1024 1024) (* 64 1024 1024)]
+          type [:memory :durable-local]
+          :let [options {:max-insert-bytes value}
+                storage (cond-> {:type type :export-options options}
+                          (= type :durable-local) (assoc :root "/not-opened"))
+                resolved (config/resolve-config [[:file {:version 2 :storage storage}]])]]
+    (is (= options (get-in (config/parse (config/encode (:config resolved)))
+                           [:storage :export-options])))
+    (if (= type :memory)
+      (is (= options (:export-options (cli/server-options resolved (fn [& _] nil)))))
+      (with-redefs [durable/writer-dbspec identity]
+        (is (= options (:export-options
+                        (runtime/server-options resolved {}
+                          {:local-backend-fn (fn [_] ::backend)
+                           :object-backend-fn (fn [& _] (throw (Exception. "Unexpected registry")))
+                           :instance-fn (constantly "fixture")}))))))))
 
 (deftest streaming-is-a-version-two-writer-option-not-an-encoding-option
   (doseq [enabled? [false true]
@@ -161,11 +197,17 @@
       (is (empty? @effects)))))
 
 (deftest validated-options-reach-both-public-exporter-construction-sites
-  (doseq [[kind options durable?] [[:embedded compact true] [:embedded owned true]
-                                  [:standalone compact false] [:standalone owned true]
-                                  [:embedded (assoc owned :datetime64-wire :raw-ticks) true]
-                                  [:standalone (assoc owned :datetime64-wire :raw-ticks) true]
-                                  [:standalone {:datetime64-wire :iso-utc} false]]]
+  (doseq [[kind options durable?]
+          (concat
+           [[:embedded compact true] [:embedded owned true]
+            [:standalone compact false] [:standalone owned true]
+            [:embedded (assoc owned :datetime64-wire :raw-ticks) true]
+            [:standalone (assoc owned :datetime64-wire :raw-ticks) true]
+            [:standalone {:datetime64-wire :iso-utc} false]]
+           (for [kind [:embedded :standalone] durable? [false true]
+                 :when (or (= kind :standalone) durable?)
+                 value [nil 1 (* 8 1024 1024) (* 64 1024 1024)]]
+             [kind {:max-insert-bytes value} durable?]))]
     (let [seen (atom nil) closed (atom false)
           connection (reify java.io.Closeable (close [_] (reset! closed true)))
           sentinel (ex-info "Stop after exporter handoff" {})]

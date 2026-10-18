@@ -28,6 +28,11 @@
                             :json-backend :native-guarded-byte-batch
                             :owned-statement-output? true
                             :datetime64-wire :raw-ticks}
+                  "stream-budget" {:insert-format :json-compact-each-row
+                                   :json-backend :native-guarded-byte-batch
+                                   :owned-statement-output? true
+                                   :datetime64-wire :raw-ticks
+                                   :max-insert-bytes (* 16 1024 1024)}
                   "stream-fallback" {:insert-format :json-compact-each-row
                                      :json-backend :configured
                                      :datetime64-wire :raw-ticks}
@@ -58,7 +63,7 @@
                           (update :empty-bound inc)))))
              (original-adapter value))}
           {})
-        streaming? (contains? #{"stream" "stream-fallback"} mode)
+        streaming? (contains? #{"stream" "stream-budget" "stream-fallback"} mode)
         handoff (fn [args]
                   (if (and streaming? (= consumer "standalone"))
                     ;; This fixture must route options from its versioned file,
@@ -104,7 +109,7 @@
                       ;; Before the child emits its terminal receipt/exits.
                       ;; A no-op fixture must not qualify streaming merely by
                       ;; accepting configuration or keeping the old assertions.
-                      (when (= mode "stream")
+                      (when (contains? #{"stream" "stream-budget"} mode)
                         (when-not (pos? @stream-calls)
                           (throw (ex-info "Native stream execution was not observed"
                                           {:type ::unobserved-stream})))

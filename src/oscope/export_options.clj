@@ -9,6 +9,7 @@
      [:json-backend {:optional true}
       [:enum :configured :native-guarded :native-guarded-string-cache :native-guarded-byte-batch]]
      [:datetime64-wire {:optional true} [:enum :auto :iso-utc :raw-ticks]]
+     [:max-insert-bytes {:optional true} [:maybe [:int {:min 1 :max 67108864}]]]
      [:owned-statement-output? {:optional true} :boolean]]))
 
 (defn validate!

@@ -24,6 +24,14 @@ persistence callbacks:
 - `:json-backend`: `:configured`, `:native-guarded`,
   `:native-guarded-string-cache`, or `:native-guarded-byte-batch`.
 - `:owned-statement-output?`: a Boolean, defaulting to false.
+- `:max-insert-bytes`: a positive integer through 67,108,864 (64 MiB).
+  Omit it or use `nil` to retain 8 MiB. For example, `:max-insert-bytes 33554432`
+  allows up to 32 MiB per encoded physical insert payload, including row
+  newlines but excluding the SQL prefix. It is not a queue or heap budget;
+  larger limits use more memory. Driver/Durable whole-statement limits still
+  apply, and multi-insert metric exports do not become atomic. Overflow keeps
+  the exporter's existing failed-export/diagnostic behavior. Persistence
+  acknowledgements and all other encoding/storage defaults are unchanged.
 - `:datetime64-wire`: `:auto`, `:iso-utc`, or `:raw-ticks`. The default `:auto`
   uses integer nanoseconds on native 26.7.3 and UTC ISO strings on 26.9.0.
   Explicit `:iso-utc` requires 26.9.0. `:raw-ticks` also requires Durable storage;
@@ -94,6 +102,8 @@ Maintainers can exercise real ingestion with the existing recovery fixtures:
 # Fresh 26.9 object only, with the qualified writer and a separate stock reader:
 # invoke the writer below; JOLT_BIN selects the nested recovery reader.
 "$WRITER_JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner stream embedded
+"$WRITER_JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner stream-budget embedded-typed
+"$WRITER_JOLT_BIN" -Srepro -A:test-durable:native-json-byte-batch -m oscope.export-options-native-test-runner stream-budget standalone
 ```
 
 Each invocation owns one native writer lifetime. The standalone and embedded

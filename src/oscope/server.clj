@@ -166,7 +166,8 @@
   reader dbspecs are rejected before acquisition. Oscope binds all
   database effects to its owned connection. Optional
   `:export-options` selects only `:insert-format`, `:json-backend`,
-  `:datetime64-wire`, and `:owned-statement-output?`; omitted settings retain defaults.
+  `:datetime64-wire`, `:max-insert-bytes`, and `:owned-statement-output?`;
+  omitted settings retain defaults.
   Owned output requires Durable storage and the native-byte compact backend.
   The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary
