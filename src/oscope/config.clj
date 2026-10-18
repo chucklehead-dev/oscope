@@ -31,6 +31,7 @@
     :checkpoint-every-batches :owned-compact-stream?})
 (def ^:private s3-keys
   #{:endpoint :bucket :prefix :region :object-id :credentials
+    :wal-upload-confirmation
     :max-attempts :connect-timeout-ms :timeout-ms :retry-deadline-ms
     :retry-initial-backoff-ms :retry-max-backoff-ms})
 (def ^:private credential-keys
@@ -211,6 +212,10 @@
 
 (defn- validate-s3! [s3]
   (closed! [:storage :s3] s3-keys s3)
+  (when (and (contains? s3 :wal-upload-confirmation)
+             (not= :sha256-single-put (:wal-upload-confirmation s3)))
+    (config-error "unsupported Durable S3 WAL upload confirmation mode"
+                  {:path [:storage :s3 :wal-upload-confirmation]}))
   (doseq [key [:endpoint :bucket :region :object-id]]
     (nonblank! [:storage :s3 key] (get s3 key)))
   (when (and (contains? s3 :prefix) (not (string? (:prefix s3))))

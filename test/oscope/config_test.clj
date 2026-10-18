@@ -312,6 +312,27 @@
                              :credentials {:type :inline
                                            :access-key "PRIVATE"}}})))))
 
+(deftest durable-s3-confirmation-is-explicit-and-closed
+  (let [storage {:type :durable-s3
+                 :s3 {:endpoint "https://s3.example.test" :bucket "telemetry"
+                      :region "us-west-2" :object-id "oscope"
+                      :credentials {:type :environment :access-key-env "ACCESS"
+                                    :secret-key-env "SECRET"}}}
+        document #(assoc config/defaults :storage %)]
+    (is (not (contains? (:s3 (:storage (config/validate (document storage))))
+                        :wal-upload-confirmation)))
+    (let [selected (assoc-in storage [:s3 :wal-upload-confirmation] :sha256-single-put)]
+      (is (= selected (:storage (config/validate (document selected))))))
+    (doseq [mode [nil :readback :unknown "sha256-single-put" true {}]]
+      (let [error (try (config/validate (document (assoc-in storage [:s3 :wal-upload-confirmation] mode)))
+                      nil (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? error))
+        (is (= [:storage :s3 :wal-upload-confirmation] (:path (ex-data error))))))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (config/validate
+                  (document {:type :durable-local :root "/durable"
+                             :wal-upload-confirmation :sha256-single-put}))))))
+
 (deftest durable-cross-field-boundaries
   (let [document (fn [storage] (assoc config/defaults :storage storage))]
     (is (= 10 (get-in (config/validate
