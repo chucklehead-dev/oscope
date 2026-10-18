@@ -6,6 +6,9 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
+  "695fa01711cc97e16c6d62dde9c8ad9cab1e1fdd")
+
+(def ^:private prior-unfiltered-exporter-sha
   "5be78d565be0a7a929d108be929540c1b4f19524")
 
 (def ^:private chdb-root
@@ -139,6 +142,15 @@
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
 
+(deftest prior-unfiltered-typed-exporter-is-rejected
+  (let [coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
+                        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
+                        ":git/sha \"" prior-unfiltered-exporter-sha "\"}}}")
+        result (dependency-report ["-Sdeps" coordinate])]
+    (is (successful-report? result))
+    (is (exact-exporter-resolution? (:out result) prior-unfiltered-exporter-sha))
+    (is (false? (exact-exporter-resolution? (:out result) exporter-sha)))))
+
 (deftest ordinary-and-byte-json-roots-are-qualified-independently
   (let [root #(str "https___github.com_casselc_data.json.git/" % "/")
         ordinary (dependency-report [])
@@ -151,6 +163,8 @@
         ordinary-root (root "0f51b99101bc5e840f957c073f87b6f877309a25")
         byte-root (root "8d557cc18eb9526ed29ae5613089c3793d5973fa")]
     (doseq [report [ordinary byte prior]] (is (successful-report? report)))
+    (doseq [report [ordinary byte]]
+      (is (exact-exporter-resolution? (:out report) exporter-sha)))
     (is (exact-coordinate? (:out ordinary) "data.json" ordinary-root))
     (is (exact-coordinate? (:out byte) "data.json" byte-root))
     (is (exact-coordinate? (:out prior) "data.json" (root prior-sha)))

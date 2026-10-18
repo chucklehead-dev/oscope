@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the exporter to avoid building unused intermediate attribute groups
+  during ordinary typed ingestion. Keep captured attributes, duplicate detection,
+  typed values/status, storage and encoding defaults unchanged. Check the
+  resolved exporter for ordinary and optional byte-JSON startup, and reject
+  the previous pin. This is not a new native-throughput qualification.
+
 - Update the exporter and optional native byte-JSON dependency together for
   short clean ASCII emission without fragment-cache lookup. Retain Unicode
   and longer-string caching, ordinary JSON, SDK, driver, installation and
