@@ -21,7 +21,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "d93846e40b837dcecb546fb59f6cb05ca639f054/"))
+       "37c684a2c370fc82fde82331635973bce87a52b3/"))
 
 (def ^:private prior-map-reuse-sdk-root
   "https___github.com_casselc_otel.git/12074bcfd668dec00a4e6ca2ca52a4f765a331e9/")
@@ -141,6 +141,17 @@
       (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root))
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
+
+(deftest timer-only-batch-sdk-is-a-causal-red-control
+  (let [prior "d93846e40b837dcecb546fb59f6cb05ca639f054"
+        coordinate (str "{:deps {io.github.casselc/otel "
+                        "{:git/url \"https://github.com/casselc/otel.git\" "
+                        ":git/sha \"" prior "\"}}}")
+        result (dependency-report ["-Sdeps" coordinate])]
+    (is (successful-report? result))
+    (is (exact-coordinate? (:out result) "casselc_otel.git"
+                           (str "https___github.com_casselc_otel.git/" prior "/")))
+    (is (false? (exact-coordinate? (:out result) "casselc_otel.git" otel-root)))))
 
 (deftest prior-fixed-budget-exporter-is-rejected
   (let [coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "

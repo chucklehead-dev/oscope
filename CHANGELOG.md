@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the SDK so ready embedded span batches do not wait out the export
+  timer. Validate batch size against queue capacity before native or remote
+  acquisition, and qualify both actual SDK destinations without explicit flush.
+  Keep encoding, storage, queue defaults and persistence acknowledgement rules
+  unchanged; direct-export throughput results do not measure this scheduling fix.
+
 - Exercise optional S3 checksum confirmation through real application OTLP
   ingestion, verified loopback TLS and an independent stock-runtime reader.
   Reject a deliberately dropped option as confirmation evidence while checking
