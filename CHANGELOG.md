@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update the root exporter dependency to reduce allocation when a span contains
+  exactly one event. SDK, driver, JSON backends and the separate embedded profile
+  keep their existing pins. No throughput improvement or new export mode is claimed.
+
 - Update the root exporter and optional native JSON pins to avoid structural
   comparisons against the default JSON omission marker when encoding nested
   sorted attributes. Custom value functions retain their equality behavior.

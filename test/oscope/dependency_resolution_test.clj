@@ -6,7 +6,13 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
+  "2c54b98d35464c8fc7c737b0c92a0042272b589a")
+
+(def ^:private prior-singleton-exporter-sha
   "4a42716286177fd0c033d69deb708b29dd162933")
+
+(def ^:private prior-singleton-exporter-coordinate
+  "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse {:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" :git/sha \"4a42716286177fd0c033d69deb708b29dd162933\"}}}")
 
 (def ^:private prior-fixed-budget-exporter-sha
   "695fa01711cc97e16c6d62dde9c8ad9cab1e1fdd")
@@ -300,6 +306,12 @@
       (testing "the reviewed exporter-root oracle rejects that resolution"
         (is (false? (exact-exporter-resolution? (:out result)
                                                 exporter-sha)))))))
+
+(deftest prior-singleton-exporter-is-a-causal-red-control
+  (let [result (dependency-report ["-Sdeps" prior-singleton-exporter-coordinate])]
+    (is (successful-report? result))
+    (is (exact-exporter-resolution? (:out result) prior-singleton-exporter-sha))
+    (is (false? (exact-exporter-resolution? (:out result) exporter-sha)))))
 
 (deftest prior-scalar-sdk-coordinate-is-a-causal-red-control
   ;; The exporter now needs the helper in this exact SDK revision. Check the
