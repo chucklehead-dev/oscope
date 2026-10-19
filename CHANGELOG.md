@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the root exporter and optional native JSON pins to avoid structural
+  comparisons against the default JSON omission marker when encoding nested
+  sorted attributes. Custom value functions retain their equality behavior.
+  Keep the SDK, driver, ordinary JSON, runtime and storage defaults unchanged;
+  the separately pinned minimal embedded profile is not updated here.
+
 - Update the root application's SDK, exporter and optional native byte-JSON
   pins together for lower-allocation sorted telemetry attributes and encoding.
   Keep ordinary JSON, storage/configuration defaults and runtime artifact pins
