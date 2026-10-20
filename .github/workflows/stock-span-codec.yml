@@ -57,6 +57,11 @@ jobs:
             -m oscope.json-reader-test
           "$JOLT_BIN" -Srepro -A:stock-json-reader -Sdeps '{:paths ["src" "test"]}' \
             -m oscope.json-reader-native-test
+          "$JOLT_BIN" -Srepro -A:stock-json-reader -Sdeps '{:paths ["src" "test"]}' \
+            -m oscope.stock-reader-runner-test
+          "$JOLT_BIN" -Srepro -Sdeps \
+            '{:paths ["src" "test"] :deps {io.github.chucklehead-dev/jolt-codec {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git" :git/sha "98e93e2a6726c435d9b55ada9a088c2dbf5b1c99" :deps/root "incubator/codec"}}}' \
+            -m oscope.json-reader-legacy-probe
           "$JOLT_BIN" -Srepro -M:test-export-options
           "$JOLT_BIN" -Srepro -A:stock-span-codec -Sdeps '{:paths ["src" "test"]}' \
             -m oscope.stock-codec-runner-test
@@ -74,3 +79,6 @@ jobs:
               -Srepro -A:test-durable:stock-span-codec \
               -m oscope.export-options-native-test-runner stock-codec "$task_consumer"
           done
+          timeout --signal=TERM --kill-after=5s 120s "$JOLT_BIN" \
+            -Srepro -A:test-durable:stock-json-reader \
+            -m oscope.export-options-native-test-runner stock-reader standalone

@@ -17,14 +17,19 @@
     (try
       (require 'jolt.codec.reader.experimental)
       (let [open (ns-resolve 'jolt.codec.reader.experimental 'open-reader)
-            read (ns-resolve 'jolt.codec.reader.experimental 'read-string)
+            read (ns-resolve 'jolt.codec.reader.experimental 'try-read-string)
             ordinary json/read-str]
         (when-not (and open read (ifn? @open) (ifn? @read))
           (throw (ex-info "Reader capability unavailable" {})))
         (let [adapter (fn [source options] (apply ordinary source (mapcat identity options)))
               capability (@open {:number-reader adapter :fallback-reader adapter})
               read @read]
-          (fn [source] (read capability source))))
+          (fn [source]
+            ;; Explicit attempt/fallback composition also makes actual native
+            ;; selection observable once per document, without token counters.
+            (if-let [result (read capability source {})]
+              (first result)
+              (ordinary source)))))
       (catch Throwable _
         (throw (ex-info "Experimental JSON reader requires its optional compatible component"
                         {:oscope.otlp/error true :type ::json-reader-unavailable}))))

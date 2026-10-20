@@ -54,8 +54,11 @@ telemetry is logged for capability diagnostics.
 
 The published-library benchmark showed a first 1.66x local socket-throughput
 gain with lower estimated allocation and independent recovery. That used
-benchmark routing, not this production config path; a real config-selected
-socket/recovery fixture remains a separate gate. No sustained/population-tail,
+benchmark routing, not a performance measurement of this production config
+path. A separate real config-selected traces/logs/metrics socket fixture passed
+45 assertions with three actual native accepts, no declines, and a settled
+independent recovery reader. Startup-only and always-declining controls must
+fail its reader witness. No sustained/population-tail,
 mixed/typed/concurrent traffic, whole-app native binary or S3 performance claim
 follows from the library checks. Do not use the old hook's 2.05x figure as this
 API's result. CLI server startup is distinct from a bundled application build.

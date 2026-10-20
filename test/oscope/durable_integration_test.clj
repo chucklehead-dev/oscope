@@ -290,6 +290,8 @@
               (is (= [65 82 82 79 87 49]
                      (unsigned-prefix (:bytes arrow) 6)))))))
 
+(def ^:dynamic *ingest-options* {})
+
 (deftest standalone-server-flushes-through-durable-jdbc-adapter
   (let [root (Files/createTempDirectory
               "oscope-durable-store-" (make-array FileAttribute 0))
@@ -303,6 +305,7 @@
                [[:file
                  {:version 2
                   :server {:port 0}
+                  :ingest (merge {:type :otlp-http-json} *ingest-options*)
                   :storage (merge {:type :durable-local
                             :root (str root)
                             :owner "oscope-test"
