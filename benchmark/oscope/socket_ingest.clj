@@ -241,6 +241,7 @@
                           :os-ticks-per-second (some-> (System/getenv "BENCH_CLK_TCK") parse-long)
                           :exporter-source (str (io/resource "otel/exporter/chdb.clj"))
                           :json-source (str (io/resource "clojure/data/json.clj"))
+                          :any-value-source (str (io/resource "otel/any_value.clj"))
                           :codec-source (when codec? (str (io/resource "jolt/codec/experimental.clj")))
                           :estimated-allocated-bytes-per-row (/ (double (allocated-estimate before after)) rows)
                           :phase-samples @phases :phase-summaries (into {} (map (fn [[k v]] [k (summary v)]) @phases))

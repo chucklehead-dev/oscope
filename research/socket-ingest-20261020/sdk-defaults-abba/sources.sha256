@@ -1,0 +1,7 @@
+2c321c2deba1de71d9d80c89828ce47980e9d441b5893513cccc06e8fd4fe090  benchmark/oscope/socket_ingest.clj
+44997f64c32d19252c97d2d76ec97f578a85bfe7a3bd8e948ce0d04674c7df64  deps.edn
+916750553dd13a6a20960f92199b761788d5b93195ebb2b99467081c52665ca9  src/oscope/server.clj
+85498e789a873d1e70e5f3032bb10660c00b4704bfc3162510ba04b0ca117c14  src/oscope/otlp.clj
+fe50445cba051e5bdf55687ef1f2ed575bb9bd071f1cbedf1dd0b72ed3972a87  src/oscope/export_options.clj
+37d2ecc6ff1f9c614794e616f5a8bb532acd41205bf98778b38b2c02802be458  research/socket-ingest-20261020/run-sdk-defaults-abba.sh
+278420e56616117fe5683654921f974f6cd02b8ff1375fd65857390686ce8eca  /home/chuck/ai-src/worktrees/otel-default-scalar-options-20261020/src/otel/any_value.clj
