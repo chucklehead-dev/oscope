@@ -5,6 +5,10 @@ The same options apply to the `-M:native-server` launcher.
 
 ### Export encoding
 
+For the optional independent span codec on stock Jolt, see
+[stock-Jolt span encoding](stock-codec.md). It is separate from the legacy native
+JSON backend described below and is never enabled automatically.
+
 Version 2 storage sections may include `:export-options`. For example, ordinary
 memory storage can use compact JSON rows without changing persistence behavior:
 

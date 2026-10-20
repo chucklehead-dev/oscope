@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add default-off stock-Jolt span codec/cache options to the root application's
+  versioned file configuration and embedded API. Probe optional capabilities
+  before storage; reject unsupported stacks rather than silently downgrading.
+  Keep logs/metrics on configured JSON and preserve confirmed Durable writes.
+  The separately pinned minimal embedded profile remains unchanged.
+  Include real SDK record link contexts and verify recovered flags, ordered
+  trace state, false attributes and LinksJSON. Startup capability probes do
+  not count toward the fixture's ingestion observations.
+
 - Update the root exporter pin to its reviewed canonical stock-Jolt encoding
   integration. Keep encoding/configuration and mixed-signal defaults unchanged;
   the span-only experimental codec is not enabled. Preserve the separately

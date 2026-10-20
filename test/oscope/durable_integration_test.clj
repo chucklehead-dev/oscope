@@ -76,7 +76,10 @@
          "name" "durable.ingest"
          "kind" 2
          "startTimeUnixNano" (str (- now 2000000))
-         "endTimeUnixNano" (str (- now 1000000))}]}]}]})
+         "endTimeUnixNano" (str (- now 1000000))
+         "links" [{"traceId" "33333333333333333333333333333333"
+                   "spanId" "4444444444444444" "traceState" "bench=link" "flags" 129
+                   "attributes" [{"key" "valid" "value" {"boolValue" false}}]}]}]}]}]})
 
 (defn- log-wire [now]
   {"resourceLogs"
@@ -248,6 +251,19 @@
                         "select count() as n from otel_schema_migrations"))))
           (is (= 1 (:n (jdbc/fetch-one reader
                                         "select count() as n from otel_traces"))))
+          (let [row (jdbc/fetch-one reader
+                      "SELECT `Links.TraceId` AS trace_ids, `Links.SpanId` AS span_ids,
+                              `Links.TraceState` AS states, `Links.Attributes` AS attributes,
+                              LinksJSON AS links_json FROM otel_traces")]
+            (is (= ["33333333333333333333333333333333"] (:trace_ids row)))
+            (is (= ["4444444444444444"] (:span_ids row)))
+            (is (= ["bench=link"] (:states row)))
+            (is (= [{"valid" "false"}] (:attributes row)))
+            (is (= [{"span-context" {"trace-id" "33333333333333333333333333333333"
+                                      "span-id" "4444444444444444" "trace-flags" 129
+                                      "trace-state" [["bench" "link"]] "remote?" false}
+                     "attributes" {"valid" false}}]
+                   (json/read-str (:links_json row)))))
           (is (= 1 (:n (jdbc/fetch-one reader
                                         "select count() as n from otel_logs"))))
           (is (= 1 (:n (jdbc/fetch-one

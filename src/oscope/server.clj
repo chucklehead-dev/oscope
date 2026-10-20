@@ -166,7 +166,8 @@
   reader dbspecs are rejected before acquisition. Oscope binds all
   database effects to its owned connection. Optional
   `:export-options` selects only `:insert-format`, `:json-backend`,
-  `:datetime64-wire`, `:max-insert-bytes`, and `:owned-statement-output?`;
+  `:datetime64-wire`, `:max-insert-bytes`, `:owned-statement-output?`, and
+  the experimental span codec/cache flags (see the stock-codec guide);
   omitted settings retain defaults.
   Owned output requires Durable storage and the native-byte compact backend.
   The returned
@@ -212,6 +213,7 @@
                                   (:checkpoint-every-batches durability)))))))
      (throw (ex-info "oscope durability requires checkpoint! and flush! functions"
                      {:oscope.server/error true :type ::invalid-durability})))
+   (encoding/preflight! export-options)
    (let [readiness-handle (readiness/prepare! readiness (if durability :durable :local))
          conn (try (jdbc/connection db-spec)
                    (catch Throwable cause

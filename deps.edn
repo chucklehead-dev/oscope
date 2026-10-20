@@ -22,7 +22,7 @@
          :git/sha "649c993780a0f269938c9c6afa3bae7e9709bb48"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "6a98b94213648fcf52036d72019281fc37d0165c"}
+         :git/sha "1e7cc8d0a821e589ec087774d118effcaab1d234"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}
@@ -32,7 +32,13 @@
          :git/sha "0f51b99101bc5e840f957c073f87b6f877309a25"}}
 
  :aliases
- {:native-json-byte-batch
+ {:stock-span-codec
+  {:extra-deps {io.github.chucklehead-dev/jolt-codec
+                {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+                 :git/sha "98e93e2a6726c435d9b55ada9a088c2dbf5b1c99"
+                 :deps/root "incubator/codec"}}}
+
+  :native-json-byte-batch
   {:extra-deps {org.clojure/data.json
                 {:git/url "https://github.com/casselc/data.json.git"
                  :git/sha "2172061060a102ccab779f5adc5d77f8b83a81f6"}}}
