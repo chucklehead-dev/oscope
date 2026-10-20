@@ -53,6 +53,10 @@ jobs:
           echo "JOLT_CHDB_LIB=$task_dir/libchdb.so" >> "$GITHUB_ENV"
       - name: Check options and reject a no-op codec fixture
         run: |
+          "$JOLT_BIN" -Srepro -Sdeps '{:paths ["src" "test"]}' \
+            -m oscope.json-reader-test
+          "$JOLT_BIN" -Srepro -A:stock-json-reader -Sdeps '{:paths ["src" "test"]}' \
+            -m oscope.json-reader-native-test
           "$JOLT_BIN" -Srepro -M:test-export-options
           "$JOLT_BIN" -Srepro -A:stock-span-codec -Sdeps '{:paths ["src" "test"]}' \
             -m oscope.stock-codec-runner-test

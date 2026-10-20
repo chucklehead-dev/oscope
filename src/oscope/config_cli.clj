@@ -218,6 +218,8 @@
        :http-workers (get-in document [:server :http-workers])
        :http-queue-capacity (get-in document [:server :http-queue-capacity])
        :db-spec (config/storage->db-spec storage)}
+       (contains? (:ingest document) :json-reader)
+       (assoc :json-reader (get-in document [:ingest :json-reader]))
        (contains? storage :export-options) (assoc :export-options (:export-options storage))
        typed-schema (assoc :typed-schema typed-schema)))))
 

@@ -163,5 +163,7 @@
                     :checkpoint-every-batches
                     (or (:checkpoint-every-batches storage) 1000)}
        :db-spec db-spec}
+       (contains? (:ingest document) :json-reader)
+       (assoc :json-reader (get-in document [:ingest :json-reader]))
        (contains? storage :export-options) (assoc :export-options (:export-options storage))
        typed (assoc :typed-schema typed)))))

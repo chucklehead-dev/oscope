@@ -169,6 +169,9 @@
   `:datetime64-wire`, `:max-insert-bytes`, `:owned-statement-output?`, and
   the experimental span codec/cache flags (see the stock-codec guide);
   omitted settings retain defaults.
+  Optional `:json-reader :experimental-stock` uses the separately selected
+  reader component for HTTP ingress only; default `:configured` is unchanged.
+  Capability loading occurs before JDBC acquisition; no parser close is needed.
   Owned output requires Durable storage and the native-byte compact backend.
   The returned
   `:stop!` is idempotent and retries the first incomplete ownership boundary
@@ -181,10 +184,11 @@
   default and no internal CAS phase is inferred."
   ([] (start! {}))
   ([{:keys [host port db-spec durability http-workers http-queue-capacity
-            typed-schema readiness durability-diagnostic! export-options]
+            typed-schema readiness durability-diagnostic! export-options json-reader]
      :or {host default-host port default-port db-spec default-db-spec
           http-workers default-http-workers
-          http-queue-capacity default-http-queue-capacity export-options {}}}]
+          http-queue-capacity default-http-queue-capacity export-options {}
+          json-reader :configured}}]
    (encoding/validate! export-options (durable-dbspec? db-spec))
    (when-not (= default-host host)
      (throw (ex-info "oscope standalone receiver must bind to 127.0.0.1"
@@ -214,7 +218,8 @@
      (throw (ex-info "oscope durability requires checkpoint! and flush! functions"
                      {:oscope.server/error true :type ::invalid-durability})))
    (encoding/preflight! export-options)
-   (let [readiness-handle (readiness/prepare! readiness (if durability :durable :local))
+   (let [read-json (otlp/open-json-reader json-reader)
+         readiness-handle (readiness/prepare! readiness (if durability :durable :local))
          conn (try (jdbc/connection db-spec)
                    (catch Throwable cause
                      (if readiness-handle
@@ -268,13 +273,16 @@
                                    (if durability
                                      (otlp/handler
                                       exporter
-                                      {:after-success!
+                                      (cond-> {:after-success!
                                        #(complete-durability-boundary!
                                          durability conn
                                          batches-since-checkpoint
                                          durability-lock durability-observation
-                                         durability-diagnostic!)})
-                                     (otlp/handler exporter))
+                                         durability-diagnostic!)}
+                                        (not= :configured json-reader) (assoc :json-read read-json)))
+                                     (if (= :configured json-reader)
+                                       (otlp/handler exporter)
+                                       (otlp/handler exporter {:json-read read-json})))
                                    :workbench-handler
                                    (workbench/handler conn)
                                    :events-handler (events/handler conn)

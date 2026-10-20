@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a default-off stock-Jolt JSON reader for HTTP ingestion, selectable in
+  version-2 configuration or server startup options. Resolve its optional
+  component before JDBC acquisition; preserve byte limits, fallback semantics,
+  telemetry values and Durable confirmation behavior. Keep pure SDK capture and
+  existing parser defaults unchanged.
+
 - Add default-off stock-Jolt span codec/cache options to the root application's
   versioned file configuration and embedded API. Probe optional capabilities
   before storage; reject unsupported stacks rather than silently downgrading.
