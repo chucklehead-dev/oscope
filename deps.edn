@@ -4,20 +4,25 @@
 
  :deps {io.github.casselc/otel
         {:git/url "https://github.com/casselc/otel.git"
-         :git/sha "7878a2eb4340519d6843d13490a5a7c99ebade8a"}
+         :git/sha "26186ce79941e84e0cc67eb148dd8dd43b4e1880"}
         io.github.casselc/jolt-http
         {:git/url "https://github.com/casselc/jolt-http.git"
          :git/sha "35d1d7f9ebdc796ee9bd4c80745298b2c8b7fdf8"}
         io.github.chucklehead-dev/jolt-chdb
         {:git/url "https://github.com/chucklehead-dev/jolt-chdb.git"
-         :git/sha "3d766fa295b0e98c30f275d0a334db92e6dd998c"}
+         :git/sha "3314b79e8a234fafdf5231439a0323c878a40040"}
         ;; Select the canonical time provider independently of transitive order.
         jolt-lang/db
         {:git/url "https://github.com/casselc/db.git"
          :git/sha "cb06349c7ffe55e423021e402d4f182f4a27bcf7"}
+        ;; Preserve the already selected provider, including Intel Homebrew's
+        ;; OpenSSL path. Do not let transitive version traversal choose it.
+        jolt-lang/jolt-crypto
+        {:git/url "https://github.com/casselc/jolt-crypto.git"
+         :git/sha "649c993780a0f269938c9c6afa3bae7e9709bb48"}
         io.github.chucklehead-dev/jolt-otel-clickhouse
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
-         :git/sha "2c54b98d35464c8fc7c737b0c92a0042272b589a"}
+         :git/sha "60e1f69bbb06766c36ca9ef0c34af51a97e69c34"}
         io.github.chucklehead-dev/jolt-otel-viewer
         {:git/url "https://github.com/chucklehead-dev/jolt-otel-viewer.git"
          :git/sha "5723a7c28c3bb3ae7cb27f9856b90463e77df523"}

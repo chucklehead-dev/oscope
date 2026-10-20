@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Qualify the root application's published SDK, driver and exporter pins on
+  stock Jolt 0.8.23, preserving ordinary encoding and mixed-signal defaults.
+  Do not automatically enable the experimental span-only codec or preparation
+  overlap. The separate minimal embedded dependency profile keeps its own pins.
+  Make the already-selected crypto provider explicit, preserving its Intel
+  Homebrew loader fix rather than changing the application's effective code.
+
 - Update the root exporter dependency to reduce allocation when a span contains
   exactly one event. SDK, driver, JSON backends and the separate embedded profile
   keep their existing pins. No throughput improvement or new export mode is claimed.

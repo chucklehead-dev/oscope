@@ -1,0 +1,4 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+oscope HTTP overload load {:attempts 10000, :rejected 10000, :max-queue-depth 1, :rss-before-kib 631220, :rss-after-kib 646324}
+
+Ran 351 tests. 3452 assertions passed, 0 failures, 0 errors.

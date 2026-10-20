@@ -1,0 +1,17 @@
+## Pin Consistency
+
+`deps.edn` root pins match the stated oracle exactly: otel `26186ce7...`, jolt-chdb driver `3314b79e...`, jolt-otel-clickhouse exporter `60e1f69b...`, and jolt-crypto `649c993780a0...`. `dependency_resolution_test.clj`'s `otel-root`/`chdb-root`/`exporter-sha` constants and `runtime_floor_test.clj`'s `root-driver-sha` all reference these same SHAs, so the test oracles are checking the pins that are actually declared, not stale values. `:jolt/min-version "0.8.6"` matches `runtime-floor` in the floor test. No app runtime/options/defaults block exists in the read ranges to contradict the changelog's "no behavior change" claims.
+
+## Negative-control non-vacuity
+
+The red-control tests (`previous-published-stock-pins-are-real-selection-controls`, `prior-*-is-a-causal-red-control`, etc.) genuinely exercise `-Sdeps` overrides and assert the *old* root resolves and is rejected by the *current* exact-pin oracle — they don't assert API incompatibility, matching the comment language ("without claiming their APIs are invalid"). These are real, non-tautological negative controls.
+
+## Crypto provider claim-scope gap
+
+`crypto-provider-is-explicit-and-matches-the-qualified-app-graph` (dependency_resolution_test.clj:170–181) only confirms (a) exactly one `jolt-crypto` root resolves, (b) it matches the explicit pin, and (c) substituting the upstream `5effcc89...` SHA changes the resolved root string. It does **not** compare classpath dependency frequencies before/after adding the explicit pin. So the stronger claim — that making the provider explicit didn't change which physical artifact was already selected transitively (vs. just picking *a* valid one) — is asserted in prose but not verified by this test. That's a real claim-scope gap worth closing with an actual frequency/count comparison test, not a blocker but worth flagging.
+
+## Other notes
+
+- `runtime_floor_test.clj:9-12` defines `ordinary-driver-sha` and `woven-qualification-driver-sha` as identical literals — harmless if intentional (same driver used in two contexts) but worth a second look since distinct names suggest they were meant to diverge.
+- Nothing in the read files confirms or denies the PR142/CI-green/merge-target claim — out of scope for these four files.
+- No evidence of hidden source-contract or default-behavior changes in the reviewed excerpts.
