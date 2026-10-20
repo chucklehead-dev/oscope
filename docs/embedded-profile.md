@@ -29,6 +29,12 @@ The checked-in profile is the dependency authority. At this revision it pins
 not copy older pin values from issue history or from an application's distinct
 resolved graph.
 
+The root application and this profile can select different native chDB versions.
+When testing both, leave `JOLT_CHDB_LIB` unset and install each profile's versioned
+native asset. A global override points both processes at the same library and
+can correctly fail the older profile's version check. Use an override only with
+the matching profile; it does not upgrade that profile's dependencies.
+
 The resolved profile tree has been checked for these exact source selections:
 one direct chDB/DB/OTel/exporter root wins each older transitive declaration.
 The existing **Linux x86-64 local-POSIX** fixture exercises authoritative SQLite
