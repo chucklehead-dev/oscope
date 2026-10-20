@@ -3,7 +3,9 @@
 Base Oscope `4c05c63541807f39296c1ebc963d4b304b858e92`.
 Tested exporter preflight slice `42cc96c6b04ed86efa980c76b6112f2c459798a4`
 (PR148), independent codec `0af1008185cf84577298d3a0a0b2db87b97bddd5`.
-The app pin is provisional until PR148 clears full CI and canonical merge.
+PR148 is now merged at `01c991bc4431b1cf90f3a26359c95b3aecf07ceb` after all
+checks passed; its tree and parents were checked against the reviewed/tested
+slice. The final app pin selects this canonical merge, not the provisional head.
 
 Official stock Jolt0.8.23 binary SHA256:
 `7bf7acae4b4bcb5c27b3651fa4a94d2d4e6a7fc43b5b821def2f8be3d6f00e94`.

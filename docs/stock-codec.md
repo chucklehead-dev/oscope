@@ -21,6 +21,17 @@ io.github.chucklehead-dev/jolt-codec
  :deps/root "incubator/codec"}
 ```
 
+For standalone Durable storage from the root checkout, select the published
+dependency stack without the sibling-checkout overrides in `:durable-server-dev`:
+
+```sh
+jolt -Srepro -A:stock-span-codec -m oscope.durable-server-main --config /path/to/oscope.edn
+```
+
+Set `JOLT_CHDB_LIB` to the qualified native library if it is not installed at
+the driver's expected path. Local workspace commands require the Chez wrapper.
+The ordinary `:server` launcher is not the Durable writer owner.
+
 In a version 2 config, for example:
 
 ```clojure
