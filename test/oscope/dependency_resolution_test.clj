@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "01c991bc4431b1cf90f3a26359c95b3aecf07ceb")
+  "34cc810cb006008aaaed3ad8d5bdcc027747d1f8")
 
 (def ^:private prior-singleton-exporter-sha
   "4a42716286177fd0c033d69deb708b29dd162933")
