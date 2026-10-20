@@ -75,7 +75,34 @@ or its hashed sources during a run. Failures retain their store. No concurrent
 local compiler, native benchmark or external-agent review ran in the timed
 windows. Original small logs/load observations remain under workspace evidence.
 
-This benchmark slice still needs independent review before a final PR. It is
+The initial benchmark slice has independent review as recorded below. It is
 not S3/Langfuse, all signal/value shapes, maximum sustainable concurrency,
 complete app packaging, Rust-relative or target qualification. The original
 ~25k p50/~20k p99 library objective remains active and unmet.
+
+## Review and next bounded diagnostic
+
+Claude read-only review approved the source/timing/recovery/interpretation
+slice at34826a1 with no blockers. Its one count sentence incorrectly describes
+both arms as9codec/stream calls; the actual reports/source require **0/0** for
+configured and **9/9** for codec. Codex verified these and owns executed gates.
+The reviewer recommends matched-order replication or separating document read
+from body-copy/transport before a stronger attribution claim. No broader
+qualification follows from that advisory review.
+
+Selected data.json0f51b99's `next-string-special` separately searches the whole
+remaining document for quote and backslash. A valid array of unescaped empty
+strings makes every absent-backslash search scan the suffix. The actual helper
+call/output control in `suffix-search-control.clj` yields16/32/64/128calls for
+49/97/193/385input characters; source-modeled escape-search visits are
+392/1552/6176/24640. This is a quadratic work pattern, not a measured native
+instruction count. Its contribution to the Unicode-escaped socket workload is
+still unproven. Tracked at jolt-aspect-packs#184 (the data.json fork disables
+issues). Check current source before changing pins and preserve existing fork
+Unicode/cursor/error fixes. Compare Reader-backed `json/read` and bounded/fused
+scanning before considering a new parser implementation.
+
+The [follow-up reader screen](reader-layer-results.md) reuses the existing
+fork's native token reader on stock Jolt. It preserves the earlier work and
+separates the strong string-array win from the smaller actual-wire parsing
+improvement. Application pins and confirmed-throughput claims are unchanged.
