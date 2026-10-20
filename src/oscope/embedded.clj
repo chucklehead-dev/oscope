@@ -511,7 +511,8 @@
   (the default), shutdown compacts committed WAL into a new checkpoint.
   Optional `:typed-schema` is an operator-approved manifest and registry.
   Optional `:export-options` selects only `:insert-format`, `:json-backend`,
-  `:datetime64-wire`, `:max-insert-bytes`, and `:owned-statement-output?`; omitted settings retain
+  `:datetime64-wire`, `:max-insert-bytes`, `:owned-statement-output?`, and the
+  experimental span codec/cache flags (see the stock-codec guide); omitted settings retain
   exporter defaults. Streaming belongs to the writer's `:db-spec` instead.
   Native byte/owned modes require the qualified runtime and JSON backend.
 
@@ -546,6 +547,7 @@
   (when (or (sdk/tracer-provider) (sdk/meter-provider) (sdk/logger-provider))
     (invalid! "oscope embedded requires an unconfigured process OTel SDK"
               ::sdk-already-configured))
+  (encoding/preflight! export-options)
   (let [signals (sdk-signals sdk-options)
         ;; URL/header resolution is deliberately before JDBC and worker startup.
         remote-exporter (when span-pipelines

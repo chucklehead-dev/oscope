@@ -3,6 +3,7 @@
   One native writer lifetime per invocation; reader receipt checks are unchanged."
   (:require [clojure.test :as test]
             [jdbc.chdb.native :as native]
+            [jdbc.chdb.json-each-row :as row-encoder]
             [oscope.durable-native-child-runner :as child]
             [oscope.embedded :as embedded]
             [oscope.server :as server]))
@@ -36,6 +37,14 @@
                   "stream-fallback" {:insert-format :json-compact-each-row
                                      :json-backend :configured
                                      :datetime64-wire :raw-ticks}
+                  "stock-codec" {:insert-format :json-compact-each-row
+                                 :json-backend :native-guarded-byte-batch
+                                 :owned-statement-output? true
+                                 :datetime64-wire :raw-ticks
+                                 :experimental-span-codec? true
+                                 :experimental-span-payload-cache? true
+                                 :experimental-span-flat-map-cache? true
+                                 :experimental-span-nested-fragment-cache? true}
                   (throw (ex-info "Unknown encoding fixture mode" {})))
         index (case consumer "standalone" "2" "embedded" "4" "embedded-typed" "3"
                     (throw (ex-info "Unknown encoding fixture consumer" {})))
@@ -45,10 +54,18 @@
         insert native/chdb-stream-insert-n
         stream-calls (atom 0)
         require-json? (seq extra)
+        stock-codec? (= mode "stock-codec")
+        _ (when (and stock-codec? require-json?)
+            (throw (ex-info "Stock codec fixture does not use the legacy JSON companion" {})))
+        codec-var (when stock-codec?
+                    (require 'jolt.codec.experimental)
+                    (ns-resolve 'jolt.codec.experimental 'encode-prefixed-records))
+        original-codec (when codec-var @codec-var)
+        codec-calls (atom 0)
         {:keys [adapter companion]} (when require-json? (json-companion-capability))
         original-adapter (when adapter @adapter)
         observations (atom {:calls 0 :bound 0 :empty-bound 0})
-        overrides
+        json-overrides
         (if require-json?
           {adapter
            (fn [value]
@@ -63,7 +80,13 @@
                           (update :empty-bound inc)))))
              (original-adapter value))}
           {})
-        streaming? (contains? #{"stream" "stream-budget" "stream-fallback"} mode)
+        overrides (if stock-codec?
+                    (assoc json-overrides
+                           codec-var (fn [& args] (swap! codec-calls inc) (apply original-codec args))
+                           #'row-encoder/open-encoder
+                           (fn [& _] (throw (ex-info "Stock codec fixture loaded legacy JSON writer" {}))))
+                    json-overrides)
+        streaming? (contains? #{"stream" "stream-budget" "stream-fallback" "stock-codec"} mode)
         handoff (fn [args]
                   (if (and streaming? (= consumer "standalone"))
                     ;; This fixture must route options from its versioned file,
@@ -109,11 +132,16 @@
                       ;; Before the child emits its terminal receipt/exits.
                       ;; A no-op fixture must not qualify streaming merely by
                       ;; accepting configuration or keeping the old assertions.
-                      (when (contains? #{"stream" "stream-budget"} mode)
+                      (when (contains? #{"stream" "stream-budget" "stock-codec"} mode)
                         (when-not (pos? @stream-calls)
                           (throw (ex-info "Native stream execution was not observed"
                                           {:type ::unobserved-stream})))
                         (println :stream-native-calls @stream-calls))
+                      (when stock-codec?
+                        (when-not (pos? @codec-calls)
+                          (throw (ex-info "Explicit span codec execution was not observed"
+                                          {:type ::unobserved-stock-codec})))
+                        (println :stock-codec-calls @codec-calls))
                       (when (= mode "stream-fallback")
                         (when-not (zero? @stream-calls)
                           (throw (ex-info "Ordinary statements unexpectedly used streaming"

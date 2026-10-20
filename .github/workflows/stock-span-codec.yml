@@ -1,0 +1,72 @@
+name: stock-span-codec
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/stock-span-codec.yml
+      - deps.edn
+      - src/oscope/**
+      - test/oscope/**
+
+permissions:
+  contents: read
+
+jobs:
+  stock-mixed-signals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      JOLT_AOT_CACHE: '0'
+      JOLT_NO_USER_DEPS: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Select official stock Jolt and qualified native library
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_dir=$(mktemp -d "$RUNNER_TEMP/oscope-stock-codec.XXXXXXXX")
+          task_archive="$task_dir/jolt.tar.gz"
+          curl -fsSL --connect-timeout 15 --max-time 180 \
+            https://github.com/jolt-lang/jolt/releases/download/v0.8.23/jolt-v0.8.23-x86_64-linux.tar.gz -o "$task_archive"
+          printf '%s  %s\n' 90031be43241e61d0788a2f1bbd3da56d8f4324ae9fa87271f9637b43a6071f2 "$task_archive" | sha256sum -c -
+          task_member=$(tar -tzf "$task_archive" | grep -E '(^|/)jolt$')
+          test "$(printf '%s\n' "$task_member" | wc -l)" = 1
+          tar --extract --gzip --to-stdout --file "$task_archive" -- "$task_member" > "$task_dir/jolt"
+          printf '%s  %s\n' 7bf7acae4b4bcb5c27b3651fa4a94d2d4e6a7fc43b5b821def2f8be3d6f00e94 "$task_dir/jolt" | sha256sum -c -
+          chmod 755 "$task_dir/jolt"
+          test "$("$task_dir/jolt" --version)" = 'jolt v0.8.23'
+          rm -- "$task_archive"
+          echo "JOLT_BIN=$task_dir/jolt" >> "$GITHUB_ENV"
+          task_archive="$task_dir/native.tar.gz"
+          curl -fsSL --connect-timeout 15 --max-time 300 \
+            https://github.com/chdb-io/chdb-core/releases/download/v26.9.0/linux-x86_64-libchdb.tar.gz -o "$task_archive"
+          printf '%s  %s\n' c6398bcc71dc58d12fb81548540aacd5d8248830ec81cec537f51c114670543b "$task_archive" | sha256sum -c -
+          task_member=$(tar -tzf "$task_archive" | grep -E '(^|/)libchdb\.so$')
+          test "$(printf '%s\n' "$task_member" | wc -l)" = 1
+          tar --extract --gzip --to-stdout --file "$task_archive" -- "$task_member" > "$task_dir/libchdb.so"
+          printf '%s  %s\n' a7d22ade86e1de82b187adf572b569a6034600ce932c52b0acb8c97b82430557 "$task_dir/libchdb.so" | sha256sum -c -
+          rm -- "$task_archive"
+          echo "JOLT_CHDB_LIB=$task_dir/libchdb.so" >> "$GITHUB_ENV"
+      - name: Check options and reject a no-op codec fixture
+        run: |
+          "$JOLT_BIN" -Srepro -M:test-export-options
+          "$JOLT_BIN" -Srepro -A:stock-span-codec -Sdeps '{:paths ["src" "test"]}' \
+            -m oscope.stock-codec-runner-test
+          "$JOLT_BIN" -Srepro -Sdeps '{:paths ["src" "test"]}' \
+            -m oscope.stock-codec-legacy-probe missing-codec
+          "$JOLT_BIN" -Srepro -Sdeps \
+            '{:paths ["src" "test"] :deps {io.github.chucklehead-dev/jolt-otel-clickhouse {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git" :git/sha "0fba3865810d16b9abd544ed720a57a6e079365a"}}}' \
+            -m oscope.stock-codec-legacy-probe
+      - name: Require actual SDK and socket capture plus independent recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          for task_consumer in embedded standalone embedded-typed; do
+            timeout --signal=TERM --kill-after=5s 120s "$JOLT_BIN" \
+              -Srepro -A:test-durable:stock-span-codec \
+              -m oscope.export-options-native-test-runner stock-codec "$task_consumer"
+          done

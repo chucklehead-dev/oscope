@@ -1,0 +1,23 @@
+Focused option/dependency gate: Ran 34 tests. 439 assertions passed, 0 failures, 0 errors.
+No-op fixture controls: Ran 1 tests. 3 assertions passed, 0 failures, 0 errors.
+
+embedded: terminal0
+:durable-native-child reader 1 :exit 0 :terminal true :settled true :valid true
+:stream-native-calls 5
+:stock-codec-calls 5
+:durable-native-receipt fixture 4 1 18 0 0 1
+
+standalone: terminal0
+:durable-native-child reader 0 :exit 0 :terminal true :settled true :valid true
+:stream-native-calls 1
+:stock-codec-calls 1
+:durable-native-receipt fixture 2 1 40 0 0 1
+
+embedded-typed: terminal0
+:stream-native-calls 1
+:stock-codec-calls 1
+:durable-native-receipt fixture 3 1 8 0 0 1
+
+Actual incompatible-stack controls: both terminal0
+:actual-missing-codec-rejected-before-storage
+:actual-legacy-exporter-rejected-before-storage

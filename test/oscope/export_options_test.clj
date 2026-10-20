@@ -19,6 +19,54 @@
             :json-backend :native-guarded-byte-batch :owned-statement-output? true})
 (defn- error [f] (try (f) nil (catch clojure.lang.ExceptionInfo e e)))
 
+(deftest stock-span-codec-options-have-explicit-prerequisites
+  (let [codec (assoc owned :experimental-span-codec? true)
+        caches [:experimental-span-payload-cache? :experimental-span-flat-map-cache?
+                :experimental-span-nested-fragment-cache?]]
+    (is (identical? codec (encoding/validate! codec true)))
+    (doseq [cache caches enabled? [false true]
+            :let [options (assoc codec cache enabled?)]]
+      (is (identical? options (encoding/validate! options true))))
+    (doseq [cache caches]
+      (is (= :oscope.export-options/incompatible-span-cache
+             (:type (ex-data (error #(encoding/validate! (assoc owned cache true) true))))))
+      (is (= {cache false} (encoding/validate! {cache false} false))))
+    (doseq [options [(dissoc codec :owned-statement-output?)
+                    (assoc codec :owned-statement-output? false)
+                    {:experimental-span-codec? true}]]
+      (is (= :oscope.export-options/incompatible-span-codec
+             (:type (ex-data (error #(encoding/validate! options true)))))))
+    (doseq [key (conj caches :experimental-span-codec?) value [nil 1 "PRIVATE-CANARY"]]
+      (let [failure (error #(encoding/validate! (assoc codec key value) true))]
+        (is (= :oscope.export-options/invalid-options (:type (ex-data failure))))
+        (is (not (.contains (str failure) "PRIVATE-CANARY")))))))
+
+(deftest stock-span-codec-config-roundtrips-without-changing-authority
+  (let [options (assoc owned :experimental-span-codec? true
+                            :experimental-span-payload-cache? true
+                            :experimental-span-flat-map-cache? true
+                            :experimental-span-nested-fragment-cache? true)
+        resolved (config/resolve-config
+                   [[:file {:version 2 :storage {:type :durable-local :root "/not-opened"
+                                                :export-options options}}]])]
+    (is (= options (get-in (:config resolved) [:storage :export-options])))
+    (is (= options (get-in (config/parse (config/encode (:config resolved)))
+                          [:storage :export-options])))))
+
+(deftest span-codec-unavailability-rejects-before-application-acquisition
+  (let [effects (atom [])
+        options (assoc owned :experimental-span-codec? true)]
+    (with-redefs [jdbc/connection (fn [& _] (swap! effects conj :jdbc))
+                  ;; Simulate an old exporter with no public capability probe.
+                  clojure.core/ns-resolve (fn [& _] nil)]
+      (doseq [start [embedded/start! server/start!]]
+        (let [failure (error #(start {:db-spec {:vendor "chdb-durable"}
+                                     :durability {:checkpoint! identity :flush! identity}
+                                     :export-options options}))]
+          (is (= ::encoding/span-codec-unavailable (:type (ex-data failure))))
+          (is (nil? (ex-cause failure)))))
+      (is (empty? @effects)))))
+
 (deftest startup-reaches-the-pinned-exporters-version-fence-before-ddl
   (doseq [wire [:auto :iso-utc :raw-ticks] kind [:embedded :standalone]]
     (let [closed (atom false) ddl (atom 0)
