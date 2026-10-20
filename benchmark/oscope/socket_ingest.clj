@@ -106,7 +106,7 @@
                          :datetime64-wire :raw-ticks})
 
 (defn writer! [root mode n rounds]
-  (ensure! (contains? #{"configured" "codec" "codec-native-reader" "codec-fused-finder" "codec-whole-reader"} mode) :known-mode)
+  (ensure! (contains? #{"configured" "codec" "codec-native-reader" "codec-fused-finder" "codec-whole-reader" "codec-library-reader"} mode) :known-mode)
   (ensure! (and (<= 1 n 10000) (<= 1 rounds 32)) :bounded-workload)
   (ensure! (not (.exists (java.io.File. (str root "/seal.edn")))) :fresh-output)
   (ensure! (not (.exists (java.io.File. (str root "/objects")))) :fresh-store)
@@ -115,7 +115,8 @@
   (let [now (* (System/currentTimeMillis) 1000000)
         body (.getBytes (json/write-str (payload n now)) "UTF-8")
         _ (ensure! (<= (alength body) otlp/max-body-bytes) :current-receiver-body-limit)
-        codec? (contains? #{"codec" "codec-native-reader" "codec-fused-finder" "codec-whole-reader"} mode)
+        codec? (contains? #{"codec" "codec-native-reader" "codec-fused-finder" "codec-whole-reader" "codec-library-reader"} mode)
+        library? (= mode "codec-library-reader")
         fused? (= mode "codec-fused-finder")
         finder-var (when fused? (ns-resolve 'clojure.data.json 'next-string-special))
         _ (when fused? (ensure! finder-var :explicit-finder-seam-available))
@@ -137,6 +138,7 @@
                     (ns-resolve 'jolt.codec.experimental 'encode-prefixed-records))
         codec-count (atom 0) stream-count (atom 0) reader-requests (atom 0)
         finder-requests (atom 0)
+        library-results (atom {:accepted 0 :declined 0})
         active? (atom false) phases (atom {})
         observe (fn [label f]
                   (fn [& args]
@@ -161,7 +163,23 @@
                                           #(apply original-parse args)))
                              :else (apply original-parse args))))
         original-json-read json/read-str
-        observed-json-read (observe :json-document-read original-json-read)
+        configured-read (fn [source options]
+                          ;; Capture the function before observation so numeric
+                          ;; token/fallback reads are not counted as documents.
+                          (apply original-json-read source (mapcat identity options)))
+        library-try (when library?
+                      (require 'jolt.codec.reader.experimental)
+                      @(ns-resolve 'jolt.codec.reader.experimental 'try-read-string))
+        library-reader (when library?
+                         ((ns-resolve 'jolt.codec.reader.experimental 'open-reader)
+                           {:number-reader configured-read :fallback-reader configured-read}))
+        document-read (if-not library? original-json-read
+                        (fn [source & options]
+                          (let [options (apply hash-map options)
+                                result (library-try library-reader source options)]
+                            (swap! library-results update (if result :accepted :declined) inc)
+                            (if result (first result) (configured-read source options)))))
+        observed-json-read (observe :json-document-read document-read)
         original-codec (when codec-var @codec-var)
         overrides (cond-> {#'otlp/parse-json-body (observe :body-read-and-json-parse request-parser)
                            #'json/read-str (fn [& args]
@@ -199,6 +217,7 @@
             (reset! stream-count 0)
             (reset! reader-requests 0)
             (reset! finder-requests 0)
+            (reset! library-results {:accepted 0 :declined 0})
             (post! (:port lifecycle) body)
             (System/gc)
             (reset! active? true)
@@ -230,6 +249,8 @@
                           :native-string-reader? (and reader? (not whole?))
                           :whole-reader? whole? :reader-requests @reader-requests
                           :fused-finder? fused? :finder-requests @finder-requests
+                          :library-reader? library? :library-results @library-results
+                          :library-reader-source (when library? (str (io/resource "jolt/codec/reader/experimental.clj")))
                           :scope "instrumented sequential local sockets, pre-encoded client body; small sample not population-tail proof"}]
               (ensure! (= (if codec? (inc rounds) 0) @codec-count) :observed-codec-path)
               (ensure! (= (if codec? (inc rounds) 0) @stream-count) :observed-native-path)
@@ -240,6 +261,8 @@
                                  :phase-counts (into {} (map (fn [[k v]] [k (count v)]) @phases))})))
               (ensure! (= (if reader? (inc rounds) 0) @reader-requests) :observed-reader-requests)
               (ensure! (= (if fused? (inc rounds) 0) @finder-requests) :observed-finder-requests)
+              (ensure! (= {:accepted (if library? (inc rounds) 0) :declined 0} @library-results)
+                       :observed-actual-library-acceptance)
               (spit (str root "/writer.edn") (pr-str report))
               (ensure! (= {:status :closed :phase :closed} (server/stop! lifecycle)) :writer-closed)
               (println :socket-writer-closed {:mode mode :rows rows :wire-bytes (alength body)}))
