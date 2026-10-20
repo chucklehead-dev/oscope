@@ -1,0 +1,27 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+:qualified-native-version 26.9.0
+:durable-native-child reader 2 :exit 0 :terminal true :settled true :valid true
+:durable-native-child reader 2 :exit 1 :terminal true :settled true :valid true
+:durable-native-child reader 2 :exit 143 :terminal true :settled false :valid false
+:durable-native-child reader 2 :exit 0 :terminal true :settled true :valid true
+:durable-native-child reader 2 :exit 143 :terminal true :settled false :valid false
+:durable-native-child fixture 0 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 1 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 2 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 3 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 4 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 5 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 0 :exit 0 :terminal true :settled false :valid true
+:durable-native-child fixture 0 :exit 1 :terminal false :settled false :valid false
+:durable-native-child fixture 0 :exit 143 :terminal true :settled false :valid false
+:durable-native-child reader 0 :exit 0 :terminal true :settled true :valid true
+:durable-native-child reader 0 :exit 143 :terminal true :settled false :valid false
+
+Ran 131 tests. 1719 assertions passed, 0 failures, 0 errors.
+:durable-native-child fixture 0 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 1 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 2 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 3 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 4 :exit 0 :terminal true :settled true :valid true
+:durable-native-child fixture 5 :exit 0 :terminal true :settled true :valid true
+:durable-native-total {:test 6, :pass 81, :fail 0, :error 0}

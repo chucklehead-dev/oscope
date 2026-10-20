@@ -1,0 +1,1 @@
+{:scope :saved-effective-classpath-receipts, :only-exporter-source-root-changed true, :other-source-root-frequencies-unchanged true, :changed-provider-negative-control :rejected, :experimental-codec-not-resolved true}

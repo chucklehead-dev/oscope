@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "60e1f69bbb06766c36ca9ef0c34af51a97e69c34")
+  "6a98b94213648fcf52036d72019281fc37d0165c")
 
 (def ^:private prior-singleton-exporter-sha
   "4a42716286177fd0c033d69deb708b29dd162933")
@@ -158,6 +158,9 @@
             "3d766fa295b0e98c30f275d0a334db92e6dd998c" "chucklehead-dev_jolt-chdb.git" chdb-root]
            ["io.github.chucklehead-dev/jolt-otel-clickhouse" "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
             "2c54b98d35464c8fc7c737b0c92a0042272b589a" "chucklehead-dev_jolt-otel-clickhouse.git"
+            (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/" exporter-sha "/")]
+           ["io.github.chucklehead-dev/jolt-otel-clickhouse" "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+            "60e1f69bbb06766c36ca9ef0c34af51a97e69c34" "chucklehead-dev_jolt-otel-clickhouse.git"
             (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/" exporter-sha "/")]]]
     (let [coordinate (str "{:deps {" library " {:git/url \"" url
                           "\" :git/sha \"" previous "\"}}}")

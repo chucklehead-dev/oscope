@@ -1,0 +1,3 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+Unhandled exception (AssertionError): Assert failed: (= :supported (jdbc.chdb.native/durable-capability))
+  at 1:91
