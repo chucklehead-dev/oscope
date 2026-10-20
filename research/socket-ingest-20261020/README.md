@@ -111,3 +111,12 @@ The [confirmed socket follow-up](reader-pair-results.md) uses matched JSON
 revisions, handler-scoped reader bindings and independent recovery. Its small
 pooled gain, worse maximum sample and higher estimated allocation do **not**
 justify enabling the native token reader by default.
+
+Two further matched confirmed pairs are recorded separately:
+
+- [Fused scalar finder](fused-pair-results.md): parser time improved, but no
+  overall throughput win was established.
+- [Recovered whole-document reader](whole-reader-results.md): the first local
+  pair showed about 2x confirmed throughput with lower estimated allocation.
+  This is promising source-mode research, not a default/pin change or a
+  sustained-tail, general conformance or original throughput-target result.

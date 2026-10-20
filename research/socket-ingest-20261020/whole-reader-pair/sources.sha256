@@ -1,0 +1,10 @@
+f4e8d8ad4f9c43de4a400bb15c58731cca10302c2cab2bab4d6314ae462f970b  benchmark/oscope/socket_ingest.clj
+44997f64c32d19252c97d2d76ec97f578a85bfe7a3bd8e948ce0d04674c7df64  deps.edn
+916750553dd13a6a20960f92199b761788d5b93195ebb2b99467081c52665ca9  src/oscope/server.clj
+85498e789a873d1e70e5f3032bb10660c00b4704bfc3162510ba04b0ca117c14  src/oscope/otlp.clj
+fe50445cba051e5bdf55687ef1f2ed575bb9bd071f1cbedf1dd0b72ed3972a87  src/oscope/export_options.clj
+c4242289fc47360b102163ed52c2b1fa465175d289ab7114b99718f817df5a64  research/socket-ingest-20261020/run-whole-reader-pair.sh
+e128bcdefbaf2bd72497c98a8c53e1b052d9cf6f0385226bab7c40fa773b182d  /home/chuck/ai-src/worktrees/data-json-whole-string-reader-20261005/src/main/clojure/clojure/data/json.clj
+99bacddcf512aac8b2ff72de6055703133947f3fa864f50edbd2cf984780c6fa  /home/chuck/ai-src/worktrees/data-json-whole-string-reader-20261005/src/main/clojure/clojure/data/json/jolt_native.clj
+71c4d2f536e6d3f836e30d10557e94d31ac959f3b5ea1c3643294b5e8b30889e  /home/chuck/ai-src/worktrees/data-json-whole-string-reader-20261005/src/main/clojure/clojure/data/json/jolt_string_reader.ss
+9d8f948369eec6466b44ff05c0b73223f1a6972501b2cb5410d29f2c90d38a88  /home/chuck/ai-src/worktrees/data-json-whole-string-reader-20261005/src/main/clojure/clojure/data/json/jolt_whole_reader.ss

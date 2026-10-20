@@ -106,7 +106,7 @@
                          :datetime64-wire :raw-ticks})
 
 (defn writer! [root mode n rounds]
-  (ensure! (contains? #{"configured" "codec" "codec-native-reader"} mode) :known-mode)
+  (ensure! (contains? #{"configured" "codec" "codec-native-reader" "codec-fused-finder" "codec-whole-reader"} mode) :known-mode)
   (ensure! (and (<= 1 n 10000) (<= 1 rounds 32)) :bounded-workload)
   (ensure! (not (.exists (java.io.File. (str root "/seal.edn")))) :fresh-output)
   (ensure! (not (.exists (java.io.File. (str root "/objects")))) :fresh-store)
@@ -115,17 +115,28 @@
   (let [now (* (System/currentTimeMillis) 1000000)
         body (.getBytes (json/write-str (payload n now)) "UTF-8")
         _ (ensure! (<= (alength body) otlp/max-body-bytes) :current-receiver-body-limit)
-        codec? (contains? #{"codec" "codec-native-reader"} mode)
-        reader? (= mode "codec-native-reader")
-        reader-binding (when reader? (ns-resolve 'clojure.data.json '*experimental-native-string-reader*))
+        codec? (contains? #{"codec" "codec-native-reader" "codec-fused-finder" "codec-whole-reader"} mode)
+        fused? (= mode "codec-fused-finder")
+        finder-var (when fused? (ns-resolve 'clojure.data.json 'next-string-special))
+        _ (when fused? (ensure! finder-var :explicit-finder-seam-available))
+        fused-finder (when fused?
+                       (require 'oscope.fused-json)
+                       ((ns-resolve 'oscope.fused-json 'open-finder)))
+        whole? (= mode "codec-whole-reader")
+        reader? (or whole? (= mode "codec-native-reader"))
+        reader-binding (when reader? (ns-resolve 'clojure.data.json
+                                               (if whole? '*experimental-native-reader*
+                                                 '*experimental-native-string-reader*)))
         _ (when reader? (ensure! reader-binding :explicit-reader-hook-available))
         string-reader (when reader?
                         (require 'clojure.data.json.jolt-native)
-                        ((ns-resolve 'clojure.data.json.jolt-native 'load-string-reader!)))
+                        ((ns-resolve 'clojure.data.json.jolt-native
+                                     (if whole? 'load-reader! 'load-string-reader!))))
         _ (when reader? (ensure! (ifn? string-reader) :explicit-reader-callable))
         codec-var (when codec? (require 'jolt.codec.experimental)
                     (ns-resolve 'jolt.codec.experimental 'encode-prefixed-records))
         codec-count (atom 0) stream-count (atom 0) reader-requests (atom 0)
+        finder-requests (atom 0)
         active? (atom false) phases (atom {})
         observe (fn [label f]
                   (fn [& args]
@@ -138,10 +149,17 @@
         ;; No per-token instrumentation is added to the timed reader loop.
         request-parser (fn [& args]
                          (binding [*request-document-read?* true]
-                           (if-not reader? (apply original-parse args)
-                             (do (swap! reader-requests inc)
-                                 (with-bindings {reader-binding string-reader}
-                                   (apply original-parse args))))))
+                           (cond
+                             reader? (do (swap! reader-requests inc)
+                                         (with-bindings {reader-binding string-reader}
+                                           (apply original-parse args)))
+                             ;; Experiment only: one scalar Scheme procedure
+                             ;; replaces the private finder during synchronous
+                             ;; parsing. No per-token wrapper/counter is added.
+                             fused? (do (swap! finder-requests inc)
+                                        (with-redefs-fn {finder-var fused-finder}
+                                          #(apply original-parse args)))
+                             :else (apply original-parse args))))
         original-json-read json/read-str
         observed-json-read (observe :json-document-read original-json-read)
         original-codec (when codec-var @codec-var)
@@ -180,6 +198,7 @@
             (reset! codec-count 0)
             (reset! stream-count 0)
             (reset! reader-requests 0)
+            (reset! finder-requests 0)
             (post! (:port lifecycle) body)
             (System/gc)
             (reset! active? true)
@@ -208,7 +227,9 @@
                           :phase-samples @phases :phase-summaries (into {} (map (fn [[k v]] [k (summary v)]) @phases))
                           :phase-overlap "json-document-read is inside body-read-and-json-parse; native-stream is inside Durable API; do not sum inclusive phases"
                           :codec-calls @codec-count :stream-calls @stream-count
-                          :native-string-reader? reader? :reader-requests @reader-requests
+                          :native-string-reader? (and reader? (not whole?))
+                          :whole-reader? whole? :reader-requests @reader-requests
+                          :fused-finder? fused? :finder-requests @finder-requests
                           :scope "instrumented sequential local sockets, pre-encoded client body; small sample not population-tail proof"}]
               (ensure! (= (if codec? (inc rounds) 0) @codec-count) :observed-codec-path)
               (ensure! (= (if codec? (inc rounds) 0) @stream-count) :observed-native-path)
@@ -218,6 +239,7 @@
                                 {:label :actual-document-parser
                                  :phase-counts (into {} (map (fn [[k v]] [k (count v)]) @phases))})))
               (ensure! (= (if reader? (inc rounds) 0) @reader-requests) :observed-reader-requests)
+              (ensure! (= (if fused? (inc rounds) 0) @finder-requests) :observed-finder-requests)
               (spit (str root "/writer.edn") (pr-str report))
               (ensure! (= {:status :closed :phase :closed} (server/stop! lifecycle)) :writer-closed)
               (println :socket-writer-closed {:mode mode :rows rows :wire-bytes (alength body)}))
