@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the root OTel SDK pin to reuse its scalar normalization fast path
+  and avoid lazy fixed-field classification during OTLP ingestion, reducing
+  temporary allocation while preserving value limits and error handling.
+  Keep existing native codec capabilities, encoding
+  defaults, Durable confirmation and the minimal embedded profile unchanged.
+
 - Add a default-off stock-Jolt JSON reader for HTTP ingestion, selectable in
   version-2 configuration or server startup options. Resolve its optional
   component before JDBC acquisition; preserve byte limits, fallback semantics,

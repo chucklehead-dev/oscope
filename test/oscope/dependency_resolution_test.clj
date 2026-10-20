@@ -27,7 +27,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "26186ce79941e84e0cc67eb148dd8dd43b4e1880/"))
+       "3366a3322c3ea4024057f6278e50c999864171e8/"))
 
 (def ^:private prior-map-reuse-sdk-root
   "https___github.com_casselc_otel.git/12074bcfd668dec00a4e6ca2ca52a4f765a331e9/")
