@@ -108,12 +108,18 @@
                       ;; Constructor activity is not ingestion evidence.
                       (when require-json?
                         (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
+                      (when stock-codec?
+                        (reset! codec-calls 0)
+                        (reset! stream-calls 0))
                       lifecycle))
                   server/start!
                   (fn [args]
                     (let [lifecycle (start-server (handoff args))]
                       (when require-json?
                         (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
+                      (when stock-codec?
+                        (reset! codec-calls 0)
+                        (reset! stream-calls 0))
                       lifecycle))
                   native/chdb-stream-insert-n
                   (fn [& args] (swap! stream-calls inc) (apply insert args))

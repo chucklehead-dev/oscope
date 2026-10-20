@@ -21,3 +21,15 @@ embedded-typed: terminal0
 Actual incompatible-stack controls: both terminal0
 :actual-missing-codec-rejected-before-storage
 :actual-legacy-exporter-rejected-before-storage
+
+Record-context follow-up (initial receipts above retained as narrower history):
+Configured standalone, actual linked-span recovery: terminal0
+:durable-native-child reader 0 :exit 0 :terminal true :settled true :valid true
+:durable-native-receipt fixture 2 1 45 0 0 1
+Stock codec standalone, actual linked-span recovery: terminal0
+:durable-native-child reader 0 :exit 0 :terminal true :settled true :valid true
+:stream-native-calls 1
+:stock-codec-calls 1
+:durable-native-receipt fixture 2 1 45 0 0 1
+Startup-only codec call does not satisfy ingestion: 1 test /3 assertions, terminal0
+Canonical record-fix pin + option/dependency tests: 34 tests /439 assertions, terminal0

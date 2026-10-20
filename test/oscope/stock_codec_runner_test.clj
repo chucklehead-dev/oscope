@@ -12,7 +12,12 @@
            [true false ::fixture/unobserved-stock-codec]
            [true true nil]]]
     (let [failure (atom nil)]
-      (with-redefs [embedded/start! (fn [_] nil)
+      (with-redefs [embedded/start!
+                    (fn [_]
+                      ;; A real constructor now probes record encoding. This
+                      ;; must not satisfy the later ingestion witness.
+                      (codec/encode-prefixed-records (codec/open-codec) "" [0] vector 100)
+                      nil)
                     native/chdb-stream-insert-n (fn [& _] :synthetic-result)
                     child/-main
                     (fn [& _]

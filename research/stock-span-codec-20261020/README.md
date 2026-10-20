@@ -70,3 +70,30 @@ No new performance number is claimed; ~25k p50/~20k p99 remains unmet.
 An initial inline legacy-probe command had an unmatched delimiter and failed
 before evaluation; the maintained namespace replaces it. This was not a
 product failure or a successful compatibility check.
+
+## Follow-up: actual linked-span records (#149)
+
+The richer socket performance smoke found a real gap beyond the initial tiny
+fixtures: the public decoder makes SpanContext records in links; codec0af1008
+rejected them before publication (HTTP503). Earlier linked fixtures had used
+plain context maps. Do not treat those earlier passes as complete span-shape
+interoperability or discard the counterexample.
+
+Exporter PR150 fixes ordinary record traversal without map copies and probes
+the SDK's real shape before storage. It merged at1e7cc8d after full green CI,
+with reviewed/tested tree/parents verified. The app now selects that canonical
+exporter and independent component98e93e2.
+
+The maintained standalone fixture now decodes a real link (flags129, ordered
+trace state and false attributes). Its separate reader checks physical link
+columns and parsed LinksJSON. Configured JSON and the corrected stock codec
+each passed **1 fixture /45 assertions**, with independent reader terminal,
+settled and valid. Codec and stream counters reset after startup so constructor
+record probes cannot satisfy ingestion evidence; the no-op test now actually
+encodes during fake startup and still rejects stream-without-ingestion.
+
+The legacy native-stream local attempt used stock Jolt and correctly rejected
+its unavailable compiler-bearing backend before ingestion. That is not a legacy
+pass or a record regression. Its existing hosted job supplies the separately
+qualified compiler and remains required before app merge. No timing workload
+is qualified by these functional fixtures.

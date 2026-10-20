@@ -9,6 +9,9 @@ Defaults remain unchanged. This experimental encoder supports its documented
 built-in values, not arbitrary JSONWriter extensions. Unsupported span values
 fail export rather than disappearing. This is not an upstream-only ecosystem:
 the SDK, driver and ordinary JSON pins still include our forks.
+The selected component supports the SDK's ordinary record link contexts without
+map copies. Older components without that capability reject during startup;
+custom record `seq` implementations remain unsupported.
 
 Activate the root `:stock-span-codec` alias when starting Oscope. A library
 consumer must instead declare the independent component in its own deps.edn;
@@ -17,7 +20,7 @@ dependency aliases do not propagate:
 ```clojure
 io.github.chucklehead-dev/jolt-codec
 {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
- :git/sha "0af1008185cf84577298d3a0a0b2db87b97bddd5"
+ :git/sha "98e93e2a6726c435d9b55ada9a088c2dbf5b1c99"
  :deps/root "incubator/codec"}
 ```
 
