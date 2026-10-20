@@ -1,0 +1,5 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+Unhandled exception: Socket ingest screen failed
+  ex-data: {:label :actual-document-parser}
+  trace:
+    oscope.socket-ingest/ensure! (./benchmark/oscope/socket_ingest.clj:18)

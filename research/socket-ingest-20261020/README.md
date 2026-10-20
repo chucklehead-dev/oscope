@@ -106,3 +106,8 @@ The [follow-up reader screen](reader-layer-results.md) reuses the existing
 fork's native token reader on stock Jolt. It preserves the earlier work and
 separates the strong string-array win from the smaller actual-wire parsing
 improvement. Application pins and confirmed-throughput claims are unchanged.
+
+The [confirmed socket follow-up](reader-pair-results.md) uses matched JSON
+revisions, handler-scoped reader bindings and independent recovery. Its small
+pooled gain, worse maximum sample and higher estimated allocation do **not**
+justify enabling the native token reader by default.
