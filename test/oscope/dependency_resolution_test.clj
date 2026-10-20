@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "2c54b98d35464c8fc7c737b0c92a0042272b589a")
+  "60e1f69bbb06766c36ca9ef0c34af51a97e69c34")
 
 (def ^:private prior-singleton-exporter-sha
   "4a42716286177fd0c033d69deb708b29dd162933")
@@ -19,7 +19,7 @@
 
 (def ^:private chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
-       "3d766fa295b0e98c30f275d0a334db92e6dd998c/"))
+       "3314b79e8a234fafdf5231439a0323c878a40040/"))
 
 (def ^:private prior-chdb-root
   (str "https___github.com_chucklehead-dev_jolt-chdb.git/"
@@ -27,7 +27,7 @@
 
 (def ^:private otel-root
   (str "https___github.com_casselc_otel.git/"
-       "7878a2eb4340519d6843d13490a5a7c99ebade8a/"))
+       "26186ce79941e84e0cc67eb148dd8dd43b4e1880/"))
 
 (def ^:private prior-map-reuse-sdk-root
   "https___github.com_casselc_otel.git/12074bcfd668dec00a4e6ca2ca52a4f765a331e9/")
@@ -147,6 +147,38 @@
       (is (exact-coordinate? (:out result) "casselc_otel.git" otel-root))
       (is (exact-coordinate? (:out result) "casselc_http-client.git"
                              http-provider-root)))))
+
+(deftest previous-published-stack-pins-are-real-selection-controls
+  ;; Select the previous root commits for real, without claiming their APIs
+  ;; are invalid. The current exact-pin oracle must distinguish each one.
+  (doseq [[library url previous dependency expected]
+          [["io.github.casselc/otel" "https://github.com/casselc/otel.git"
+            "7878a2eb4340519d6843d13490a5a7c99ebade8a" "casselc_otel.git" otel-root]
+           ["io.github.chucklehead-dev/jolt-chdb" "https://github.com/chucklehead-dev/jolt-chdb.git"
+            "3d766fa295b0e98c30f275d0a334db92e6dd998c" "chucklehead-dev_jolt-chdb.git" chdb-root]
+           ["io.github.chucklehead-dev/jolt-otel-clickhouse" "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
+            "2c54b98d35464c8fc7c737b0c92a0042272b589a" "chucklehead-dev_jolt-otel-clickhouse.git"
+            (str "https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/" exporter-sha "/")]]]
+    (let [coordinate (str "{:deps {" library " {:git/url \"" url
+                          "\" :git/sha \"" previous "\"}}}")
+          result (dependency-report ["-Sdeps" coordinate])]
+      (is (successful-report? result))
+      (is (some #(str/includes? % (str "/" previous "/"))
+                (dependency-roots (:out result) dependency)))
+      (is (false? (boolean (exact-coordinate? (:out result) dependency expected)))))))
+
+(deftest crypto-provider-is-explicit-and-matches-the-qualified-app-graph
+  (let [result (dependency-report [])
+        expected "https___github.com_casselc_jolt-crypto.git/649c993780a0f269938c9c6afa3bae7e9709bb48/"
+        roots (dependency-roots (:out result) "jolt-crypto")]
+    (is (successful-report? result))
+    (is (= 1 (count roots)))
+    (is (exact-coordinate? (:out result) "jolt-crypto" expected))
+    (is (false? (boolean (exact-coordinate?
+                          (str/replace (str (:out result))
+                                       "649c993780a0f269938c9c6afa3bae7e9709bb48"
+                                       "5effcc89a3258499a79a2a3d69edad9e7800d1bf")
+                          "jolt-crypto" expected))))))
 
 (deftest timer-only-batch-sdk-is-a-causal-red-control
   (let [prior "d93846e40b837dcecb546fb59f6cb05ca639f054"
