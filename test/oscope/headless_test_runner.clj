@@ -21,6 +21,7 @@
             [oscope.export-options-test]
             [oscope.export-options-native-runner-test]
             [oscope.http-executor-test]
+            [oscope.json-reader-test]
             [oscope.langfuse-profile-test]
             [oscope.live-test]
             [oscope.otlp-test]
@@ -65,6 +66,7 @@
                         'oscope.export-options-test
                         'oscope.export-options-native-runner-test
                         'oscope.http-executor-test
+                        'oscope.json-reader-test
                         'oscope.langfuse-profile-test
                         'oscope.live-test
                         'oscope.otlp-test

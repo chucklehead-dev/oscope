@@ -7,6 +7,35 @@
 (def max-body-bytes (* 1024 1024))
 (def max-concurrency 1)
 
+(defn open-json-reader
+  "Resolve an explicit reader at startup; default loads no optional component.
+  No database, telemetry or native resource ownership is acquired here."
+  [selection]
+  (case selection
+    :configured json/read-str
+    :experimental-stock
+    (try
+      (require 'jolt.codec.reader.experimental)
+      (let [open (ns-resolve 'jolt.codec.reader.experimental 'open-reader)
+            read (ns-resolve 'jolt.codec.reader.experimental 'try-read-string)
+            ordinary json/read-str]
+        (when-not (and open read (ifn? @open) (ifn? @read))
+          (throw (ex-info "Reader capability unavailable" {})))
+        (let [adapter (fn [source options] (apply ordinary source (mapcat identity options)))
+              capability (@open {:number-reader adapter :fallback-reader adapter})
+              read @read]
+          (fn [source]
+            ;; Explicit attempt/fallback composition also makes actual native
+            ;; selection observable once per document, without token counters.
+            (if-let [result (read capability source {})]
+              (first result)
+              (ordinary source)))))
+      (catch Throwable _
+        (throw (ex-info "Experimental JSON reader requires its optional compatible component"
+                        {:oscope.otlp/error true :type ::json-reader-unavailable}))))
+    (throw (ex-info "Unknown JSON reader selection"
+                    {:oscope.otlp/error true :type ::invalid-json-reader}))))
+
 (defn- concat-chunks [chunks total]
   (let [out (byte-array total)]
     (loop [remaining chunks offset 0]
@@ -42,10 +71,11 @@
 
 (defn parse-json-body
   "Parse a Ring body while enforcing the limit on consumed UTF-8 bytes."
-  [request limit]
-  (let [encoded (bounded-bytes (:body request) limit)]
-    {:value (json/read-str (String. encoded "UTF-8"))
-     :encoded-bytes (alength encoded)}))
+  ([request limit] (parse-json-body request limit json/read-str))
+  ([request limit read-json]
+   (let [encoded (bounded-bytes (:body request) limit)]
+     {:value (read-json (String. encoded "UTF-8"))
+      :encoded-bytes (alength encoded)})))
 
 (defn wrap-close-rejected-bodies
   "Prevent reuse when a rejected request may have an unread streaming body."
@@ -91,10 +121,15 @@
 
 (defn handler
   ([exporter] (handler exporter {}))
-  ([exporter {:keys [after-success!]}]
+  ([exporter {:keys [after-success! json-read] :as options}]
+   (when (and (contains? options :json-read) (not (ifn? json-read)))
+     (throw (ex-info "JSON reader must be callable"
+                     {:oscope.otlp/error true :type ::invalid-json-reader})))
    (wrap-close-rejected-bodies
     (wrap-after-success
-     (receiver/handler {:parse-body parse-json-body
+     (receiver/handler {:parse-body (if (contains? options :json-read)
+                                     (fn [request limit] (parse-json-body request limit json-read))
+                                     parse-json-body)
                         :exporter exporter
                         :max-body-bytes max-body-bytes
                         :max-concurrency max-concurrency})

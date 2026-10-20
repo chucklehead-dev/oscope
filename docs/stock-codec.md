@@ -20,7 +20,7 @@ dependency aliases do not propagate:
 ```clojure
 io.github.chucklehead-dev/jolt-codec
 {:git/url "https://github.com/chucklehead-dev/jolt-otel-clickhouse.git"
- :git/sha "98e93e2a6726c435d9b55ada9a088c2dbf5b1c99"
+ :git/sha "7ab2bedcb2e1845efdf6ed5c55ae9d2164338a8d"
  :deps/root "incubator/codec"}
 ```
 

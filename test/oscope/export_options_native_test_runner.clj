@@ -37,7 +37,7 @@
                   "stream-fallback" {:insert-format :json-compact-each-row
                                      :json-backend :configured
                                      :datetime64-wire :raw-ticks}
-                  "stock-codec" {:insert-format :json-compact-each-row
+                  ("stock-codec" "stock-reader") {:insert-format :json-compact-each-row
                                  :json-backend :native-guarded-byte-batch
                                  :owned-statement-output? true
                                  :datetime64-wire :raw-ticks
@@ -54,7 +54,10 @@
         insert native/chdb-stream-insert-n
         stream-calls (atom 0)
         require-json? (seq extra)
-        stock-codec? (= mode "stock-codec")
+        stock-reader? (= mode "stock-reader")
+        _ (when (and stock-reader? (not= consumer "standalone"))
+            (throw (ex-info "HTTP reader fixture requires standalone ingress" {})))
+        stock-codec? (contains? #{"stock-codec" "stock-reader"} mode)
         _ (when (and stock-codec? require-json?)
             (throw (ex-info "Stock codec fixture does not use the legacy JSON companion" {})))
         codec-var (when stock-codec?
@@ -62,6 +65,11 @@
                     (ns-resolve 'jolt.codec.experimental 'encode-prefixed-records))
         original-codec (when codec-var @codec-var)
         codec-calls (atom 0)
+        reader-var (when stock-reader?
+                     (require 'jolt.codec.reader.experimental)
+                     (ns-resolve 'jolt.codec.reader.experimental 'try-read-string))
+        original-reader (when reader-var @reader-var)
+        reader-results (atom {:accepted 0 :declined 0})
         {:keys [adapter companion]} (when require-json? (json-companion-capability))
         original-adapter (when adapter @adapter)
         observations (atom {:calls 0 :bound 0 :empty-bound 0})
@@ -86,13 +94,20 @@
                            #'row-encoder/open-encoder
                            (fn [& _] (throw (ex-info "Stock codec fixture loaded legacy JSON writer" {}))))
                     json-overrides)
-        streaming? (contains? #{"stream" "stream-budget" "stream-fallback" "stock-codec"} mode)
+        overrides (cond-> overrides
+                    stock-reader? (assoc reader-var
+                                     (fn [& args]
+                                       (let [result (apply original-reader args)]
+                                         (swap! reader-results update (if result :accepted :declined) inc)
+                                         result))))
+        streaming? (contains? #{"stream" "stream-budget" "stream-fallback" "stock-codec" "stock-reader"} mode)
         handoff (fn [args]
                   (if (and streaming? (= consumer "standalone"))
                     ;; This fixture must route options from its versioned file,
                     ;; not repair a dropped option at the server handoff.
                     (do
                       (when-not (and (= options (:export-options args))
+                                     (or (not stock-reader?) (= :experimental-stock (:json-reader args)))
                                      (true? (get-in args [:db-spec :owned-compact-stream?])))
                         (throw (ex-info "Configured streaming options were not routed"
                                         {:type ::unrouted-stream-options})))
@@ -110,7 +125,8 @@
                         (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
                       (when stock-codec?
                         (reset! codec-calls 0)
-                        (reset! stream-calls 0))
+                        (reset! stream-calls 0)
+                        (reset! reader-results {:accepted 0 :declined 0}))
                       lifecycle))
                   server/start!
                   (fn [args]
@@ -119,7 +135,8 @@
                         (reset! observations {:calls 0 :bound 0 :empty-bound 0}))
                       (when stock-codec?
                         (reset! codec-calls 0)
-                        (reset! stream-calls 0))
+                        (reset! stream-calls 0)
+                        (reset! reader-results {:accepted 0 :declined 0}))
                       lifecycle))
                   native/chdb-stream-insert-n
                   (fn [& args] (swap! stream-calls inc) (apply insert args))
@@ -131,14 +148,17 @@
                                                          '*storage-options*)]
                               (when-not binding-var
                                 (throw (ex-info "Configured fixture binding is unavailable" {})))
-                              (with-bindings {binding-var {:owned-compact-stream? true
-                                                           :export-options options}}
+                              (with-bindings (cond-> {binding-var {:owned-compact-stream? true
+                                                                 :export-options options}}
+                                               stock-reader?
+                                               (assoc (ns-resolve 'oscope.durable-integration-test '*ingest-options*)
+                                                      {:json-reader :experimental-stock}))
                                 (run-tests vars)))
                             (run-tests vars))]
                       ;; Before the child emits its terminal receipt/exits.
                       ;; A no-op fixture must not qualify streaming merely by
                       ;; accepting configuration or keeping the old assertions.
-                      (when (contains? #{"stream" "stream-budget" "stock-codec"} mode)
+                      (when (contains? #{"stream" "stream-budget" "stock-codec" "stock-reader"} mode)
                         (when-not (pos? @stream-calls)
                           (throw (ex-info "Native stream execution was not observed"
                                           {:type ::unobserved-stream})))
@@ -148,6 +168,11 @@
                           (throw (ex-info "Explicit span codec execution was not observed"
                                           {:type ::unobserved-stock-codec})))
                         (println :stock-codec-calls @codec-calls))
+                      (when stock-reader?
+                        (when-not (= {:accepted 3 :declined 0} @reader-results)
+                          (throw (ex-info "Three actual native HTTP document reads were not observed"
+                                          {:type ::unobserved-stock-reader})))
+                        (println :stock-reader-results @reader-results))
                       (when (= mode "stream-fallback")
                         (when-not (zero? @stream-calls)
                           (throw (ex-info "Ordinary statements unexpectedly used streaming"

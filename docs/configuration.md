@@ -3,6 +3,13 @@
 Oscope's standalone server accepts one versioned EDN configuration document.
 The same options apply to the `-M:native-server` launcher.
 
+### HTTP JSON decoding
+
+Version 2 can select `:ingest {:json-reader :experimental-stock}` with the
+optional reader component. The default parser and all transport limits remain
+unchanged. See [stock-Jolt JSON reading](stock-json-reader.md) for dependency,
+startup and qualification details. This does not affect direct SDK capture.
+
 ### Export encoding
 
 For the optional independent span codec on stock Jolt, see
