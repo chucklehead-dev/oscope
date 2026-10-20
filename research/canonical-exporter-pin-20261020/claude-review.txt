@@ -1,0 +1,19 @@
+No file-write tool is available in this session, so I'll give the review directly here.
+
+## Verdict: Approve, within stated scope
+
+**Pin/oracle consistency** — deps.edn bumps `jolt-otel-clickhouse` from `60e1f69b…` to `6a98b942…` and nothing else. The test's `exporter-sha` constant tracks the new sha, and the diff adds a genuine extra previous-pin control: a second exact-root entry keyed on the *old* sha (`60e1f69…`) expecting the *new* resolved root, inserted into `previous-published-stack-pins-are-real-selection-controls` alongside the pre-existing distinct-sha red controls (prior-exporter, prior-singleton, prior-fixed-budget, etc.), which are untouched and still reference unrelated shas.
+
+**Classpath evidence** — `before.path`/`after.path` differ in exactly the exporter git-lib root; every other entry (otel, http-client, chdb, crypto, data.json, …) is byte-identical. `verify-source-roots.bb` asserts exact frequency-map equality after substitution (not mere membership), includes a real in-memory negative control (mutating the crypto sha breaks equality), and rejects any `/incubator/codec/` path. `source-roots.edn` matches the script's asserted output exactly.
+
+**Test runs** — `focused.log`: "Ran 31 tests. 392 assertions passed, 0 failures, 0 errors." `typed-socket.log` plus the 5 `socket-children/fixture-N` logs/errs: every child reports `:exit 0 :terminal true :receipt-valid true`; aggregate "Ran 5 tests. 158 assertions passed, 0 failures, 0 errors." fixture-4's stderr line ("ignoring negative add to counter") is a benign expected test-fixture message, not a failure.
+
+**Scope/wording** — the diff touches exactly the 3 stated files; no app runtime/config/default/profile pins changed; `grep` for codec/incubator/span-only in deps.edn after the patch: no matches. The CHANGELOG entry's wording matches the diff's actual blast radius (exporter-pin-only, defaults/embedded-profile preserved, codec not enabled) and stays consistent with the surrounding entries' no-overclaim style.
+
+**Not independently re-run** (per your scope): the Durable gate (in flight, not inferred complete), and the test/jolt commands themselves — I relied on the committed logs/paths, cross-checked internally and against the diff.
+
+## Blockers
+None.
+
+## Scope limits on this approval
+Covers only this 3-file diff against the attached evidence set. Does not cover the still-running Durable gate, the separately-held minimal embedded profile, or any future enablement of the span-only/experimental codec.

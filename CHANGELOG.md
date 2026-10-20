@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Update the root exporter pin to its reviewed canonical stock-Jolt encoding
+  integration. Keep encoding/configuration and mixed-signal defaults unchanged;
+  the span-only experimental codec is not enabled. Preserve the separately
+  qualified minimal embedded profile and all other root dependency pins.
+
 - Qualify the root application's published SDK, driver and exporter pins on
   stock Jolt 0.8.23, preserving ordinary encoding and mixed-signal defaults.
   Do not automatically enable the experimental span-only codec or preparation

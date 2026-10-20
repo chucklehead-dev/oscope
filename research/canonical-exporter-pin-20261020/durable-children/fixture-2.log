@@ -1,0 +1,3 @@
+:durable-native-executed fixture 2
+:durable-native-child reader 0 :exit 0 :terminal true :settled true :valid true
+:durable-native-receipt fixture 2 1 40 0 0 1
