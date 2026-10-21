@@ -11,7 +11,7 @@
 
 (deftest actual-published-component-parses-with-configured-value-parity
   (is (str/includes? (str (io/resource "jolt/codec/reader/experimental.clj"))
-                    "7ab2bedcb2e1845efdf6ed5c55ae9d2164338a8d"))
+                    "c75579b90a9089bcbdcb195ebd18d15d16ee0082"))
   (let [read (otlp/open-json-reader :experimental-stock)]
     (doseq [source ["false" "null" "42" "1.25" "9223372036854775808"
                     "{\"attributes\":{\"active\":false,\"name\":\"\\ud83d\\ude80\"}}"

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Update the root exporter and optional stock-Jolt span codec/JSON reader to
+  the guarded private-byte-store implementation, reducing encoder bookkeeping
+  on its qualified native path. Preserve telemetry values, byte limits,
+  encoding defaults, Durable confirmation, SDK/driver pins and the separate
+  minimal embedded profile. This does not enable preparation overlap or claim
+  application throughput, slow-tail or combined typed-recovery qualification.
+
 - Update the root exporter to avoid temporary maps and vectors when projecting
   small typed span manifests on the selected native path. Preserve complete
   captured attributes, value/status rules, fallback and Durable confirmation.
