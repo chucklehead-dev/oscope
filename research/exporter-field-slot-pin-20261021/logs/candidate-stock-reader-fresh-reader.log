@@ -1,0 +1,8 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+:export-encoding-fixture stock-reader standalone
+:durable-native-executed fixture 2
+:durable-native-child reader 0 :exit 0 :terminal true :settled true :valid true
+:stream-native-calls 1
+:stock-codec-calls 1
+:stock-reader-results {:accepted 3, :declined 0}
+:durable-native-receipt fixture 2 1 45 0 0 1

@@ -20,6 +20,7 @@
             [oscope.events-test]
             [oscope.export-options-test]
             [oscope.export-options-native-runner-test]
+            [oscope.field-slot-native-probe-test]
             [oscope.http-executor-test]
             [oscope.json-reader-test]
             [oscope.langfuse-profile-test]
@@ -65,6 +66,7 @@
                         'oscope.events-test
                         'oscope.export-options-test
                         'oscope.export-options-native-runner-test
+                        'oscope.field-slot-native-probe-test
                         'oscope.http-executor-test
                         'oscope.json-reader-test
                         'oscope.langfuse-profile-test

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Update the root exporter to avoid temporary maps and vectors when projecting
+  small typed span manifests on the selected native path. Preserve complete
+  captured attributes, value/status rules, fallback and Durable confirmation.
+  Keep encoding defaults, SDK/driver/JSON pins and the separate minimal embedded
+  profile unchanged. Qualify real post-startup typed projection separately from
+  existing file-backed capture/fresh-reader checks; this is not a combined
+  typed-recovery proof, application throughput or slow-tail guarantee.
+
 - Update the root OTel SDK pin to reuse its scalar normalization fast path
   and avoid lazy fixed-field classification during OTLP ingestion, reducing
   temporary allocation while preserving value limits and error handling.
