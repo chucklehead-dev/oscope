@@ -1,0 +1,20 @@
+No ExitPlanMode or Write tool is available in this session, so I'll deliver the review directly here.
+
+## Review: root exporter field-slot pin (a6cbf939)
+
+**Blockers: none found.**
+
+### Verified claims
+
+- **Witness correctness** — traced all 6 `run-control` scenarios in `field_slot_native_probe_test.clj` against `field_slot_native_probe.clj`: `:missing-projector` (no projector fn), `:constructor-only` (fn built, never invoked), `:startup-only` (invoked only while `active?` is still false, before `embedded/start!` returns), and `:declined-false`/`:declined-nil` (invoked post-startup but with a falsy result) all fail the `(and @active? (pos? @selected))` gate and throw `::unobserved-field-slots`. Only `:selected` (genuinely post-startup, truthy result) passes and prints the counter. No construction/startup/false/nil path can satisfy the witness.
+- **Wrapper transparency** — the `factory-var` wrapper always returns `project`'s real return value to the span caller, and the `test/test-vars` wrapper always returns the real `result` after its check; neither swallows results or errors.
+- **Existing receipt checks unaffected** — the gate's check/print happens *after* `run-tests`/fixture execution, so the wrapped fixture's own terminal receipt assertions still run and still determine pass/fail independently.
+- **Red control confirmed in logs** — `prior-exporter-field-slot-probe.log` shows the prior exporter (`1e7cc8d0`) throwing `:oscope.field-slot-native-probe/unavailable-field-slots` from `ns-resolve` returning nil — a genuine missing-capability rejection, not a masked `require` failure.
+- **Assertion-count arithmetic checks out** — 18 witness-control assertions (12 from the two `is` groups in the single deftest + 6 from `fixture/-main`'s mock `is` firing once per `run-control` call) + 3 new assertions in `dependency_resolution_test.clj`'s `prior-field-slot-exporter-is-a-causal-red-control` = 21, matching the reported 3539→3560 assertion delta and 361→363 test delta exactly.
+- **CI coverage retained** — `stock-span-codec.yml` still runs embedded+standalone stock-codec, the new typed field-slot probe, and stock-reader standalone, plus the pre-existing json-reader/stock-codec/legacy-probe checks. No step removed.
+- **No inadvertent SDK/profile rollout** — `deps.edn` changes only the `jolt-otel-clickhouse` root pin to `a6cbf939`; SDK/driver/JSON/crypto pins and the `:stock-span-codec`/`:stock-json-reader` codec alias SHA are unchanged. `profiles/embedded` is untouched; the workflow uses no `:override-deps` affecting it.
+- **Scope honesty** — CHANGELOG, `docs/stock-codec.md`, and the research README all consistently disclose that fixture 3 is a memory-backed live query (not independent typed recovery), point to issue #177 for that gap, and disclaim throughput/perf/S3/Langfuse claims. Nothing is masked.
+
+### Non-blocking observations
+
+None — implementation, tests, CI, and docs are internally consistent and match each other's claims exactly.

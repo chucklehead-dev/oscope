@@ -103,3 +103,12 @@ No build/binary/new native asset was created. Small original logs at
 copies below are for public synthetic qualification evidence. The selected
 pre-native source manifest predates the docstring-only correction and is not
 complete transitive compile-time attestation.
+
+## Independent review
+
+Claude's bounded source-only review found no blockers. It checked the observer's
+five rejected scenarios, transparent return/error handling, CI case retention,
+unchanged SDK/profile pins, red-control provenance and assertion-count arithmetic.
+The raw review is retained in `claude-review.txt`; Claude did not execute the
+tests. Codex inspected the actual diff and owns the local execution evidence.
+Final-head hosted CI remains required before merge.
