@@ -6,7 +6,7 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
-  "a6cbf9390d1521026e5da5d2ea3cfc0b8916ae2b")
+  "b414975492996c6bdd71843aa5ff3878cb400384")
 
 (def ^:private prior-field-slot-exporter-sha
   "1e7cc8d0a821e589ec087774d118effcaab1d234")
