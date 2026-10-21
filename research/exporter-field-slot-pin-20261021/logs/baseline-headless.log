@@ -1,0 +1,17 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+
+FAIL in (minimal-fixture-runs-the-real-native-stalled-remote-stack) (embedded_profile_test.clj:432)
+Unhandled exception: Unqualified chDB telemetry timestamp wire
+  ex-data: {:type :otel.exporter.chdb/unqualified-timestamp-wire}
+  trace:
+    otel.exporter.chdb/exporter (~/.jolt/gitlibs/https___github.com_chucklehead-dev_jolt-otel-clickhouse.git/dfbc9ea64962b25c2f38912daa1c5a7b7339deaf/src/otel/exporter/chdb.clj:1204)
+
+expected: (zero? (:exit run-result))
+  actual: (not (zero? 1))
+
+FAIL in (minimal-fixture-runs-the-real-native-stalled-remote-stack) (embedded_profile_test.clj:434)
+expected: (str/includes? (:out run-result) "minimal embedded native fixture: PASS")
+  actual: false
+oscope HTTP overload load {:attempts 10000, :rejected 10000, :max-queue-depth 1, :rss-before-kib 631372, :rss-after-kib 631372}
+
+Ran 361 tests. 3537 assertions passed, 2 failures, 0 errors.

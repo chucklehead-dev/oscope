@@ -6,6 +6,9 @@
             [oscope.child-support :as child]))
 
 (def ^:private exporter-sha
+  "a6cbf9390d1521026e5da5d2ea3cfc0b8916ae2b")
+
+(def ^:private prior-field-slot-exporter-sha
   "1e7cc8d0a821e589ec087774d118effcaab1d234")
 
 (def ^:private prior-singleton-exporter-sha
@@ -346,6 +349,15 @@
   (let [result (dependency-report ["-Sdeps" prior-singleton-exporter-coordinate])]
     (is (successful-report? result))
     (is (exact-exporter-resolution? (:out result) prior-singleton-exporter-sha))
+    (is (false? (exact-exporter-resolution? (:out result) exporter-sha)))))
+
+(deftest prior-field-slot-exporter-is-a-causal-red-control
+  (let [coordinate (str "{:deps {io.github.chucklehead-dev/jolt-otel-clickhouse "
+                        "{:git/url \"https://github.com/chucklehead-dev/jolt-otel-clickhouse.git\" "
+                        ":git/sha \"" prior-field-slot-exporter-sha "\"}}}")
+        result (dependency-report ["-Sdeps" coordinate])]
+    (is (successful-report? result))
+    (is (exact-exporter-resolution? (:out result) prior-field-slot-exporter-sha))
     (is (false? (exact-exporter-resolution? (:out result) exporter-sha)))))
 
 (deftest prior-scalar-sdk-coordinate-is-a-causal-red-control

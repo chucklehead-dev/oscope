@@ -1,0 +1,6 @@
+[jolt.deps] deps declare :deps/prep-lib steps jolt does not run (their compiled/generated assets will be missing): yogthos/selmer
+Unhandled exception: Bounded field-slot exporter capability is unavailable
+  ex-data: {:type :oscope.field-slot-native-probe/unavailable-field-slots}
+  trace:
+    oscope.field-slot-native-probe/field-slot-factory-var (./test/oscope/field_slot_native_probe.clj:12)
+    oscope.field-slot-native-probe/-main (./test/oscope/field_slot_native_probe.clj:19)

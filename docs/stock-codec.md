@@ -13,6 +13,14 @@ The selected component supports the SDK's ordinary record link contexts without
 map copies. Older components without that capability reject during startup;
 custom record `seq` implementations remain unsupported.
 
+The root exporter can now collect small approved typed span projections directly
+into field slots, avoiding temporary location maps and vectors. Eligible plans
+have up to eight distinct fields across the three trace attribute locations;
+unsupported shapes, aliases or changed policies keep the existing fallback.
+Complete generic attributes and typed value/status rules are preserved. There
+is no new configuration switch or default encoder change, and component savings
+do not establish application throughput or slower-batch latency improvements.
+
 Activate the root `:stock-span-codec` alias when starting Oscope. A library
 consumer must instead declare the independent component in its own deps.edn;
 dependency aliases do not propagate:
@@ -78,3 +86,11 @@ forbids the legacy native JSON writer, and checks independent recovery after
 SDK or socket capture. It does not establish S3, Langfuse, application standalone
 packaging, sustained throughput or population-tail performance. No throughput
 target is claimed by enabling these options.
+
+The embedded typed fixture additionally requires a positive field-slot result
+after application startup, before its existing terminal receipt. Constructor
+calls, startup-only activity and false/nil declines cannot satisfy that witness.
+This fixture checks a live typed query against an in-memory object backend;
+the separate file-backed embedded/standalone cases check independent recovery.
+Those are different gates, not one combined typed-recovery proof. Its counters
+are test instrumentation, not a performance measurement or delivery receipt.
