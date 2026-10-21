@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Select the canonical SDK, confirmed-ticket Durable driver and exporter
+  preparation integration. Keep capture/configuration and processor defaults
+  unchanged: this dependency update does not enable preparation overlap or
+  remove metrics/logs. Preserve the codec and explicit crypto-provider pins.
+
 - Update the root exporter and optional stock-Jolt span codec/JSON reader to
   the guarded private-byte-store implementation, reducing encoder bookkeeping
   on its qualified native path. Preserve telemetry values, byte limits,
